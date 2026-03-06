@@ -1,0 +1,97 @@
+# U9 Football Curriculum – Lesson Framework
+
+This framework defines the **mandatory structure** for all U9 lessons at the club.
+All lessons must follow this format exactly to ensure consistency, progression,
+and ease of database ingestion.
+
+---
+
+## LESSON OVERVIEW (Required Fields)
+
+- **Lesson Title**
+- **Age Group:** U9
+- **Skill Category:** Defending / Attacking
+- **Key Skill Focus:** (e.g. Tackling, Dribbling)
+- **Lesson Duration:** 90 minutes
+- **Lesson Description:** 2–3 sentences describing the overall learning outcome
+
+---
+
+## SESSION STRUCTURE (MANDATORY – 4 SESSIONS)
+
+Each lesson contains **4 sessions**, each **15–20 minutes** long.
+
+### SESSION 1 – Warm-Up & Technical
+**Purpose:**
+- Physically prepare players
+- Introduce movement or technical themes related to the lesson
+- No pressure, no tackling (if defending), low cognitive load
+
+**Characteristics:**
+- High repetition
+- Fun and game-like
+- Closely linked to the lesson focus
+
+---
+
+### SESSION 2 – Skill Introduction
+**Purpose:**
+- Introduce the **key technique or decision**
+- Low to moderate pressure
+- Coach-led demonstration and repetition
+
+**Characteristics:**
+- Clear technical focus
+- Limited decision-making
+- Structured practice
+
+---
+
+### SESSION 3 – Skill Development (Progression)
+**Purpose:**
+- **Advance Session 2**
+- Add realism, pressure, space, or decision-making
+- Must clearly build on the same skill
+
+**Characteristics:**
+- More opposition
+- Game-like challenges
+- Technique applied under pressure
+
+---
+
+### SESSION 4 – Game
+**Purpose:**
+- Allow players to apply learning in a realistic game
+- Reinforce the lesson theme using conditions or scoring incentives
+
+**Characteristics:**
+- Small-sided game
+- Minimal stoppages
+- Coaching mostly through guided questions
+
+---
+
+## SESSION DETAIL FORMAT (REQUIRED)
+
+Each session must include:
+
+- **Session Name**
+- **Duration**
+- **Organisation / How It Runs**
+- **Pitch Layout (Text Diagram)**
+- **Key Learning Objectives (2–5)**
+
+---
+
+## TEXT PITCH DIAGRAM STANDARD
+
+Use simple ASCII-style diagrams so lessons work in Markdown and databases.
+
+Legend:
+- `A` = Attacker
+- `D` = Defender
+- `o` = Cone
+- `[]` = Gate or Goal
+- `-->` = Player movement
+``
