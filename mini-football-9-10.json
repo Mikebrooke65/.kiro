@@ -1,0 +1,96 @@
+{
+  "id": "mini-football-9-10",
+  "label": "Mini Football (9–10 years)",
+  "category": "Junior",
+  "ageRange": { "min": 9, "max": 10 },
+  "version": "2026-03-08",
+  "sections": [
+    { "key": "players", "title": "Players", "items": ["7v7"] },
+    { "key": "gameTime", "title": "Game Time", "items": ["Max 50 minutes", "2×25 mins"] },
+    { "key": "pitchSize", "title": "Pitch Size", "items": ["45×30m (min)", "55×35m (max)"] },
+    { "key": "goals", "title": "Goals", "items": ["3.8×1.9m", "4×2m"] },
+    { "key": "ball", "title": "Ball", "items": ["Size 4"] },
+    { "key": "penaltyArea", "title": "Penalty Area", "items": ["8×16m"] },
+    { "key": "goalkeepers", "title": "Goalkeepers", "items": ["Yes"] },
+    { "key": "subs", "title": "Subs", "items": ["Max 3", "Rolling rotation encouraged"] },
+    {
+      "key": "startRestart",
+      "title": "Start & Restart of Play",
+      "items": [
+        "Kick to a teammate from halfway.",
+        "Opposition must be 5m away.",
+        "Cannot score directly from kick‑off — ball must touch another player.",
+        "After a goal, the conceding team restarts from halfway."
+      ]
+    },
+    { "key": "scoring", "title": "Scoring", "items": ["A goal is scored when the whole ball crosses the line."] },
+    {
+      "key": "retreatingLine",
+      "title": "Retreating Line",
+      "items": [
+        "Used for: Goal kicks; Goalkeeper possession; Free kicks.",
+        "Opposition must drop behind the retreating line.",
+        "They may advance only after: the goalkeeper plays the ball; and a teammate touches it.",
+        "Coaches should encourage quick play from the goalkeeper."
+      ]
+    },
+    {
+      "key": "offside",
+      "title": "Offside",
+      "items": [
+        "Offside applies.",
+        "For 9th & 10th Grade: Offside is judged between the retreating line and the goal line only."
+      ]
+    },
+    {
+      "key": "outTouchLine",
+      "title": "Ball Out of Play – Touch Line",
+      "items": ["Throw‑ins: Both feet on or behind the line.", "Throw‑ins: Ball delivered with both hands from behind and over the head.", "Throw‑ins: Thrower cannot touch the ball again until another player does.", "Throw‑ins: Cannot score directly from a throw‑in."]
+    },
+    {
+      "key": "outGoalLine",
+      "title": "Ball Out of Play – Goal Line",
+      "items": [
+        "Defending team last touched: Corner kick.",
+        "Attacking team last touched: Goal kick from anywhere inside the penalty area.",
+        "Opponents retreat to the retreating line."
+      ]
+    },
+    {
+      "key": "goalkeepersRules",
+      "title": "Goalkeepers",
+      "items": [
+        "May handle the ball anywhere inside the penalty area.",
+        "Must release the ball within 6 seconds.",
+        "Must throw, roll, or play from the ground — no drop‑kicks or punts.",
+        "Indirect free kick if the keeper handles a deliberate back‑pass."
+      ]
+    },
+    {
+      "key": "foulsMisconduct",
+      "title": "Fouls & Misconduct",
+      "items": [
+        "Mostly indirect free kicks, except for penalties.",
+        "Opponents must be 5m away.",
+        "Fouls include: Kicking, tripping, jumping at, charging, striking; pushing, holding, spitting; deliberate handball; dangerous play; impeding progress."
+      ]
+    },
+    {
+      "key": "penaltyKicks",
+      "title": "Penalty kicks",
+      "items": [
+        "Awarded for deliberate handball or serious misconduct in the penalty area.",
+        "Taken from 7m with a goalkeeper in position."
+      ]
+    },
+    {
+      "key": "resultsLadders",
+      "title": "Match Results & Ladders",
+      "items": [
+        "No public results, tables, or ladders.",
+        "Results may be recorded privately to help place teams at appropriate levels."
+      ]
+    }
+  ]
+}
+``
