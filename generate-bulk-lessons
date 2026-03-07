@@ -1,0 +1,165 @@
+# 📘 Kiro Lesson Production Pipeline  
+### *Master Process for Generating Lessons, Sessions, and Media for Supabase*
+
+---
+
+## 🏆 Purpose of This Document
+This document explains the **complete, end‑to‑end workflow** for producing all lessons and sessions for the Kiro Football Coaching App.
+
+It consolidates:
+- The GitHub specification files already created  
+- The lesson + session generation workflow  
+- Naming conventions  
+- Media standards  
+- Supabase folder structure  
+- The production pipeline for all 32 lessons  
+
+This is your **return‑to reference** for tomorrow and for scaling future lesson batches.
+
+---
+
+# 1. 📁 GitHub Files That Define the System
+
+These files already exist in your `.kiro` repository (lesson‑plans branch) and MUST be followed for all lesson production.  
+(Verified from repo structure) 
+
+### **1. `lesson-framework.md`**
+Defines the mandatory structure for every lesson:
+- Lesson metadata  
+- 4 sessions  
+- Learning objectives  
+- Skill alignment  
+- Age‑group alignment  
+
+### **2. `session-template-spec.md`**
+Defines the structure for every session:
+- Session name  
+- Duration  
+- Organisation  
+- Equipment  
+- Coaching points  
+- Step‑by‑step  
+- Key learning objectives  
+- Pitch layout description  
+- Media fields (diagram + video)
+
+### **3. `naming-convention-spec.md`**
+Defines:
+- Lesson naming  
+- Session naming  
+- Media filenames  
+- Age‑group prefixes  
+- Skill prefixes  
+- Versioning rules  
+
+### **4. `media-format-spec.md`**
+Defines:
+- PNG format  
+- Aspect ratios (4:5 or 1:1)  
+- Transparent or white background  
+- Mobile‑first readability  
+
+### **5. `supabase-setup-spec.md`**
+Defines:
+- Folder structure  
+- Table structure  
+- Field requirements  
+- Media URL handling  
+- Linking lessons → sessions  
+
+These files form the **ruleset** for all lesson and session generation.
+
+---
+
+# 2. 🧩 The 8 Key Skills
+
+### **Defending**
+1. Tackling  
+2. Marking  
+3. Pressing  
+4. Intercepting  
+
+### **Attacking**
+5. Dribbling  
+6. Ball Striking  
+7. 1v1  
+8. Passing & Receiving  
+
+For each skill:
+- **U9** → 2 lessons  
+- **U10** → 2 lessons  
+
+Total lessons required:
+
+
+
+\[
+8 \cdot 2 \cdot 2 = 32
+\]
+
+
+
+---
+
+# 3. 🏗️ Production Pipeline (End‑to‑End)
+
+This is the official workflow for generating all lessons and sessions.
+
+---
+
+## **Step 1 — Create the Master Lesson Index (Control Panel)**
+
+Create a table (Google Sheet, Notion, or Markdown):
+
+| Skill | Age Group | Lesson # | Lesson Title | Status |
+|-------|-----------|----------|--------------|--------|
+
+Populate all 32 lessons.
+
+This prevents duplication and gives you a clear roadmap.
+
+---
+
+## **Step 2 — Generate Each Lesson Using `lesson-framework.md`**
+
+For each lesson:
+- Insert skill  
+- Insert age group  
+- Insert difficulty level  
+- Add 4 sessions (using the session template)  
+- Add learning objectives  
+- Add coaching focus  
+
+Every lesson must follow the exact structure defined in the framework.
+
+---
+
+## **Step 3 — Generate Each Session Using `session-template-spec.md`**
+
+Each session must include:
+
+- Session name  
+- Duration  
+- Organisation  
+- Equipment  
+- Coaching points  
+- Step‑by‑step  
+- Key learning objectives  
+- Pitch layout description  
+- Media filenames (diagram + video)  
+
+This ensures consistency across all 128 sessions.
+
+---
+
+## **Step 4 — Generate Pitch Layout Images**
+
+For each session:
+
+1. Use the pitch layout description  
+2. Create a PNG diagram  
+3. Save using naming conventions  
+4. Upload to Supabase  
+
+### **Supabase folder path:**
+
