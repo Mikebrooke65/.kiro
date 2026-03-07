@@ -1,0 +1,120 @@
+# Database Schema Specification
+This document defines the required Supabase database schema for the Football Coaching App.
+It includes the structure for lessons, sessions, and media assets. This schema must be
+implemented before lesson and session content is uploaded.
+
+---
+
+## 1. SESSIONS TABLE
+
+### Table Name
+sessions
+
+### Purpose
+Stores all individual training sessions. Each lesson references four sessions.
+
+### Fields
+- session_id (uuid, primary key)
+- age_group (text) — e.g., "u9"
+- session_number (integer) — 1–4 within a lesson
+- session_name (text)
+- duration (text)
+- organisation (text)
+- equipment (text)
+- pitch_layout_text (text)
+- pitchLayoutImageURL (text)
+- pitchLayoutAltText (text)
+- pitchLayoutAspectRatio (text) — e.g., "4:5"
+- demoVideoURL (text)
+- demoVideoThumbnailURL (text)
+- demoVideoDuration (text)
+- demoVideoCaption (text)
+- key_learning_objectives (text[]) — array
+- coaching_points (text[]) — array
+- step_by_step (text[]) — array
+- created_at (timestamp, default now())
+
+### Notes
+- Sessions are modular and reusable across lessons.
+- Media URLs must point to the Supabase `media` bucket.
+- Arrays allow flexible content without schema changes.
+
+---
+
+## 2. LESSONS TABLE
+
+### Table Name
+lessons
+
+### Purpose
+Stores full lessons, each containing four sessions.
+
+### Fields
+- lesson_id (uuid, primary key)
+- lesson_title (text)
+- age_group (text)
+- skill_category (text)
+- key_skill_focus (text)
+- lesson_description (text)
+- session_1_id (uuid, foreign key → sessions.session_id)
+- session_2_id (uuid, foreign key → sessions.session_id)
+- session_3_id (uuid, foreign key → sessions.session_id)
+- session_4_id (uuid, foreign key → sessions.session_id)
+- coach_rating (integer)
+- player_engagement (integer)
+- notes_for_next_time (text)
+- created_at (timestamp, default now())
+
+### Notes
+- Lessons reference sessions, not the other way around.
+- This keeps the system modular and scalable.
+
+---
+
+## 3. MEDIA TABLE (OPTIONAL BUT RECOMMENDED)
+
+### Table Name
+media
+
+### Purpose
+Tracks all media assets (images, videos) for future automation and asset management.
+
+### Fields
+- media_id (uuid, primary key)
+- media_type (text) — "image" or "video"
+- url (text)
+- alt_text (text)
+- aspect_ratio (text)
+- session_id (uuid, foreign key → sessions.session_id)
+- created_at (timestamp, default now())
+
+### Notes
+- Useful for analytics, regeneration, and asset auditing.
+- Not required for MVP but recommended for long-term scalability.
+
+---
+
+## 4. RELATIONSHIPS
+
+### lessons → sessions
+- session_1_id → sessions.session_id
+- session_2_id → sessions.session_id
+- session_3_id → sessions.session_id
+- session_4_id → sessions.session_id
+
+### media → sessions
+- session_id → sessions.session_id
+
+---
+
+## 5. INDEXING RECOMMENDATIONS
+
+To ensure fast queries:
+- Index `age_group` on both lessons and sessions
+- Index `session_number` on sessions
+- Index `lesson_title` for search
+- Index `media.session_id` for asset lookups
+
+---
+
+## 6. FUT
