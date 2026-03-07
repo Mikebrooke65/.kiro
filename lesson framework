@@ -11,7 +11,7 @@ and ease of database ingestion.
 - **Lesson Title**
 - **Age Group:** U9
 - **Skill Category:** Defending / Attacking
-- **Key Skill Focus:** (e.g. Tackling, Dribbling)
+- **Key Skill Focus:** (e.g., Tackling, Dribbling)
 - **Lesson Duration:** 90 minutes
 - **Lesson Description:** 2–3 sentences describing the overall learning outcome
 
@@ -21,7 +21,10 @@ and ease of database ingestion.
 
 Each lesson contains **4 sessions**, each **15–20 minutes** long.
 
+---
+
 ### SESSION 1 – Warm-Up & Technical
+
 **Purpose:**
 - Physically prepare players
 - Introduce movement or technical themes related to the lesson
@@ -35,6 +38,7 @@ Each lesson contains **4 sessions**, each **15–20 minutes** long.
 ---
 
 ### SESSION 2 – Skill Introduction
+
 **Purpose:**
 - Introduce the **key technique or decision**
 - Low to moderate pressure
@@ -48,6 +52,7 @@ Each lesson contains **4 sessions**, each **15–20 minutes** long.
 ---
 
 ### SESSION 3 – Skill Development (Progression)
+
 **Purpose:**
 - **Advance Session 2**
 - Add realism, pressure, space, or decision-making
@@ -61,6 +66,7 @@ Each lesson contains **4 sessions**, each **15–20 minutes** long.
 ---
 
 ### SESSION 4 – Game
+
 **Purpose:**
 - Allow players to apply learning in a realistic game
 - Reinforce the lesson theme using conditions or scoring incentives
@@ -79,8 +85,39 @@ Each session must include:
 - **Session Name**
 - **Duration**
 - **Organisation / How It Runs**
+- **Equipment**
 - **Pitch Layout (Text Diagram)**
+
+---
+
+### Media Fields (Optional)
+
+#### Pitch Layout Image
+- **pitchLayoutImageURL** – Link to the stored image (SVG or PNG)
+- **pitchLayoutAltText** – Short description for accessibility
+- **pitchLayoutAspectRatio** – Recommended: 4:5 or 1:1 for mobile-first display
+
+**Notes:**
+- Store all diagrams in a central asset library
+- Use simple, clean visuals suitable for small screens
+- Avoid embedding text inside images where possible
+
+#### Demo Video
+- **demoVideoURL** – Link to hosted video (YouTube, Vimeo, or CDN)
+- **demoVideoThumbnailURL** – Static preview image for fast loading
+- **demoVideoDuration** – e.g., “00:32”
+- **demoVideoCaption** – Short description of what the video demonstrates
+
+**Notes:**
+- Keep videos short (20–40 seconds)
+- Use consistent 16:9 thumbnails
+- Store all video assets centrally so updates don’t break sessions
+
+---
+
 - **Key Learning Objectives (2–5)**
+- **Coaching Points**
+- **Step-by-Step Delivery**
 
 ---
 
@@ -88,10 +125,27 @@ Each session must include:
 
 Use simple ASCII-style diagrams so lessons work in Markdown and databases.
 
-Legend:
-- `A` = Attacker
-- `D` = Defender
-- `o` = Cone
-- `[]` = Gate or Goal
+**Legend:**
+- `A` = Attacker  
+- `D` = Defender  
+- `o` = Cone  
+- `[]` = Gate or Goal  
 - `-->` = Player movement
-``
+
+### Diagram Format Standard (Required for All Pitch Layout Images)
+
+All pitch layout diagrams must follow the club’s visual standard:
+
+- **Image Format:** PNG
+- **Aspect Ratio:** 4:5 (preferred) or 1:1 (acceptable)
+- **Background:** Clean, minimal, mobile‑safe
+- **Style:** Consistent icons, colours, and arrow shapes across all sessions
+- **Storage:** All diagrams must be uploaded to the central Supabase media bucket
+- **Naming Convention:** pitch-u9-session-XXX.png
+
+Rationale:
+- Ensures consistent rendering across all mobile devices
+- Keeps file sizes predictable and lightweight
+- Supports clean display in the app’s session viewer
+- Allows easy regeneration and replacement without breaking lessons
+
