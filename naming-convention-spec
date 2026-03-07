@@ -1,0 +1,97 @@
+# Naming Convention Specification
+This document defines the mandatory naming conventions for all media assets
+used in the Football Coaching App. These conventions ensure consistency,
+automation compatibility, and predictable Supabase storage paths.
+
+---
+
+## 1. GENERAL RULES (APPLY TO ALL FILES)
+
+- All filenames must be **lowercase**
+- Use **hyphens** instead of spaces or underscores
+- All session numbers must be **zero‑padded** (001, 002, 003…)
+- Filenames must remain **stable** once uploaded (no renaming)
+- File extensions must be **lowercase**
+
+---
+
+## 2. PITCH DIAGRAMS (PNG)
+
+Used for pitch layout images displayed in the app.
+
+Format:
+pitch-u9-session-001.png  
+pitch-u9-session-002.png  
+pitch-u9-session-003.png  
+
+Rules:
+- PNG format only
+- Stored in `/media/pitch-diagrams/u9/`
+- One diagram per session
+- Aspect ratio defined in the Media Format Standard
+
+---
+
+## 3. VIDEO THUMBNAILS (PNG)
+
+Used for fast-loading preview images for demo videos.
+
+Format:
+thumb-u9-session-001.png  
+
+Rules:
+- PNG format
+- 16:9 aspect ratio
+- Stored in `/media/video-thumbnails/u9/`
+
+---
+
+## 4. VIDEOS (MP4)
+
+Only applies if videos are self-hosted in Supabase.
+
+Format:
+video-u9-session-001.mp4  
+
+Rules:
+- MP4 format
+- Stored in `/media/videos/u9/`
+- If using YouTube/Vimeo, store only the URL in the database
+
+---
+
+## 5. LESSON FILES (OPTIONAL)
+
+If lesson files are exported or stored locally:
+
+Format:
+lesson-u9-001.md  
+lesson-u9-002.md  
+
+Rules:
+- Lowercase
+- Hyphens
+- Zero-padded lesson numbers
+
+---
+
+## 6. FUTURE AGE GROUPS
+
+Naming conventions must scale consistently:
+
+Examples:
+pitch-u10-session-001.png  
+thumb-u11-session-004.png  
+video-u12-session-010.mp4  
+
+---
+
+## 7. RATIONALE
+
+These naming conventions ensure:
+- Predictable Supabase paths
+- Easy automation and batch processing
+- Clean, scalable asset libraries
+- No broken URLs in the app
+- Consistency across all age groups and future expansions
+
