@@ -5,9 +5,9 @@ ensure consistency, database compatibility, and predictable rendering.
 
 ---
 
-## 1. SESSION METADATA
+## 1. Session metadata
 
-### Required Fields
+**Required fields:**
 - age_group (e.g., "u9")
 - session_number (1–4 within a lesson)
 - session_name
@@ -15,54 +15,79 @@ ensure consistency, database compatibility, and predictable rendering.
 - organisation (text description)
 - equipment (text or array)
 
-### Notes
-- age_group and session_number must match the naming convention.
-- session_name must be short, clear, and action‑focused.
+**Notes:**
+- `age_group` and `session_number` must align with the lesson and naming conventions.
+- `session_name` must be short, clear, and action‑focused.
 
 ---
 
-## 2. PITCH LAYOUT
+## 2. Pitch layout
 
-### Required Fields
+**Required fields:**
 - pitch_layout_text (ASCII diagram)
 - pitchLayoutImageURL (public Supabase URL)
 - pitchLayoutAltText (accessibility)
 - pitchLayoutAspectRatio ("4:5" or "1:1")
 
-### Rules
+**Rules:**
 - ASCII diagram must be clean and readable.
 - Image must follow the Media Format Specification.
-- Alt text must describe the diagram clearly.
+- Alt text must clearly describe the diagram.
 
 ---
 
-## 3. DEMO VIDEO (OPTIONAL)
+## 3. Demo video (optional)
 
-### Fields
+**Fields:**
 - demoVideoURL
 - demoVideoThumbnailURL
 - demoVideoDuration
 - demoVideoCaption
 
-### Rules
+**Rules:**
 - Thumbnail is required if a video is provided.
-- Videos may be external (YouTube/Vimeo) or MP4.
+- Videos may be external (YouTube/Vimeo) or MP4 stored in Supabase.
 
 ---
 
-## 4. COACHING CONTENT
+## 4. Coaching content
 
-### Required Arrays
+**Required arrays:**
 - key_learning_objectives (3–5 items)
 - coaching_points (3–6 items)
 - step_by_step (3–6 steps)
 
-### Rules
-- Arrays must be stored as text[] in Supabase.
+**Rules:**
+- Arrays are stored as `text[]` in Supabase.
 - Each item must be a short, clear coaching instruction.
-- No long paragraphs.
+- Avoid long paragraphs.
 
 ---
 
-## 5. FULL SESSION TEMPLATE (COPY/PASTE)
+## 5. Full session JSON template
+
+```json
+{
+  "age_group": "u9",
+  "session_number": 1,
+  "session_name": "",
+  "duration": "",
+  "organisation": "",
+  "equipment": "",
+
+  "pitch_layout_text": "",
+  "pitchLayoutImageURL": "",
+  "pitchLayoutAltText": "",
+  "pitchLayoutAspectRatio": "4:5",
+
+  "demoVideoURL": "",
+  "demoVideoThumbnailURL": "",
+  "demoVideoDuration": "",
+  "demoVideoCaption": "",
+
+  "key_learning_objectives": [],
+  "coaching_points": [],
+  "step_by_step": []
+}
+
 
