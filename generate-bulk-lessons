@@ -14,14 +14,13 @@ It consolidates:
 - Supabase folder structure  
 - The production pipeline for all 32 lessons  
 
-This is your **return‑to reference** for tomorrow and for scaling future lesson batches.
+This is your **return‑to reference** for future lesson production.
 
 ---
 
 # 1. 📁 GitHub Files That Define the System
 
-These files already exist in your `.kiro` repository (lesson‑plans branch) and MUST be followed for all lesson production.  
-(Verified from repo structure) 
+These files exist in the `.kiro` directory of the `lesson-plans` branch and MUST be followed for all lesson production.
 
 ### **1. `lesson-framework.md`**
 Defines the mandatory structure for every lesson:
