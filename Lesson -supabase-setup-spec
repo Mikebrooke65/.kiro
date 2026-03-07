@@ -1,0 +1,153 @@
+# Supabase Setup Specification
+This document defines the required Supabase configuration for the Football Coaching App.
+It outlines the folder structure, naming conventions, media standards, and database schema
+that must be implemented before lesson and session content is uploaded.
+
+---
+
+## 1. STORAGE BUCKETS & FOLDER STRUCTURE
+
+Create a single public bucket named:
+
+media
+
+Inside the bucket, create the following folder structure:
+
+/media
+   /pitch-diagrams
+       /u9
+       /u10
+       /u11
+   /video-thumbnails
+       /u9
+       /u10
+       /u11
+   /videos
+       /u9
+       /u10
+       /u11
+   /icons
+   /misc
+
+Requirements:
+- All folders must be publicly accessible.
+- Public URLs must remain stable for long-term use.
+- This structure must not change once content is uploaded.
+
+---
+
+## 2. NAMING CONVENTIONS (MANDATORY)
+
+### Pitch Diagrams (PNG)
+pitch-u9-session-001.png  
+pitch-u9-session-002.png  
+pitch-u9-session-003.png  
+
+### Video Thumbnails (PNG)
+thumb-u9-session-001.png  
+
+### Videos (MP4, if self-hosted)
+video-u9-session-001.mp4  
+
+Rules:
+- All filenames must be lowercase.
+- Use hyphens, not underscores.
+- Session numbers must be zero-padded (001, 002, 003…).
+
+---
+
+## 3. MEDIA FORMAT STANDARDS
+
+### Pitch Layout Diagrams
+- Format: PNG
+- Aspect Ratio: 4:5 (preferred) or 1:1 (acceptable)
+- Background: Clean, minimal, mobile-safe
+- Style: Consistent icons, colours, and arrow shapes across all sessions
+
+### Video Thumbnails
+- Format: PNG
+- Aspect Ratio: 16:9
+- Purpose: Fast-loading preview image for demo videos
+
+### Videos
+- Format: MP4 (if hosted in Supabase)
+- Recommended: Host externally (YouTube/Vimeo) and store only URLs
+
+---
+
+## 4. DATABASE TABLES
+
+### Table: sessions
+Fields:
+- session_id (PK)
+- session_name
+- duration
+- organisation
+- equipment
+- pitch_layout_text
+- pitchLayoutImageURL
+- pitchLayoutAltText
+- pitchLayoutAspectRatio
+- demoVideoURL
+- demoVideoThumbnailURL
+- demoVideoDuration
+- demoVideoCaption
+- key_learning_objectives (array)
+- coaching_points (array)
+- step_by_step (array)
+
+### Table: lessons
+Fields:
+- lesson_id (PK)
+- lesson_title
+- age_group
+- skill_category
+- key_skill_focus
+- lesson_description
+- session_1_id
+- session_2_id
+- session_3_id
+- session_4_id
+- coach_rating
+- player_engagement
+- notes_for_next_time
+
+### Table: media (optional but recommended)
+Fields:
+- media_id
+- media_type (image, video)
+- url
+- alt_text
+- aspect_ratio
+- session_id (FK)
+- created_at
+
+---
+
+## 5. SESSION TEMPLATE (OPTIONAL BUT RECOMMENDED)
+
+Create a template row in the sessions table with empty fields.
+This allows rapid duplication when adding new sessions.
+
+---
+
+## 6. MEDIA UPLOAD WORKFLOW
+
+1. Generate diagram (AI-generated PNG)
+2. Save locally
+3. Upload to the correct folder in the media bucket
+4. Copy the public URL
+5. Paste into the session record (pitchLayoutImageURL)
+
+This workflow must be followed for all sessions.
+
+---
+
+## 7. FUTURE-PROOFING NOTES
+
+- Folder structure must not change once content is uploaded.
+- All media must follow naming conventions exactly.
+- All diagrams must use the standard aspect ratio.
+- All content must be stored in the media bucket, not scattered across buckets.
+- All URLs must be public and stable.
+
