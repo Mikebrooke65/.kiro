@@ -1,0 +1,68 @@
+# Session Template Specification
+This document defines the required structure and formatting for all training sessions
+used in the Football Coaching App. All sessions must follow this template exactly to
+ensure consistency, database compatibility, and predictable rendering.
+
+---
+
+## 1. SESSION METADATA
+
+### Required Fields
+- age_group (e.g., "u9")
+- session_number (1–4 within a lesson)
+- session_name
+- duration (e.g., "15–20 minutes")
+- organisation (text description)
+- equipment (text or array)
+
+### Notes
+- age_group and session_number must match the naming convention.
+- session_name must be short, clear, and action‑focused.
+
+---
+
+## 2. PITCH LAYOUT
+
+### Required Fields
+- pitch_layout_text (ASCII diagram)
+- pitchLayoutImageURL (public Supabase URL)
+- pitchLayoutAltText (accessibility)
+- pitchLayoutAspectRatio ("4:5" or "1:1")
+
+### Rules
+- ASCII diagram must be clean and readable.
+- Image must follow the Media Format Specification.
+- Alt text must describe the diagram clearly.
+
+---
+
+## 3. DEMO VIDEO (OPTIONAL)
+
+### Fields
+- demoVideoURL
+- demoVideoThumbnailURL
+- demoVideoDuration
+- demoVideoCaption
+
+### Rules
+- Thumbnail is required if a video is provided.
+- Videos may be external (YouTube/Vimeo) or MP4.
+
+---
+
+## 4. COACHING CONTENT
+
+### Required Arrays
+- key_learning_objectives (3–5 items)
+- coaching_points (3–6 items)
+- step_by_step (3–6 steps)
+
+### Rules
+- Arrays must be stored as text[] in Supabase.
+- Each item must be a short, clear coaching instruction.
+- No long paragraphs.
+
+---
+
+## 5. FULL SESSION TEMPLATE (COPY/PASTE)
+
