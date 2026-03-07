@@ -1,0 +1,63 @@
+# Media Format Specification
+This document defines the required technical standards for all media assets used in the
+Football Coaching App. These rules ensure consistency, fast loading, accessibility, and
+predictable rendering across devices.
+
+---
+
+## 1. IMAGE FORMATS
+
+### Pitch Layout Diagrams
+- Format: PNG
+- Aspect Ratio: **4:5 (preferred)** or **1:1 (acceptable)**
+- Resolution: Minimum 800px on the short edge
+- Background: Clean, minimal, high contrast
+- Style: Consistent icons, colours, arrows, and line weights
+- Naming: pitch-u9-session-001.png
+- Storage Path: `/media/pitch-diagrams/u9/`
+
+### Video Thumbnails
+- Format: PNG
+- Aspect Ratio: **16:9**
+- Resolution: Minimum 1280×720
+- Purpose: Fast-loading preview for demo videos
+- Naming: thumb-u9-session-001.png
+- Storage Path: `/media/video-thumbnails/u9/`
+
+---
+
+## 2. VIDEO FORMATS
+
+### Demo Videos
+- Format: MP4 (if self-hosted)
+- Codec: H.264 recommended
+- Max Length: 30–60 seconds
+- Resolution: 720p or 1080p
+- Thumbnail Required: Yes (see above)
+- Naming: video-u9-session-001.mp4
+- Storage Path: `/media/videos/u9/`
+
+### External Hosting (Preferred)
+- YouTube or Vimeo URLs may be used instead of MP4 files.
+- Only store the URL in the database.
+- Thumbnail still required and stored in Supabase.
+
+---
+
+## 3. ACCESSIBILITY REQUIREMENTS
+
+### All images must include:
+- `alt_text` describing the diagram or thumbnail
+- Example: “Pitch layout showing 3v1 rondo with cones in a square”
+
+### All videos must include:
+- `demoVideoCaption` (short description)
+- Example: “Demonstration of 3v1 rondo movement and passing pattern”
+
+---
+
+## 4. SUPABASE STORAGE RULES
+
+- All media must be stored in the **media** bucket.
+- Folder structure must follow:
+
