@@ -22,6 +22,14 @@ This is your **return‑to reference** for future lesson production.
 
 These files exist in the `.kiro` directory of the `lesson-plans` branch and MUST be followed for all lesson production.
 
+## Assistant Output Requirements
+
+To ensure all generated lessons are production‑ready, consistent, and compatible with the Kiro coaching app, the assistant must follow these output rules for every lesson:
+
+### 1. Copy‑Safe Filename
+- The assistant must generate a clean, copy‑ready filename for the lesson.
+- Format: `<AGEGROUP>-<SKILL>-Lesson-<##>.md`
+
 ### **1. `lesson-framework.md`**
 Defines the mandatory structure for every lesson:
 - Lesson metadata  
