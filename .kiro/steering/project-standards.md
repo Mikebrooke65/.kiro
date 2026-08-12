@@ -297,13 +297,40 @@ git push kiro prototype && git push origin prototype
 
 ## Support Resources
 
-- **Deployment Guide**: See `DEPLOYMENT-GUIDE.md`
-- **Changelog**: See `CHANGELOG.md`
-- **Conversation History**: See `CONVERSATION-HISTORY.md`
-- **Kiro Handover**: See `KIRO_HANDOVER.md`
+- **Current Status / Next Steps**: See `NEXT-SESSION-NOTES.md` (root)
+- **Changelog**: See `CHANGELOG.md` (root)
+- **Conversation History**: See `CONVERSATION-HISTORY.md` (root)
+- **Deployment Guide**: See `docs/deployment/DEPLOYMENT-GUIDE.md`
+- **Kiro Handover**: See `docs/project/KIRO_HANDOVER.md`
+- **Bailey Lesson Progress**: See `docs/lessons/ACADEMY-MIGRATION-PROGRESS.md`
+- **Lesson Creation Guide**: See `docs/lessons/LESSON-CREATION-GUIDE.md`
+
+## Docs Folder Structure
+
+```
+docs/
+  project/        ← planning, requirements, analysis docs
+  deployment/     ← deployment, setup, troubleshooting
+  lessons/        ← Bailey content, lesson guides, image prompts
+    image-prompts/  ← U9 image prompt files
+  archive/        ← old/superseded docs
+```
+
+## Secrets Backup
+
+**IMPORTANT**: Environment/secret files are backed up to OneDrive:
+- Location: `C:\Users\miker\OneDrive\Project Secrets\`
+- Files: `WCR-Football.env.development`, `WCR-Football.env.production`
+
+**If you change any .env file or add new secrets**, remind the user to update the backup copy:
+```bash
+Copy-Item ".env.development" "C:\Users\miker\OneDrive\Project Secrets\WCR-Football.env.development"
+Copy-Item ".env.production" "C:\Users\miker\OneDrive\Project Secrets\WCR-Football.env.production"
+```
 
 ## Version History
 
+- **2026-08-13**: Added secrets backup documentation
 - **2026-03-10**: Created project standards document
 - **2026-03-10**: Documented dual repository setup and deployment workflow
 - **2026-03-10**: Established database architecture standards

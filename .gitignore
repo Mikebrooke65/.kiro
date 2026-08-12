@@ -37,3 +37,9 @@ bailey-image-mapping.json
 *.njsproj
 *.sln
 *.sw?
+
+# Archive of old/superseded material kept locally as a safety net.
+# Contains nested repos from other projects (coaching-app-prototype,
+# family-resource-project, Urrah-coaching-app) and specs belonging to
+# "The Landing" project - not part of WCR Football App, kept on disk only.
+_archive/
