@@ -1,27 +1,25 @@
 # DEPLOYMENT GUIDE
 
-## CRITICAL: Git Push Commands
+**Note (2026-08-13):** This project now uses a single GitHub repository and a
+single remote (`kiro`). The old `origin` remote and dual-repo setup have been
+retired — see `docs/deployment/DEPLOYMENT-GUIDE.md` for the full current
+workflow. This file is kept for the file-location notes below.
 
-**ALWAYS push to origin prototype branch (the .kiro repo that Netlify watches):**
+## Git Push Command
 
 ```bash
-git push origin prototype:prototype
+git push kiro prototype
 ```
-
-**NEVER push to:**
-- `prototype` remote - that's a different repo that Netlify doesn't watch!
-- `origin main` branch - Netlify watches the `prototype` branch, not `main`!
 
 ## Repository Setup
 
-- **origin**: https://github.com/Mikebrooke65/.kiro.git (NETLIFY WATCHES THIS)
-- **prototype**: https://github.com/Mikebrooke65/coaching-app-prototype.git (NOT USED FOR DEPLOYMENT)
+- **kiro**: https://github.com/Mikebrooke65/WCR-Football-App.git (only remote, watched by Netlify)
 
 ## Netlify Configuration
 
 - **Site**: https://wcrfootball.netlify.app
-- **Watches**: github.com/Mikebrooke65/.kiro
-- **Branch**: prototype (NOT main!)
+- **Watches**: github.com/Mikebrooke65/WCR-Football-App
+- **Branch**: prototype
 - **Build command**: npm run build
 - **Publish directory**: dist
 
@@ -30,7 +28,7 @@ git push origin prototype:prototype
 1. Make changes to files
 2. Test locally if needed: `npm run dev`
 3. Commit: `git add -A && git commit -m "message"`
-4. Push: `git push origin prototype:prototype`
+4. Push: `git push kiro prototype`
 5. Wait 1-2 minutes for Netlify to build and deploy
 6. Verify at https://wcrfootball.netlify.app
 
@@ -50,7 +48,7 @@ If changes don't appear:
 1. Check Netlify deploy log - is it building the latest commit?
 2. Check browser cache - hard refresh (Ctrl+Shift+R)
 3. Check the JS bundle hash in Network tab - should change with each deploy
-4. Verify you pushed to origin, not prototype
+4. Verify you pushed to `kiro`
 
 ## Test Credentials
 

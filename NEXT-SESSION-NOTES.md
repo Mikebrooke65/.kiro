@@ -7,10 +7,12 @@
 
 **App URL**: https://wcrfootball.netlify.app  
 **Branch**: `prototype`  
-**Push to BOTH remotes every time**:
+**Single remote (`kiro`), push here every time**:
 ```bash
-git push kiro prototype && git push origin prototype
+git push kiro prototype
 ```
+*(As of 2026-08-13, the old dual-remote setup is retired — see
+`docs/deployment/DEPLOYMENT-GUIDE.md`.)*
 
 ---
 
@@ -97,7 +99,7 @@ git push kiro prototype && git push origin prototype
 
 | Purpose | Location |
 |---------|----------|
-| Project standards + dual-remote rules | `.kiro/steering/project-standards.md` |
+| Project standards + deployment rules | `.kiro/steering/project-standards.md` |
 | Feature history | `CHANGELOG.md` |
 | Session-by-session decisions | `CONVERSATION-HISTORY.md` |
 | Deployment instructions | `docs/deployment/DEPLOYMENT-GUIDE.md` |

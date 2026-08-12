@@ -3,20 +3,22 @@
 ## Repository Configuration
 
 ### Current Setup
-This project uses **TWO** GitHub repositories:
 
-1. **Primary Repository (Netlify)**: `github.com/Mikebrooke65/.kiro`
-   - This is what Netlify watches for deployments
-   - Branch: `prototype`
-   - Deploys to: https://wcrfootball.netlify.app
+**As of 2026-08-13**: This project uses **ONE** GitHub repository. The
+previous two-repo setup was legacy clutter from initial project setup, not a
+deliberate backup strategy, and the two repos silently drifted out of sync
+more than once, causing real confusion. The old secondary repository
+(`coaching-app-prototype`) has been renamed to `football-app-old` and
+archived (read-only) on GitHub. It is retired and not used for anything.
 
-2. **Secondary Repository**: `github.com/Mikebrooke65/coaching-app-prototype`
-   - Used for backup/alternative hosting
-   - Not connected to Netlify
+**Repository**: `github.com/Mikebrooke65/WCR-Football-App`
+- This is what Netlify watches for deployments
+- Default branch: `prototype`
+- Deploys to: https://wcrfootball.netlify.app
 
 ### Git Remotes Configuration
 
-Your local repository should have these remotes:
+Your local repository should have exactly one remote:
 
 ```bash
 git remote -v
@@ -24,17 +26,20 @@ git remote -v
 
 Should show:
 ```
-kiro    https://github.com/Mikebrooke65/.kiro.git (fetch)
-kiro    https://github.com/Mikebrooke65/.kiro.git (push)
-origin  https://github.com/Mikebrooke65/coaching-app-prototype.git (fetch)
-origin  https://github.com/Mikebrooke65/coaching-app-prototype.git (push)
+kiro    https://github.com/Mikebrooke65/WCR-Football-App.git (fetch)
+kiro    https://github.com/Mikebrooke65/WCR-Football-App.git (push)
+```
+
+There should be no `origin` remote. If one appears, remove it:
+```bash
+git remote remove origin
 ```
 
 ### Setting Up Remotes (If Missing)
 
 If you don't have the `kiro` remote:
 ```bash
-git remote add kiro https://github.com/Mikebrooke65/.kiro.git
+git remote add kiro https://github.com/Mikebrooke65/WCR-Football-App.git
 ```
 
 ## Deployment Workflow
@@ -47,13 +52,9 @@ git remote add kiro https://github.com/Mikebrooke65/.kiro.git
    git commit -m "your commit message"
    ```
 
-2. **Push to BOTH repositories**:
+2. **Push**:
    ```bash
-   # Push to Netlify repository (REQUIRED for deployment)
    git push kiro prototype
-   
-   # Push to backup repository (optional but recommended)
-   git push origin prototype
    ```
 
 3. **Verify deployment**:
@@ -61,27 +62,18 @@ git remote add kiro https://github.com/Mikebrooke65/.kiro.git
    - Check https://app.netlify.com for build status
    - If auto-deploy doesn't trigger, manually trigger from Netlify dashboard
 
-### Quick Deploy Command
-
-To push to both repositories at once:
-```bash
-git push kiro prototype && git push origin prototype
-```
-
 ## Common Issues
 
 ### Issue: Netlify Not Deploying
 
 **Symptom**: You pushed code but Netlify shows old commit hash
 
-**Cause**: You pushed to wrong repository (origin instead of kiro)
-
 **Solution**:
 ```bash
-# Check which remote you pushed to
+# Check the last commit pushed
 git log --oneline -1
 
-# Push to correct remote
+# Push again to be sure
 git push kiro prototype
 
 # Manually trigger deploy in Netlify if needed
@@ -96,41 +88,30 @@ git push kiro prototype
 2. Site settings → Build & deploy
 3. Click "Trigger deploy" → "Clear cache and deploy site"
 
-### Issue: Wrong Remote Configured
+### Issue: Unexpected Remote Configured
 
-**Symptom**: `git push` goes to wrong repository
+**Symptom**: `git push` behaves unexpectedly, or an `origin` remote reappears
 
 **Solution**:
 ```bash
 # Check current remotes
 git remote -v
 
-# Remove incorrect remote
+# Remove anything that isn't `kiro`
 git remote remove <remote-name>
 
-# Add correct remote
-git remote add kiro https://github.com/Mikebrooke65/.kiro.git
+# Confirm kiro points at the right place
+git remote set-url kiro https://github.com/Mikebrooke65/WCR-Football-App.git
 ```
 
 ## Netlify Configuration
 
 ### Current Settings
-- **Repository**: github.com/Mikebrooke65/.kiro
+- **Repository**: github.com/Mikebrooke65/WCR-Football-App
 - **Branch**: prototype
 - **Build command**: npm run build
 - **Publish directory**: dist
 - **Production URL**: https://wcrfootball.netlify.app
-
-### Changing Repository (If Needed)
-
-If you want to switch Netlify to watch `coaching-app-prototype` instead:
-
-1. Go to Netlify dashboard
-2. Site settings → Build & deploy → Link repository
-3. Disconnect current repository
-4. Connect to `coaching-app-prototype`
-5. Set branch to `prototype`
-6. Update this documentation
 
 ## Database Migrations
 
@@ -153,8 +134,7 @@ Before pushing to production:
 - [ ] CHANGELOG.md updated
 - [ ] CONVERSATION-HISTORY.md updated (for major changes)
 - [ ] Committed to git
-- [ ] Pushed to `kiro` remote (for Netlify)
-- [ ] Pushed to `origin` remote (for backup)
+- [ ] Pushed to `kiro` remote
 
 ## Emergency Rollback
 
@@ -182,8 +162,7 @@ If deployment breaks production:
 
 ## Notes
 
-- Always push to `kiro` remote for production deployments
+- Push to `kiro` remote for production deployments — it's the only remote
 - Netlify auto-deploys on push to `prototype` branch
 - Build time is typically 1-2 minutes
 - Clear cache if deployment seems stuck on old version
-- Keep both repositories in sync for backup purposes

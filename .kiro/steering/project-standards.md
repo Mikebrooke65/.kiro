@@ -1,5 +1,6 @@
 ---
 inclusion: auto
+description: Core project standards, git/deployment workflow, and coding conventions for WCR Football App
 ---
 
 # Project Standards and Conventions
@@ -10,36 +11,33 @@ This document defines the core standards, conventions, and critical information 
 
 ### Git Repository Configuration
 
-**CRITICAL**: This project uses TWO GitHub repositories:
+**As of 2026-08-13**: This project uses **ONE** GitHub repository. The previous
+two-repo setup (`.kiro` + `coaching-app-prototype`) was legacy clutter from
+project setup, not a deliberate backup strategy — the two repos silently
+drifted out of sync and caused repeated confusion. `coaching-app-prototype`
+has been renamed to `football-app-old` and archived (read-only) on GitHub.
+It is not used for anything going forward.
 
-1. **Primary (Netlify)**: `github.com/Mikebrooke65/.kiro`
-   - Connected to Netlify for production deployments
-   - Branch: `prototype`
-   - URL: https://wcrfootball.netlify.app
-
-2. **Backup**: `github.com/Mikebrooke65/coaching-app-prototype`
-   - Used for backup/alternative hosting
-   - Not connected to Netlify
+**Single repository**: `github.com/Mikebrooke65/WCR-Football-App`
+- Connected to Netlify for production deployments
+- Default branch: `prototype`
+- URL: https://wcrfootball.netlify.app
 
 ### Git Remotes
 
 Required remotes configuration:
 ```
-kiro    https://github.com/Mikebrooke65/.kiro.git (PRIMARY - for Netlify)
-origin  https://github.com/Mikebrooke65/coaching-app-prototype.git (backup)
+kiro    https://github.com/Mikebrooke65/WCR-Football-App.git (only remote)
 ```
+
+There is no `origin` remote on this project. If one reappears, remove it —
+it should not exist.
 
 ### Deployment Commands
 
-**ALWAYS push to BOTH remotes**:
+**Push to `kiro` only**:
 ```bash
-git push kiro prototype      # Required for Netlify deployment
-git push origin prototype    # Backup
-```
-
-Or combined:
-```bash
-git push kiro prototype && git push origin prototype
+git push kiro prototype
 ```
 
 ## Database Architecture
@@ -211,7 +209,7 @@ After ANY code changes, update:
 3. **Run migrations** in Supabase (if any)
 4. **Update documentation**: CHANGELOG.md, CONVERSATION-HISTORY.md
 5. **Commit**: `git add -A && git commit -m "message"`
-6. **Push to BOTH remotes**: `git push kiro prototype && git push origin prototype`
+6. **Push**: `git push kiro prototype`
 7. **Verify deployment** in Netlify dashboard
 
 ### Pre-Commit Checklist
@@ -222,19 +220,9 @@ After ANY code changes, update:
 - [ ] CHANGELOG.md updated
 - [ ] CONVERSATION-HISTORY.md updated (for major changes)
 - [ ] Committed with descriptive message
-- [ ] Pushed to BOTH remotes (kiro + origin)
+- [ ] Pushed to `kiro` remote
 
 ## Common Pitfalls
-
-### ❌ Wrong: Pushing to Wrong Remote
-```bash
-git push origin prototype  # Only pushes to backup, NOT Netlify
-```
-
-### ✅ Correct: Push to Both
-```bash
-git push kiro prototype && git push origin prototype
-```
 
 ### ❌ Wrong: Using user_teams for Team Queries
 ```typescript
