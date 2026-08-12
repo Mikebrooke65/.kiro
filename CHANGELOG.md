@@ -4,6 +4,74 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+## [2026-08-13] - GitHub Structure Cleanup, Repo Recovery & Capacitor Scoping
+
+### Fixed
+- **Recovered `src/` and `supabase/migrations/`**: both were missing from disk
+  (245 files) following a laptop folder consolidation earlier the same day.
+  Nothing was actually lost — restored cleanly from the last commit on the
+  `kiro/prototype` branch (April 7). Confirmed complete: 186 files in `src/`,
+  43 migrations restored.
+- **Fixed Supabase keep-alive workflow returning HTTP 401**: the anon key
+  cannot query the bare REST root (`/rest/v1/`) on current Supabase projects —
+  that endpoint now requires the `service_role` key. Switched the ping to
+  query the `teams` table instead (confirmed HTTP 200), and added a failure
+  check so the job goes red in GitHub Actions if it breaks again instead of
+  passing silently.
+- **Fixed GitHub Actions not recognizing the keep-alive workflow**
+  (`workflow_dispatch` returned 404): the workflow was only pushed to
+  `prototype`, but GitHub only recognizes scheduled/manually-triggered
+  workflows from the repository's *default* branch, which was still `main`
+  (months stale). Fixed by making `prototype` the default branch.
+
+### Changed
+- **Consolidated GitHub structure from two repositories to one.** The
+  previous setup (`Mikebrooke65/.kiro` + `Mikebrooke65/coaching-app-prototype`)
+  was legacy clutter from initial project setup, not a deliberate backup
+  strategy, and the two repos had silently drifted out of sync more than
+  once — `coaching-app-prototype` was missing entire features (Tournament
+  Management, Admin Reporting, Team Messaging, Game Day Subs, User Role
+  Management) that had been on `.kiro` for months.
+  - Renamed `Mikebrooke65/.kiro` → `Mikebrooke65/WCR-Football-App`
+  - Renamed `Mikebrooke65/coaching-app-prototype` → `Mikebrooke65/football-app-old`
+    and archived it (read-only)
+  - Removed the local `origin` git remote entirely — `kiro` is now the only
+    remote
+  - Updated all active documentation (steering file, both deployment guides,
+    `NEXT-SESSION-NOTES.md`) to reflect the single-remote workflow
+- **Reorganized root-level documentation into `docs/`** subfolders
+  (`docs/project`, `docs/deployment`, `docs/lessons`, `docs/archive`) — this
+  reorg had been done on disk previously but never committed to git; it's
+  now properly recorded as file renames/moves.
+- **Excluded local `_archive/` folder from git** via `.gitignore`. This
+  folder (kept on disk intentionally as a safety net during the laptop
+  folder consolidation) contains nested repositories from other projects
+  (`coaching-app-prototype`, `family-resource-project`, `Urrah-coaching-app`)
+  and specs belonging to a different project ("The Landing") — none of it
+  belongs in this project's git history.
+
+### Added
+- **Supabase keep-alive GitHub Action** (`.github/workflows/supabase-keepalive.yml`):
+  pings the Supabase project every 3 days to prevent the free tier's
+  7-day auto-pause. Confirmed working (HTTP 200).
+- **`docs/project/CAPACITOR-SCOPING.md`**: scoping document for wrapping the
+  app with Capacitor for App Store / Google Play distribution. Reviews an
+  external technical brief against the actual codebase — confirms auth is
+  email/password only (the complex magic-link deep-linking pattern in most
+  generic guides doesn't apply), flags the password reset redirect and
+  invite-code deep links as real gaps needing a decision, and sequences the
+  work against the three V1 priorities identified versus Heja: RSVP, push
+  notifications, and app store distribution.
+
+### Technical Notes
+- GitHub CLI (`gh`) installed and authenticated on this machine, enabling
+  direct repo administration (secrets, renames, archiving, default branch)
+  going forward without manual dashboard steps.
+- Root-level test credentials in `docs/deployment/DEPLOYMENT.md` were
+  reviewed and intentionally kept as-is (plaintext, git-tracked) — flagged
+  as a minor security tradeoff, kept for practical convenience on a
+  test-only account.
+
 ## [2026-04-07] - Tournament Management Phase 1 MVP
 
 ### Added
