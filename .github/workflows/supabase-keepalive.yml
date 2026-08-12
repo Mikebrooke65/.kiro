@@ -15,7 +15,12 @@ jobs:
     steps:
       - name: Ping Supabase REST endpoint
         run: |
-          curl -sS -o /dev/null -w "HTTP %{http_code}\n" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/?select=1" \
+          HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/teams?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+          echo "HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::Supabase ping failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
