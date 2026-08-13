@@ -144,11 +144,15 @@ reclaimable ≈ 260 MB against a ~20 GB need.
 disk/RAM to run Android Studio comfortably. This laptop stays as the
 main build machine.
 
-To work on the other laptop you'll need **Kiro installed there** (it's a
-desktop IDE, not browser-accessible), plus the repo cloned and
-`.env.development` copied across — same setup steps as the Mac checklist
-in `docs/project/MAC-SESSION-CHECKLIST.md`, minus the Xcode/CocoaPods
-parts.
+**Working on the other laptop**: user has previously logged into a
+browser-based Kiro, so that may be an option rather than a full desktop
+install. The thing to confirm on the day is whether that version can
+(a) read/write the local project files on that machine and (b) run local
+shell commands (`npm`, `npx cap`, `git`) — because driving an Android
+Studio build needs both. If it can't, fall back to installing Kiro
+desktop there, cloning the repo, and copying `.env.development` across
+(same as the Mac checklist in `docs/project/MAC-SESSION-CHECKLIST.md`,
+minus Xcode/CocoaPods).
 
 ⚠️ **Separately and more urgently**: 1.4 GB free is low enough to cause
 problems in its own right — failed installs, slow performance, Windows
