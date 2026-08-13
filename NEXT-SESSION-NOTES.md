@@ -127,13 +127,31 @@ operating as `anon` when it tries to insert the profile row — the RLS
 policy (`id = auth.uid()`) can't match because there's no authenticated
 session yet.
 
-**Fix needed**: move the profile creation + team assignment to a
-**Supabase Edge Function** (using service_role, same pattern as the
-existing `create-user` function) rather than client-side INSERT. This
-also aligns with V1.2c (transactional email) — once we have a proper
-email service, the signup flow should: create auth user → send
-confirmation email → on confirmation, Edge Function creates profile +
-team membership + marks invite as redeemed.
+**Key insight (2026-08-14)**: V1.2c (transactional email) and V1.2e
+(this fix) collapse into essentially one piece of work, not two:
+- If WE sent the invite email to the manager's address, and they clicked
+  OUR link from that email, that act alone proves they own the email.
+  Supabase sending a second "please confirm" is redundant friction.
+- Fix: when creating the auth user via the Edge Function, use
+  `email_confirm: true` (same flag the existing `create-user` Edge
+  Function already uses) → Supabase skips confirmation → user gets an
+  immediate session → profile INSERT works → no double-email.
+- This only applies when the invite was sent via our email service (we
+  can prove delivery to the correct address). For the "Copy Link"
+  fallback (admin pastes link into a random chat, no proof of who
+  clicked it), Supabase's confirmation step should still apply as a
+  safety net.
+
+**Practical outcome**: once V1.2c (email service) is built, the happy
+path is entirely frictionless — one email, one click, registered and in
+the app. The "Copy Link" path still works but retains the Supabase
+confirmation as a valid extra step.
+
+**Fix approach**: build a single Edge Function that handles the full
+registration (auth user creation with `email_confirm: true` + profile
+row + team membership + mark invite redeemed), called from the
+registration form, using service_role. Same pattern as the existing
+`create-user` Edge Function.
 
 **Note**: the existing code correctly handles the "user already exists"
 case (John Smith scenario) — if the email matches an existing full user,
