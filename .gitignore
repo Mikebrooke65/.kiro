@@ -17,6 +17,10 @@ dist-ssr
 .env.development
 .env.production
 
+# Supabase CLI local state - machine/session-specific, not meaningful
+# project state, regenerates on `supabase link`
+supabase/.temp/
+
 # Bailey slides - keep XML/rels for mapping, ignore images
 media/
 slides/
