@@ -2,6 +2,18 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  # Netlify's secrets scanner flags the Android/iOS Firebase config files
+  # as containing "likely secrets" (the API keys inside them). This is a
+  # false positive: Google's Firebase client keys are designed to be
+  # public and committed to source control - they're restricted by
+  # package name/bundle ID + SHA fingerprint, not by being kept secret.
+  # (Tried SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES first - that backfired,
+  # since putting the key value into an env var made Netlify's separate
+  # env-var leak scanner flag it too. SECRETS_SCAN_OMIT_PATHS is the
+  # correct fix: skip scanning these specific files entirely.)
+  SECRETS_SCAN_OMIT_PATHS = "android/app/google-services.json,ios/App/App/GoogleService-Info.plist"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
