@@ -89,6 +89,46 @@ credible Heja replacement regardless of what else it does.
 - Push notification trigger for RSVP reminders (once V1.1's push
   infrastructure is proven working)
 
+### V1.2b Competitions/Teams/Users Process Review — IN PROGRESS
+**Context (2026-08-13 evening)**: Before going further, need to confirm the
+existing Competitions/Teams/Users setup actually supports how the club
+really operates, for both flows below.
+
+**Flow A — External Leagues (Federation-run)**:
+- Federation sets competition name, dates, draws, fixtures — entirely
+  external, we have no control and don't need to build any of it
+- Club forms teams/rosters (players, managers, coaches) in **Friendly
+  Manager** (external club management system, no API — CSV export only)
+- Club manually enters those teams into the Federation's own system
+  separately (unrelated to our app)
+- Currently: families go to the Federation's site for fixtures, and
+  whichever app the team manager picks (Heja etc.) for communication —
+  our app has zero visibility into any of this today
+- **Goal**: pull team + roster data out of Friendly Manager (CSV export)
+  and get it into our app, ideally as a recurring sync (weekly?) rather
+  than one-off — so our app becomes the coaching/communication home for
+  Federation-competition teams too
+- **Next step**: user to get a sample Friendly Manager export (or
+  screenshot of the export screen) so we can design the import/sync
+  against real data rather than assumptions — format, available fields
+  (age group? manager email? stable IDs for matching on re-import?) all
+  need confirming before designing anything
+
+**Flow B — Club Tournaments (already built)**: club is the organizer, sets
+dates, runs draws (round-robin engine already exists), teams join via the
+invite-code flow (just reviewed/fixed today — Upcoming/Active/Ended/Closed
+states, invites now open as soon as a competition is Upcoming).
+
+**Second thread — "clean, open system for lite users"**: a consistent
+onboarding path for anyone forming a team for one of *our own* Club
+Competitions, not just the current ad-hoc invite flow. Needs defining
+more precisely — what's missing vs. what already exists (invite codes,
+lite user registration via `/invite/:code`, promote-to-full flow).
+
+**Belief going in**: existing Competitions/Teams/Users architecture likely
+already aligns with most of this — needs a review pass against real
+Friendly Manager data, not necessarily new build.
+
 ### V1.3 Store Distribution — NOT STARTED
 - Google Play Console account ($25 one-time) — needed once ready for
   testers, can wait until V1.1 is proven on a real Android device
