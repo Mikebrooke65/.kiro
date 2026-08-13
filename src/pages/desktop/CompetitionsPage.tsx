@@ -260,36 +260,36 @@ export function CompetitionsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-4 gap-6">
         {/* Competition List */}
-        <div className="col-span-2">
-          <table className="w-full bg-white rounded-lg shadow">
+        <div className="col-span-3">
+          <table className="w-full bg-white rounded-lg shadow table-auto">
             <thead>
-              <tr className="border-b text-left text-sm text-gray-500">
-                <th className="p-3">Name</th>
-                <th className="p-3">Type</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Dates</th>
-                <th className="p-3">Actions</th>
+              <tr className="border-b text-left text-xs text-gray-500">
+                <th className="p-3 whitespace-nowrap">Name</th>
+                <th className="p-3 whitespace-nowrap">Type</th>
+                <th className="p-3 whitespace-nowrap">Status</th>
+                <th className="p-3 whitespace-nowrap">Dates</th>
+                <th className="p-3 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody>
               {competitions.map(comp => (
                 <tr key={comp.id} className={`border-b hover:bg-gray-50 cursor-pointer ${selectedComp?.id === comp.id ? 'bg-blue-50' : ''}`}
                   onClick={() => selectComp(comp)}>
-                  <td className="p-3 font-medium">{comp.name}</td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${comp.competition_type === 'external_league' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                  <td className="p-3 text-sm font-medium whitespace-nowrap">{comp.name}</td>
+                  <td className="p-3 whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${comp.competition_type === 'external_league' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
                       {comp.competition_type === 'external_league' ? 'External League' : 'Club Tournament'}
                     </span>
                   </td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${isActive(comp) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  <td className="p-3 whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${isActive(comp) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                       {isActive(comp) ? 'Active' : 'Closed'}
                     </span>
                   </td>
-                  <td className="p-3 text-sm text-gray-600">{comp.start_date} → {comp.end_date}</td>
-                  <td className="p-3">
+                  <td className="p-3 text-xs text-gray-600 whitespace-nowrap">{comp.start_date} → {comp.end_date}</td>
+                  <td className="p-3 whitespace-nowrap">
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => handleEdit(comp)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">Edit</button>
                       {isActive(comp) && (
