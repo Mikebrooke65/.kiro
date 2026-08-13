@@ -44,23 +44,34 @@ built, valuable, but not blocking launch).**
 ### V1.1 Capacitor + Push Notifications — IN PROGRESS
 **Goal**: App installable on iOS/Android, push notifications working.
 
-**Done (code-complete, NOT yet tested on a real device):**
+**Done and CONFIRMED WORKING end-to-end (as far as possible without a real device):**
 - Capacitor initialized (`com.clubfootball.app`), Android + iOS platforms added
 - Firebase project `club-football-app` created, both apps registered
 - `device_tokens` table wired up (existing table from migration 033, now connected)
 - Push notification registration built into the app (`usePushNotifications.ts`)
 - Realtime reconnect-on-resume fix (Team Messaging won't freeze when backgrounded)
-- `send-message-push` Edge Function written (new message → FCM push)
+- `send-message-push` Edge Function deployed and ACTIVE
+- FCM service account key stored in Supabase secrets
+- Database trigger (migration 042) confirmed firing on real message sends —
+  **verified live**: sent a real message through the app, trigger called
+  the Edge Function via `pg_net`, got back HTTP 200 with
+  `{"success":true,"devicesFound":0,"sent":0}`. The `0 devices found` is
+  expected and correct — no device tokens exist yet because no native app
+  has run on real hardware. The pipeline itself is proven end-to-end up to
+  that point.
+- Note: the dashboard's "Database Webhooks" feature is broken on this
+  project (missing internal `supabase_functions.http_request()` — not
+  fixable via ordinary SQL). Worked around by calling `pg_net` directly
+  via a trigger instead (see migration 042 for full explanation).
 
 **Blocked on hardware — next session when a Mac is available:**
 1. Borrow a Mac, install Xcode
 2. Run the app in Xcode simulator, then on a real device
 3. Confirm push permission request + token registration actually works
-4. Generate Firebase service account key, store via `supabase secrets set`
-   (see `supabase/functions/send-message-push/README.md`)
-5. Deploy the Edge Function, configure the Database Webhook
-6. Send a real test message, confirm a push notification arrives
-7. Repeat basic testing on an Android device/emulator
+   — should populate a row in `device_tokens`
+4. Send a real test message and confirm this time `devicesFound` > 0 and
+   a push notification actually arrives on the device
+5. Repeat basic testing on an Android device/emulator
 
 **Open decisions** (see `docs/project/CAPACITOR-SCOPING.md` section 6):
 - Password reset UX inside the native app (recommend: leave as browser handoff for V1)

@@ -4,6 +4,45 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+## [2026-08-13 - Part 3] - Push Notification Pipeline Confirmed Working End-to-End
+
+### Added
+- **`supabase/migrations/042_message_push_trigger.sql`**: database trigger
+  on `message_recipients` INSERT that calls the `send-message-push` Edge
+  Function via `pg_net` directly. Built as a workaround after discovering
+  Supabase's dashboard "Database Webhooks" feature is broken on this
+  project (see Fixed section below).
+- Service role key stored in Supabase Vault, read by the trigger function
+  at runtime rather than hardcoded.
+
+### Fixed
+- **Dashboard Database Webhooks feature is broken on this Supabase
+  project**: creating a webhook via the dashboard UI consistently failed
+  with `schema "supabase_functions" does not exist` / `function
+  supabase_functions.http_request() does not exist`. This is an internal
+  Supabase-managed function that should be pre-provisioned automatically
+  on every project but is missing here. Two attempts to fix it directly
+  (creating the schema, enabling the `http` extension) did not resolve
+  it — concluded this isn't fixable via ordinary SQL and worked around it
+  entirely by calling the lower-level `pg_net` extension directly instead
+  (confirmed already properly installed on this project).
+- **Edge Function rejecting requests with `401 UNAUTHORIZED_INVALID_JWT_FORMAT`**:
+  root cause was a copy-paste error — the Vault secret had literally been
+  set to the placeholder text from setup instructions
+  (`YOUR_ACTUAL_SERVICE_ROLE_KEY_HERE`) rather than the real key. Fixed via
+  `vault.update_secret()`, re-verified by checking key length/prefix
+  directly in SQL before re-testing.
+
+### Verified
+- **Confirmed end-to-end, live, in production**: sent a real message
+  through the deployed web app, confirmed via `net._http_response` that
+  the trigger fired, called the Edge Function, and got back HTTP 200 with
+  `{"success":true,"devicesFound":0,"sent":0}`. Zero devices found is
+  correct and expected — no device tokens exist yet since no native app
+  has run on real hardware. This confirms the entire pipeline (trigger →
+  Edge Function → FCM readiness) works correctly up to the point where a
+  real device token would exist.
+
 ## [2026-08-13 - Part 2] - Capacitor Setup & Push Notifications Infrastructure
 
 ### Added
