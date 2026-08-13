@@ -4,7 +4,77 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
-## [2026-08-13] - GitHub Structure Cleanup, Repo Recovery & Capacitor Scoping
+## [2026-08-13 - Part 2] - Capacitor Setup & Push Notifications Infrastructure
+
+### Added
+- **Capacitor initialized**: App ID `com.clubfootball.app` (deliberately
+  generic, not tied to WCR specifically, in case other clubs adopt this
+  app in future). Android and iOS native platform projects added
+  (`android/`, `ios/`). Plugins installed: `@capacitor/app`,
+  `@capacitor/push-notifications`, `@capacitor/status-bar`,
+  `@capacitor/splash-screen`. Confirmed: `npm run build` succeeds,
+  `cap sync` recognizes all 4 plugins on both platforms.
+- **Firebase project created**: `club-football-app` (Spark/free plan).
+  Android and iOS apps registered under `com.clubfootball.app`.
+  `google-services.json` and `GoogleService-Info.plist` downloaded and
+  placed (safe to commit — scoped to package name/bundle ID, not a
+  general secret).
+- **`device_tokens` schema alignment** (migration 041): the table already
+  existed from migration 033 (Team Messaging), unused until now — added
+  the missing `updated_at` column/trigger rather than duplicating the
+  table.
+- **`src/lib/device-tokens-api.ts`**: register/remove a device's push
+  token, matching the real `device_tokens` schema (`device_token` column,
+  not `token` — see Fixed section below).
+- **`src/hooks/usePushNotifications.ts`**: requests push permission,
+  registers with FCM, stores/removes the token in Supabase on
+  sign-in/sign-out. Wired into `App.tsx`. No-ops entirely on web
+  (`Capacitor.isNativePlatform()` check) — zero impact on the existing
+  Netlify-deployed web app.
+- **Realtime reconnect on app resume**: mobile OSes suspend WebSocket
+  connections while an app is backgrounded; without this, Team Messaging
+  would appear frozen until a manual refresh. Bundled into the same hook.
+- **`supabase/functions/send-message-push`**: Edge Function that sends a
+  push notification (via FCM HTTP v1 API, OAuth through a service
+  account) when a new team message is inserted. Uses
+  `message_recipients.notification_pending`, a column that existed
+  unused since migration 033. Includes a README with the manual setup
+  steps (Firebase service account key, `supabase secrets set`, webhook
+  configuration) — none of which can be automated, all require dashboard
+  access.
+- **`docs/project/CAPACITOR-SCOPING.md`** (see previous entry) is now
+  partially implemented — Steps 1, 4, and 5 of its build order are code-
+  complete; Steps 2, 3, 6, 7 remain.
+
+### Fixed
+- **`device_tokens` migration mismatch**: the first version of migration
+  041 assumed the table didn't exist and tried to create it fresh with
+  different column names (`token` vs the real `device_token`). Since it
+  used `CREATE TABLE IF NOT EXISTS`, it silently no-op'd against the
+  table already created in migration 033 — no error, just quietly did
+  nothing. Caught by querying the live schema directly rather than
+  trusting the "success" result. Replaced with a corrected migration
+  that only adds what was missing, and fixed the API layer to use the
+  real column names.
+
+### Technical Notes
+- **Not yet verified on a real device.** No Mac/Xcode or Android Studio
+  available on this machine. All code is written against Capacitor and
+  Firebase's documented APIs and follows this repo's existing
+  conventions, but "compiles and matches the docs" is not the same as
+  "confirmed working." Real device testing is the next milestone once
+  a Mac is available.
+- **Edge Function is genuinely untested** — no Deno runtime available
+  locally to execute or type-check it. Requires manual deployment and a
+  Firebase service account key (a sensitive credential) that only the
+  user can generate and store via Supabase secrets — cannot be automated
+  by an assistant.
+- Installed Firebase CLI and GitHub CLI on this machine during setup;
+  both required troubleshooting corrupted/interrupted installs before
+  working correctly (documented inline in the session, not repeated
+  here for brevity).
+
+## [2026-08-13 - Part 1] - GitHub Structure Cleanup, Repo Recovery & Capacitor Scoping
 
 ### Fixed
 - **Recovered `src/` and `supabase/migrations/`**: both were missing from disk
