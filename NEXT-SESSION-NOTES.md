@@ -1,5 +1,5 @@
 # Next Session Notes
-## Current State — 13 August 2026
+## Current State — 14 August 2026
 
 ---
 
@@ -14,317 +14,418 @@ git push kiro prototype
 *(As of 2026-08-13, the old dual-remote setup is retired — see
 `docs/deployment/DEPLOYMENT-GUIDE.md`.)*
 
+**Deploys lag your browser cache.** After any push, hard-refresh
+(Ctrl+Shift+R) before concluding something is broken. This has already
+cost time twice.
+
 ---
 
-## Strategic Context (2026-08-13)
+## Strategic Context
 
 The app has a lot of functionality built, arguably progressed faster than
-real-world usage. Decision made today: **stop expanding features, focus on
-getting V1 in front of real coaches/managers/families to replace Heja.**
+real-world usage. Decision made 2026-08-13: **stop expanding features,
+focus on getting V1 usable by real coaches/managers/families.**
 
-Two things drove this reprioritization:
-1. Reviewed the app against Heja (the main competition) — the two critical
-   gaps are **RSVP/availability** and **push notifications**. Without
-   these, this isn't a credible Heja replacement no matter how much other
-   functionality exists.
+Two things drove this:
+1. Reviewed against Heja (the main competition) — the critical gaps are
+   **RSVP/availability** and **push notifications**. Without these it
+   isn't a credible Heja replacement no matter what else exists.
 2. A web app isn't taken seriously as "a real app" by families — it needs
-   to be distributed like Heja/TeamApp (App Store, Google Play, push
-   notifications working properly). Decided on **Capacitor** wrapping the
-   existing React/Vite app, **Firebase Cloud Messaging** for push.
+   App Store / Google Play distribution with working push. Decided on
+   **Capacitor** wrapping the existing React/Vite app, **Firebase Cloud
+   Messaging** for push.
 
-Full scoping: `docs/project/CAPACITOR-SCOPING.md`
+**Launch approach (updated 2026-08-14): soft launch, no hard deadline.**
+When the build is ready, pick the next available competition and trial it
+with a few people. The earlier formal "10-week trial with <20 teams"
+structure from `docs/project/PROJECT-ROLLOUT.md` has been superseded —
+that document is now historical context, not the plan.
 
-**Everything below is now split into V1 (get this shipped) and V2 (already
-built, valuable, but not blocking launch).**
+Junior coaching content (10 weeks) is already loaded and is fine as-is.
+
+Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Path to Launch
+## V1 — Open Decisions Needed
 
-### V1.1 Capacitor + Push Notifications — IN PROGRESS
+These block or shape work below. Listed here so they don't stay buried.
+
+| # | Decision | Blocks | Recommendation |
+|---|----------|--------|----------------|
+| 1 | **Email provider** — Resend, SendGrid, Postmark, or AWS SES? | V1.2 (and therefore V1.3, V1.4, V1.5) | **Resend** — simplest setup, generous free tier, good deliverability, minimal config |
+| 2 | **Which events trigger a push in V1?** Candidates: new message (built), new schedule event, event change/cancellation, RSVP reminder | V1.1 completion | Start with new message (done) + event change/cancellation. RSVP reminders once V1.7 exists |
+| 3 | **Privacy policy** — see V1.9 below for full explanation | V1.9 store submission | Needs a real decision, see advice in V1.9 |
+| 4 | **Player/Caregiver nav — 2 undecided slots** | V1.5 | Options: Announcements, or fold Announcements into Home and leave 5 buttons |
+| 5 | **Does RSVP apply to Club Tournament teams, or only club teams?** | V1.7 scope | Probably club teams only for V1 — social/summer teams may just turn up |
+| 6 | **Friendly Manager export format** — waiting on sample | V1.T | User to obtain export sample or screenshot |
+
+---
+
+## V1 — Build Order
+
+Dependency chain. Items further down depend on items above them.
+
+```
+V1.1  Capacitor + Push          ── blocked on Mac access (hardware only)
+V1.2  Email Service             ── CRITICAL PATH, unblocks 3 items below
+ └─ V1.3  Fix Self-Registration ── needs V1.2's email_confirm approach
+     └─ V1.4  Welcome + Team Page ── needs registration to actually work
+         └─ V1.5  Role-Aware Nav  ── needs Team page to exist first
+
+Independent (can happen any time):
+V1.6  Invite Landing Page Branding
+V1.7  RSVP / Availability
+V1.8  Feature Flags for Launch
+V1.9  Store Distribution + Privacy Policy   ── last, needs V1.1 done
+V1.T  Friendly Manager Import   ── separate track, External Leagues only
+```
+
+---
+
+### V1.1 Capacitor + Push Notifications — IN PROGRESS (blocked on hardware)
+
 **Goal**: App installable on iOS/Android, push notifications working.
 
-**Done and CONFIRMED WORKING end-to-end (as far as possible without a real device):**
+**Done and verified as far as possible without a device:**
 - Capacitor initialized (`com.clubfootball.app`), Android + iOS platforms added
 - Firebase project `club-football-app` created, both apps registered
-- `device_tokens` table wired up (existing table from migration 033, now connected)
-- Push notification registration built into the app (`usePushNotifications.ts`)
+- `device_tokens` table wired up (existing table from migration 033)
+- Push registration built into the app (`usePushNotifications.ts`)
 - Realtime reconnect-on-resume fix (Team Messaging won't freeze when backgrounded)
 - `send-message-push` Edge Function deployed and ACTIVE
 - FCM service account key stored in Supabase secrets
-- Database trigger (migration 042) confirmed firing on real message sends —
-  **verified live**: sent a real message through the app, trigger called
-  the Edge Function via `pg_net`, got back HTTP 200 with
-  `{"success":true,"devicesFound":0,"sent":0}`. The `0 devices found` is
-  expected and correct — no device tokens exist yet because no native app
-  has run on real hardware. The pipeline itself is proven end-to-end up to
-  that point.
+- Database trigger (migration 042) **verified live** — sent a real message,
+  trigger called the Edge Function via `pg_net`, returned HTTP 200 with
+  `{"success":true,"devicesFound":0,"sent":0}`. Zero devices is correct
+  and expected: no tokens exist until the native app runs on hardware.
+  The pipeline is proven end-to-end up to that point.
 - Note: the dashboard's "Database Webhooks" feature is broken on this
-  project (missing internal `supabase_functions.http_request()` — not
-  fixable via ordinary SQL). Worked around by calling `pg_net` directly
-  via a trigger instead (see migration 042 for full explanation).
+  Supabase project (missing internal `supabase_functions.http_request()`,
+  not fixable via ordinary SQL). Worked around with `pg_net` called
+  directly from a trigger — see migration 042 for the full explanation.
 
-**Blocked on hardware — next session when a Mac is available:**
-1. Borrow a Mac, install Xcode
-2. Run the app in Xcode simulator, then on a real device
-3. Confirm push permission request + token registration actually works
-   — should populate a row in `device_tokens`
-4. Send a real test message and confirm this time `devicesFound` > 0 and
-   a push notification actually arrives on the device
-5. Repeat basic testing on an Android device/emulator
+**Remaining — needs a Mac (see `docs/project/MAC-SESSION-CHECKLIST.md`):**
+1. Install Xcode, install Kiro, clone repo, copy `.env.development` across
+2. Run in simulator, then on a real device
+3. Confirm push permission + token registration populates `device_tokens`
+4. Send a test message, confirm `devicesFound` > 0 and a push arrives
+5. Repeat on Android device/emulator
 
-**Open decisions** (see `docs/project/CAPACITOR-SCOPING.md` section 6):
-- Password reset UX inside the native app (recommend: leave as browser handoff for V1)
-- Which events should trigger a push beyond new messages (event changes? RSVP reminders?)
-- Privacy policy — needs to exist before store submission
+---
 
-### V1.2 RSVP / Availability — NOT STARTED
-**Why this matters**: this is Heja's core feature. "Is my kid going to
-training?" — every parent expects this. Without it, the app isn't a
-credible Heja replacement regardless of what else it does.
+### V1.2 Transactional Email Service — NOT STARTED ⚠️ CRITICAL PATH
 
-**Scope** (not yet built):
-- Add availability response (going / not going / maybe) to schedule events
-- Surface RSVP status to coaches/managers per event
-- Push notification trigger for RSVP reminders (once V1.1's push
-  infrastructure is proven working)
+**Why this is first**: three other items (V1.3, V1.4, V1.5) sit behind
+this. It's currently the single biggest unblocker in V1.
 
-### V1.2c Transactional Email (Send Invite / Send Link) — NOT STARTED
-**Why this matters**: the admin currently has to manually copy an invite
-link and paste it into their own email/text. For a real V1 launch with
-potentially dozens of teams onboarding, this needs to be a "Send" button
-that emails the manager directly from the app — branded, automated,
-trackable.
+**The problem**: the admin has to manually copy an invite link and paste
+it into their own email or text. For a launch with multiple teams
+onboarding, this needs to be a "Send" button that emails the recipient
+directly from the app — branded, automated, trackable.
 
 **Scope**:
-- Set up a transactional email provider (Resend, SendGrid, Postmark, or
-  AWS SES — decision needed, lean toward Resend for simplicity)
-- Supabase Edge Function to send emails (invite link, competition name,
+- Choose and set up a provider (**Resend recommended** — see Open
+  Decision 1)
+- Supabase Edge Function to send email (invite link, competition name,
   club branding)
-- Replace "Copy Link" with "Send Link" on the Add Tournament Team and
-  Invite modals — button sends the email immediately, shows confirmation
-- Once the email service exists, it also unlocks: RSVP reminders,
-  announcements via email, password reset email customization
+- Replace "Copy Link" with **"Send Link"** on the Add Tournament Team
+  modal and the per-team Invite modal — sends immediately, shows
+  confirmation
+- Keep "Copy Link" as a fallback (useful, and it changes the security
+  model — see V1.3)
 
-### V1.2d Invite Landing Page — Branding & Context — NOT STARTED
-**Why this matters**: when a manager clicks the invite link, they land on
-a generic "Join [Team Name]" page with no club branding, no competition
-context, and no sense of where they've arrived. For V1 launch this needs
-to feel like a proper welcome to the club's competition:
-- Club logo/branding on the landing page (not a blank white form)
-- Competition name prominently shown (e.g. "Join the Summer Competitions")
-- Brief context: what the app is, what they're signing up for, what
-  happens next (they'll be able to add their own players)
-- Visual consistency with the rest of the app so it feels legitimate,
-  not a phishing page
+**Also unlocks later**: RSVP reminders by email, announcements by email,
+custom password-reset emails.
 
-### V1.2e Fix Lite User Self-Registration (RLS blocker) — BLOCKED
-**Status**: the invite flow works up to the registration form, but
-submitting fails with "violates row-level security policy for table
-users". Root cause confirmed: `signUp()` with email confirmation enabled
-does NOT grant a real session immediately, so the client is still
-operating as `anon` when it tries to insert the profile row — the RLS
-policy (`id = auth.uid()`) can't match because there's no authenticated
-session yet.
+---
 
-**Key insight (2026-08-14)**: V1.2c (transactional email) and V1.2e
-(this fix) collapse into essentially one piece of work, not two:
-- If WE sent the invite email to the manager's address, and they clicked
-  OUR link from that email, that act alone proves they own the email.
-  Supabase sending a second "please confirm" is redundant friction.
-- Fix: when creating the auth user via the Edge Function, use
-  `email_confirm: true` (same flag the existing `create-user` Edge
-  Function already uses) → Supabase skips confirmation → user gets an
-  immediate session → profile INSERT works → no double-email.
-- This only applies when the invite was sent via our email service (we
-  can prove delivery to the correct address). For the "Copy Link"
-  fallback (admin pastes link into a random chat, no proof of who
-  clicked it), Supabase's confirmation step should still apply as a
-  safety net.
+### V1.3 Fix Lite User Self-Registration — BLOCKED (needs V1.2)
 
-**Practical outcome**: once V1.2c (email service) is built, the happy
-path is entirely frictionless — one email, one click, registered and in
-the app. The "Copy Link" path still works but retains the Supabase
-confirmation as a valid extra step.
+**Current status**: the invite flow works right up to the registration
+form, then submitting fails with *"new row violates row-level security
+policy for table users"*.
 
-**Fix approach**: build a single Edge Function that handles the full
-registration (auth user creation with `email_confirm: true` + profile
-row + team membership + mark invite redeemed), called from the
-registration form, using service_role. Same pattern as the existing
-`create-user` Edge Function.
+**Root cause (confirmed by testing 2026-08-14)**: `signUp()` with email
+confirmation enabled does **not** grant a session immediately. Supabase
+sends its own "confirm your email" message and withholds the session until
+the link is clicked. So the client is still acting as `anon` when it tries
+to insert the profile row, and the RLS policy (`id = auth.uid()`) can't
+match because there's no authenticated user yet.
 
-**Note**: the existing code correctly handles the "user already exists"
-case (John Smith scenario) — if the email matches an existing full user,
-it skips account creation and just adds the team membership. No
-duplicate accounts.
+RLS policies added while diagnosing (migrations 043, 044) were necessary
+but not sufficient — they're correct and should stay.
 
-### V1.2f Post-Registration Welcome & Manager Team Page — NOT STARTED
-**What it is**: after a manager successfully registers, the current
-success screen just says "You've been added to [Team Name], go to login"
-— no context, no instructions, no next steps. This needs to become a
-proper onboarding experience:
+**Key insight — this and V1.2 are really one piece of work**:
+If *we* sent the invite to the manager's address and they clicked *our*
+link from that inbox, that already proves they own the email. Supabase's
+second confirmation email is redundant friction.
 
-**Success screen should say** (dynamic, personalized):
+- **Fix**: create the auth user in an Edge Function with
+  `email_confirm: true` (the same flag the existing `create-user` Edge
+  Function already uses) → no Supabase confirmation email → immediate
+  session → profile insert succeeds.
+- **Applies when** the invite went through our own email service (we can
+  prove delivery to the right address).
+- **The "Copy Link" fallback keeps Supabase confirmation** as a safety
+  net, because a pasted link proves nothing about who clicked it.
+
+**Approach**: one Edge Function handling the whole registration — auth
+user (`email_confirm: true`) + profile row + team membership + mark invite
+redeemed — using `service_role`, so RLS isn't in the way. Same pattern as
+`create-user`.
+
+**Already correct, don't break it**: the existing code handles the
+"user already exists" case properly. If the email matches an existing
+full user (e.g. John Smith already in the system for an External League
+team), it skips account creation and just adds the team membership. One
+person, one account, multiple team memberships.
+
+---
+
+### V1.4 Post-Registration Welcome & Team Page — NOT STARTED (needs V1.3)
+
+Two related pieces: the success screen after registering, and the new
+Team page it points people to.
+
+#### 4a. Success screen
+
+Currently: *"You've been added to [Team]. You can now log in."* — no
+context, no next steps.
+
+Should be (dynamic):
 > Welcome [FIRST NAME] and the [TEAM NAME]!
 > You have been entered into the [COMPETITION NAME].
-> Please use our app [APP LINK], and log in with the details you have
-> set up. On the TEAM page you will see the teams you can manage —
-> select your team and add players (names and email addresses). You can
-> make one more player a Manager as well (maximum of two per team).
-> Players will get emails to join, just as you have, and will get
-> access to this App.
+> Please use our app [APP LINK], and log in with the details you have set
+> up. On the TEAM page you will see the teams you can manage — select your
+> team and add players (names and email addresses). You can make one more
+> player a Manager as well (maximum of two per team). Players will get
+> emails to join, just as you have, and will get access to this App.
 
-**New mobile page — "Team" (replaces Home in nav for managers)**:
+#### 4b. New mobile "Team" page
 
-**Layout:**
-- Team selector dropdown at top (same pattern as Coaching page —
-  auto-selects first/only team, shows all teams user is a member of)
-- Roster list below, grouped by role: Coach → Manager → Player
-- Users with multiple roles shown once with all roles listed (e.g.
-  "John Smith — Coach, Manager"), NOT duplicated across groups
-- Inactive users shown greyed out at bottom of list
+**Layout**:
+- Team selector dropdown at top (same pattern as the Coaching page —
+  auto-selects when there's only one team)
+- Roster below, grouped by role: **Coach → Manager → Player**
+- Multi-role users appear **once** with all roles listed
+  ("John Smith — Coach, Manager"), not duplicated across groups
+- Inactive users greyed out and moved to the bottom
 
-**Role-based permissions on this page:**
-- **Coach/Manager/Admin viewing a Club Tournament team**: full edit
-  - Edit button next to each name: change name details, change role,
-    mark as inactive (greyed, moved to bottom — NOT deleted, in case
-    they come back)
-  - "+ Add User" button at bottom → invite flow (name + email)
-  - Max 2 managers per team enforced
-- **Coach/Manager viewing an External League team**: read-only roster
-  - No edit/add buttons — the Club (admin) manages these rosters, not
-    the team manager (these come from Friendly Manager imports, the
-    club controls registrations with the Federation)
-- **Player/Caregiver (any team)**: read-only roster view
-  - See names + roles (useful for knowing who coaches are, who to
-    contact)
-  - No edit/add buttons
+**Contact display** (see Junior Player Model below):
+- U17 / Open teams → show the player's own cellphone
+- U16 and below → show the linked caregiver's name + cellphone
 
-**Key design rules:**
-- No "remove" action — only "mark inactive" (soft disable, reversible)
-- Editing only available for Club Tournament teams (manager self-serves)
-- External League team rosters are club-managed (via desktop admin or
-  Friendly Manager import — V1.2b)
-- This page useful for ALL roles (everyone wants to see who's on their
-  team) — just with different action permissions
+**Permissions**:
 
-### V1.2b Competitions/Teams/Users Process Review — IN PROGRESS
-**Context (2026-08-13 evening)**: Before going further, need to confirm the
-existing Competitions/Teams/Users setup actually supports how the club
-really operates, for both flows below.
+| Who | On a Club Tournament team | On an External League team |
+|-----|--------------------------|---------------------------|
+| Coach / Manager / Admin | Full edit — edit name details, change role, mark inactive, "+ Add User" | **Read-only** — the Club manages these rosters |
+| Player / Caregiver | Read-only roster | Read-only roster |
 
-**Flow A — External Leagues (Federation-run)**:
-- Federation sets competition name, dates, draws, fixtures — entirely
-  external, we have no control and don't need to build any of it
-- Club forms teams/rosters (players, managers, coaches) in **Friendly
-  Manager** (external club management system, no API — CSV export only)
-- Club manually enters those teams into the Federation's own system
-  separately (unrelated to our app)
-- Currently: families go to the Federation's site for fixtures, and
-  whichever app the team manager picks (Heja etc.) for communication —
-  our app has zero visibility into any of this today
-- **Goal**: pull team + roster data out of Friendly Manager (CSV export)
-  and get it into our app, ideally as a recurring sync (weekly?) rather
-  than one-off — so our app becomes the coaching/communication home for
-  Federation-competition teams too
-- **Next step**: user to get a sample Friendly Manager export (or
-  screenshot of the export screen) so we can design the import/sync
-  against real data rather than assumptions — format, available fields
-  (age group? manager email? stable IDs for matching on re-import?) all
-  need confirming before designing anything
+**Rules**:
+- **No delete/remove anywhere** — only "mark inactive" (reversible, in
+  case they come back)
+- Max 2 managers per team, enforced
+- External League rosters are club-managed (desktop admin, or Friendly
+  Manager import — V1.T). Team managers don't edit them because the club
+  controls Federation registrations.
+- The roster view is useful to **every** role — only the actions differ
 
-**Flow B — Club Tournaments (already built)**: club is the organizer, sets
-dates, runs draws (round-robin engine already exists), teams join via the
-invite-code flow (just reviewed/fixed today — Upcoming/Active/Ended/Closed
-states, invites now open as soon as a competition is Upcoming).
+---
 
-**Second thread — "clean, open system for lite users"**: a consistent
-onboarding path for anyone forming a team for one of *our own* Club
-Competitions, not just the current ad-hoc invite flow. Needs defining
-more precisely — what's missing vs. what already exists (invite codes,
-lite user registration via `/invite/:code`, promote-to-full flow).
+### V1.5 Role-Aware Mobile Navigation — NOT STARTED (needs V1.4)
 
-**Belief going in**: existing Competitions/Teams/Users architecture likely
-already aligns with most of this — needs a review pass against real
-Friendly Manager data, not necessarily new build.
+**Hard constraint: maximum 6 nav buttons per role.** The six-button bottom
+nav is the app's primary mobile navigation — it works well visually and
+for thumb reach. A seventh breaks it. This is a design rule, not a
+preference.
 
-### V1.2h Junior Players — User Model Decision (AGREED)
-**Context**: most junior players (U16 and below) don't have their own
-email address or phone. But the current `users` table requires an
-`auth.users` row (which means an email + ability to sign in).
+Once nav is role-aware, adding the Team page costs nothing for any role,
+because each role's six slots are chosen for that role's actual workflow.
 
-**Agreed approach for V1**:
-- **Juniors get a real `users` row** (same as everyone else), but they
-  **never log in themselves** — the caregiver's account is what receives
-  all notifications, messages, and schedule updates
-- For External League teams: data comes from Friendly Manager imports,
-  admin creates the user row — email can be synthetic/placeholder (e.g.
-  `player-{uuid}@app.internal`) since the child won't use it to sign in
-- For Club Tournament teams: when a manager adds a junior player via the
-  Team page, the form captures the **caregiver's** details (name, email,
-  phone) + the **child's** minimum data (first name, last name). This
-  creates:
-  - A caregiver user (with real email — they're the one who signs in)
-  - A player user (with synthetic email — they don't sign in)
-  - A `player_caregivers` link between them
-- `cellphone` on the junior's user row stays empty — the Team page
-  displays the caregiver's contact info next to the child's name instead
-- **Age threshold**: use `teams.age_group` to determine whether to show
-  caregiver info. U17+ / Open = show player's own phone. U16 and below =
-  show linked caregiver's name + phone.
-- **No schema change needed** for V1 — the existing `users` table,
-  `player_caregivers` relationship, and `caregiver_approvals` workflow
-  all support this. It's purely a UI/flow question (what the Team page
-  captures and displays differently for junior vs senior teams).
+| Role | Proposed 6 | Notes |
+|------|-----------|-------|
+| Manager / Coach | **Team**, Coaching, Games, Schedule, Messaging, Resources | Team replaces Home; Home moves to a header icon |
+| Player | Home, **Team** (read-only), Schedule, Messaging, Resources, *?* | Coaching & Games hidden — not relevant |
+| Caregiver | Home, **Team** (read-only), Schedule, Messaging, Resources, *?* | As player — viewing, not managing |
 
-### V1.2g Role-Aware Mobile Navigation — NOT STARTED
-**Constraint**: maximum of **6 nav buttons per role** — this is a hard
-design rule, not a suggestion. The six-button bottom nav is the app's
-primary navigation on mobile; it works well visually and for thumb reach.
-Adding a seventh breaks it.
+- Coaching and Games remain **accessible** (direct URL, links from other
+  pages) — they're just not in the nav for roles that don't use them
+- Home still exists, reached via the header logo/icon for manager/coach
+- The two `*?*` slots are Open Decision 4
 
-**Key decisions needed** (to be designed, not implemented today):
+---
 
-| Role | Proposed 6 buttons | Notes |
-|------|-------------------|-------|
-| Manager/Coach | Team, Coaching, Games, Schedule, Messaging, Resources | Team replaces Home (Home accessible via header icon) |
-| Player | Home, Team (read-only roster/contacts), Schedule, Messaging, Resources, ??? | Coaching & Games hidden — not relevant to players |
-| Caregiver | Home, Team (read-only), Schedule, Messaging, Resources, ??? | Similar to player — viewing, not managing |
+### V1.6 Invite Landing Page — Branding & Context — NOT STARTED
 
-**What this means**:
-- Bottom nav component becomes role-aware (reads user role, renders
-  different button sets)
-- Coaching and Games pages are still *accessible* (via direct URL, via
-  links from other pages) — they're just not in the primary nav for
-  roles that don't use them
-- The "Team" page (V1.2f) fits naturally into the nav for every role —
-  managers see manage/add-players, players/caregivers see read-only
-  roster with contact details
-- Home page still exists, just accessed via the header logo/icon rather
-  than a dedicated nav slot for manager/coach roles
-- Announcements might take one of the player/caregiver slots, or fold
-  into Home — needs deciding
+Independent of the chain above; can be done any time.
 
-**Not blocking V1 launch**: the current 6-button universal nav works for
-the initial trial. This becomes important once the Team page (V1.2f) is
-built and needs a home in the nav.
+When someone clicks an invite link they currently land on a bare white
+"Join [Team]" form — no branding, no competition context, no sense of
+where they've arrived. It needs to look legitimate (not like a phishing
+page) and orient the person:
 
-### V1.3 Store Distribution — NOT STARTED
-- Google Play Console account ($25 one-time) — needed once ready for
-  testers, can wait until V1.1 is proven on a real Android device
-- Apple Developer account ($99/year) — needed once testing push on a
-  real iPhone; may already be needed by the time V1.1 hardware testing
-  happens
-- App icon, splash screen, screenshots, privacy policy, store listings
+- Club logo / branding
+- Competition name prominent (e.g. "Join the Summer Competitions")
+- Short explanation: what this app is, what they're signing up for, what
+  happens next (they'll be able to add their own players)
+- Visual consistency with the rest of the app
 
-### V1 Feature Flags — NOT STARTED
-Per the Heja comparison, some already-built features should be **hidden**
-for the V1 trial launch, not removed — just switched off so the app feels
-focused rather than overwhelming for a first-time user:
-- Tournament management (park until proven demand)
+---
+
+### V1.7 RSVP / Availability — NOT STARTED
+
+**Why it matters**: this is Heja's core feature. "Is my kid at training
+this week?" Every parent expects it. Without it the app isn't a credible
+Heja replacement.
+
+**Scope**:
+- Availability response (going / not going / maybe) on schedule events
+- RSVP status visible to coaches/managers per event
+- RSVP reminder push notifications (needs V1.1 proven on hardware)
+
+**Note**: `event_rsvps` table already exists (migration 023) with
+`going / not_going / maybe / no_response` and a unique constraint per
+event+user. Schema is in place — this is a UI/flow build, not a data
+model design.
+
+**Open**: does this apply to Club Tournament teams too, or only club
+teams? (Open Decision 5)
+
+---
+
+### V1.8 Feature Flags for Launch — NOT STARTED
+
+Some already-built features should be **hidden** at launch — not removed,
+just switched off, so a first-time user sees a focused app rather than
+everything at once:
+
+- Tournament management (park until there's proven demand)
 - Admin reporting (admin-only, can wait)
-- Session Builder / Lesson Builder complexity (keep basic delivery, hide advanced authoring)
-- Competitions page
+- Session Builder / Lesson Builder advanced authoring (keep basic
+  lesson delivery, hide the authoring complexity)
+- Competitions page (admin-only)
+
+Do this near launch, once we know what the trial group actually needs.
+
+---
+
+### V1.9 Store Distribution & Privacy Policy — NOT STARTED (needs V1.1)
+
+**Accounts**:
+- Google Play Console — **$25 one-time**, needed before distributing to
+  testers or publishing
+- Apple Developer Program — **$99/year**, needed to test push on a real
+  iPhone and to submit at all. Worth starting the application early —
+  Apple's identity verification can take a day or two on its own.
+
+**Assets**: app icon, splash screen, screenshots per platform, store
+listing copy.
+
+#### Privacy policy — what this actually is and why it's required
+
+You asked what this piece means, so in plain terms:
+
+**Both Apple and Google require a publicly accessible privacy policy URL
+before they will publish an app that collects personal data.** It's not
+optional and it's not a formality — submissions get rejected without it.
+
+This app collects a fair amount: names, email addresses, phone numbers,
+team affiliations, attendance records, messages between users — **and data
+about children**, which raises the bar. NZ's Privacy Act 2020 applies.
+
+Both stores also make you complete a **separate questionnaire** (Apple's
+"App Privacy", Google's "Data Safety") declaring what you collect and why.
+Those answers need to match what the policy says, or it fails review.
+
+**What already exists**: the lite-user registration page shows a privacy
+notice with consent checkbox (name/role visible to coaches, caregiver
+details visible to other caregivers, data used only for team
+coordination), and consent is recorded in `users.privacy_consent_at`.
+That's a genuinely good start and shows the thinking is already right —
+but an in-app consent notice is **not** the same thing as a hosted
+privacy policy document, and won't satisfy the stores.
+
+**Practical options** (I'm not a lawyer — this is process advice, not
+legal advice):
+1. **Does the club already have a privacy policy** for its website or
+   membership? If so, extending it to cover the app is usually the
+   simplest and most defensible route.
+2. **Use a reputable policy generator**, then have someone at the club
+   (or the club's usual advisor) review it — particularly the sections on
+   children's data and data retention.
+3. Host it at a **stable public URL** — a page in this app would work, or
+   a page on the club's website. It must stay reachable; stores re-check.
+
+**Recommendation**: raise it with the club early rather than at
+submission time. It's the kind of thing that's quick if someone already
+has one and slow if nobody owns it. Worth confirming who at the club is
+responsible before it becomes the thing blocking launch.
+
+---
+
+### V1.T Friendly Manager Import (External Leagues) — SEPARATE TRACK
+
+Independent of the lite-user chain. Only relevant to External League
+teams, not Club Tournaments.
+
+**How the club actually operates**:
+- The **Federation** owns the competition — name, dates, draws, fixtures.
+  All external. We don't build any of that.
+- The **Club** forms teams and rosters in **Friendly Manager** (external
+  system, **no API** — CSV export only), then enters those teams into the
+  Federation's own system separately.
+- Today: families check the Federation's website for fixtures, and each
+  team manager sets up their own Heja (or similar) for communication. Our
+  app has **zero visibility** into any of it.
+
+**Goal**: pull team + roster data out of Friendly Manager and into our
+app — ideally a recurring (weekly?) sync rather than a one-off import — so
+our app becomes the coaching and communication home for these teams too.
+
+**Next step**: get a sample Friendly Manager export (or a screenshot of
+the export screen). The format determines everything — which fields are
+available (age group? manager email?), and crucially whether there are
+**stable IDs** we can match on for re-import, or whether we have to match
+on name/email. Design after seeing real data, not before.
+
+**Likely shape**: a staging table the export is loaded into, then a
+reconcile step that applies changes into the main tables. Not designed
+yet.
+
+---
+
+### Reference — Junior Player User Model (DECIDED 2026-08-14)
+
+Not a task; a decision that feeds into V1.4 and V1.T.
+
+**Problem**: most players U16 and below have no email address or phone of
+their own, but every `users` row requires an `auth.users` row (i.e. an
+email and the ability to sign in).
+
+**Agreed approach**:
+- Juniors **get a real `users` row**, but **never log in themselves**. The
+  caregiver's account is the active one that receives notifications,
+  messages and schedule updates.
+- **External League**: data arrives via Friendly Manager import; admin
+  creates the row with a synthetic email (e.g.
+  `player-{uuid}@app.internal`) since the child won't sign in.
+- **Club Tournament**: when a manager adds a junior via the Team page, the
+  form captures the **caregiver's** real details (name, email, phone) plus
+  the **child's** minimum data (first/last name), producing:
+  - a caregiver user (real email — they sign in)
+  - a player user (synthetic email — never signs in)
+  - a `player_caregivers` link between them
+- The junior's `cellphone` stays empty; the Team page shows the
+  caregiver's contact details beside the child's name instead.
+- **Age threshold** comes from `teams.age_group`, not per-player DOB
+  (there is no DOB field). U17/Open → player's own phone. U16 and below →
+  caregiver's. Edge case accepted: a 17-year-old in a U15 team would show
+  caregiver info.
+- **No schema change needed** — `users`, `player_caregivers` and
+  `caregiver_approvals` already support all of this. It's purely a
+  UI/flow question.
 
 ---
 
@@ -418,6 +519,7 @@ getting V1 in front of real users.
 |---------|----------|
 | Project standards + deployment rules | `.kiro/steering/project-standards.md` |
 | Capacitor/push notification scoping | `docs/project/CAPACITOR-SCOPING.md` |
+| Mac session checklist (device testing) | `docs/project/MAC-SESSION-CHECKLIST.md` |
 | Feature history | `CHANGELOG.md` |
 | Session-by-session decisions | `CONVERSATION-HISTORY.md` |
 | Deployment instructions | `docs/deployment/DEPLOYMENT-GUIDE.md` |
@@ -425,6 +527,7 @@ getting V1 in front of real users.
 | Lesson creation guide | `docs/lessons/LESSON-CREATION-GUIDE.md` |
 | Original handover spec | `docs/project/KIRO_HANDOVER.md` |
 | Push notification Edge Function setup | `supabase/functions/send-message-push/README.md` |
+| Historical rollout plan (superseded) | `docs/project/PROJECT-ROLLOUT.md` |
 
 ---
 
