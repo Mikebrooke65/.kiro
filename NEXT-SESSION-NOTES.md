@@ -89,6 +89,87 @@ credible Heja replacement regardless of what else it does.
 - Push notification trigger for RSVP reminders (once V1.1's push
   infrastructure is proven working)
 
+### V1.2c Transactional Email (Send Invite / Send Link) — NOT STARTED
+**Why this matters**: the admin currently has to manually copy an invite
+link and paste it into their own email/text. For a real V1 launch with
+potentially dozens of teams onboarding, this needs to be a "Send" button
+that emails the manager directly from the app — branded, automated,
+trackable.
+
+**Scope**:
+- Set up a transactional email provider (Resend, SendGrid, Postmark, or
+  AWS SES — decision needed, lean toward Resend for simplicity)
+- Supabase Edge Function to send emails (invite link, competition name,
+  club branding)
+- Replace "Copy Link" with "Send Link" on the Add Tournament Team and
+  Invite modals — button sends the email immediately, shows confirmation
+- Once the email service exists, it also unlocks: RSVP reminders,
+  announcements via email, password reset email customization
+
+### V1.2d Invite Landing Page — Branding & Context — NOT STARTED
+**Why this matters**: when a manager clicks the invite link, they land on
+a generic "Join [Team Name]" page with no club branding, no competition
+context, and no sense of where they've arrived. For V1 launch this needs
+to feel like a proper welcome to the club's competition:
+- Club logo/branding on the landing page (not a blank white form)
+- Competition name prominently shown (e.g. "Join the Summer Competitions")
+- Brief context: what the app is, what they're signing up for, what
+  happens next (they'll be able to add their own players)
+- Visual consistency with the rest of the app so it feels legitimate,
+  not a phishing page
+
+### V1.2e Fix Lite User Self-Registration (RLS blocker) — BLOCKED
+**Status**: the invite flow works up to the registration form, but
+submitting fails with "violates row-level security policy for table
+users". Root cause confirmed: `signUp()` with email confirmation enabled
+does NOT grant a real session immediately, so the client is still
+operating as `anon` when it tries to insert the profile row — the RLS
+policy (`id = auth.uid()`) can't match because there's no authenticated
+session yet.
+
+**Fix needed**: move the profile creation + team assignment to a
+**Supabase Edge Function** (using service_role, same pattern as the
+existing `create-user` function) rather than client-side INSERT. This
+also aligns with V1.2c (transactional email) — once we have a proper
+email service, the signup flow should: create auth user → send
+confirmation email → on confirmation, Edge Function creates profile +
+team membership + marks invite as redeemed.
+
+**Note**: the existing code correctly handles the "user already exists"
+case (John Smith scenario) — if the email matches an existing full user,
+it skips account creation and just adds the team membership. No
+duplicate accounts.
+
+### V1.2f Post-Registration Welcome & Manager Team Page — NOT STARTED
+**What it is**: after a manager successfully registers, the current
+success screen just says "You've been added to [Team Name], go to login"
+— no context, no instructions, no next steps. This needs to become a
+proper onboarding experience:
+
+**Success screen should say** (dynamic, personalized):
+> Welcome [FIRST NAME] and the [TEAM NAME]!
+> You have been entered into the [COMPETITION NAME].
+> Please use our app [APP LINK], and log in with the details you have
+> set up. On the TEAM page you will see the teams you can manage —
+> select your team and add players (names and email addresses). You can
+> make one more player a Manager as well (maximum of two per team).
+> Players will get emails to join, just as you have, and will get
+> access to this App.
+
+**New mobile page needed — "My Team" / team management**:
+- Visible to managers/coaches in the mobile app nav (or as a tab)
+- Shows the teams they manage (team_members where role = manager)
+- On selecting a team: list of current players, "+ Add Player" button
+- "+ Add Player" flow: enter name + email → generates invite code →
+  sends email (once V1.2c email service exists) or shows copy-link
+- Can promote one player to co-Manager (max 2 managers per team)
+- Players get the same invite flow (email with link → register → join)
+
+**Design note**: this is the "self-serve roster management" that makes
+Club Tournaments scale — without it, every player invite has to go
+through the club admin, which defeats the purpose of the lite user
+system entirely.
+
 ### V1.2b Competitions/Teams/Users Process Review — IN PROGRESS
 **Context (2026-08-13 evening)**: Before going further, need to confirm the
 existing Competitions/Teams/Users setup actually supports how the club
@@ -128,6 +209,38 @@ lite user registration via `/invite/:code`, promote-to-full flow).
 **Belief going in**: existing Competitions/Teams/Users architecture likely
 already aligns with most of this — needs a review pass against real
 Friendly Manager data, not necessarily new build.
+
+### V1.2g Role-Aware Mobile Navigation — NOT STARTED
+**Constraint**: maximum of **6 nav buttons per role** — this is a hard
+design rule, not a suggestion. The six-button bottom nav is the app's
+primary navigation on mobile; it works well visually and for thumb reach.
+Adding a seventh breaks it.
+
+**Key decisions needed** (to be designed, not implemented today):
+
+| Role | Proposed 6 buttons | Notes |
+|------|-------------------|-------|
+| Manager/Coach | Team, Coaching, Games, Schedule, Messaging, Resources | Team replaces Home (Home accessible via header icon) |
+| Player | Home, Team (read-only roster/contacts), Schedule, Messaging, Resources, ??? | Coaching & Games hidden — not relevant to players |
+| Caregiver | Home, Team (read-only), Schedule, Messaging, Resources, ??? | Similar to player — viewing, not managing |
+
+**What this means**:
+- Bottom nav component becomes role-aware (reads user role, renders
+  different button sets)
+- Coaching and Games pages are still *accessible* (via direct URL, via
+  links from other pages) — they're just not in the primary nav for
+  roles that don't use them
+- The "Team" page (V1.2f) fits naturally into the nav for every role —
+  managers see manage/add-players, players/caregivers see read-only
+  roster with contact details
+- Home page still exists, just accessed via the header logo/icon rather
+  than a dedicated nav slot for manager/coach roles
+- Announcements might take one of the player/caregiver slots, or fold
+  into Home — needs deciding
+
+**Not blocking V1 launch**: the current 6-button universal nav works for
+the initial trial. This becomes important once the Team page (V1.2f) is
+built and needs a home in the nav.
 
 ### V1.3 Store Distribution — NOT STARTED
 - Google Play Console account ($25 one-time) — needed once ready for
