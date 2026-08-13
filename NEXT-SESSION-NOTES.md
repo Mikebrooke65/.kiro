@@ -59,6 +59,7 @@ These block or shape work below. Listed here so they don't stay buried.
 | 4 | **Player/Caregiver nav — 2 undecided slots** | V1.5 | Options: Announcements, or fold Announcements into Home and leave 5 buttons |
 | 5 | **Does RSVP apply to Club Tournament teams, or only club teams?** | V1.7 scope | Probably club teams only for V1 — social/summer teams may just turn up |
 | 6 | **Friendly Manager export format** — waiting on sample | V1.T | User to obtain export sample or screenshot |
+| 7 | ~~Which machine for Android Studio?~~ | V1.1a | **RESOLVED 2026-08-14** — use the other laptop (has adequate disk/RAM). This laptop stays the main build machine. See V1.1a |
 
 ---
 
@@ -67,7 +68,8 @@ These block or shape work below. Listed here so they don't stay buried.
 Dependency chain. Items further down depend on items above them.
 
 ```
-V1.1  Capacitor + Push          ── blocked on Mac access (hardware only)
+V1.1a Android device testing    ── needs a machine that can run Android Studio
+V1.1b iOS device testing        ── needs Mac + Xcode (borrowed)
 V1.2  Email Service             ── CRITICAL PATH, unblocks 3 items below
  └─ V1.3  Fix Self-Registration ── needs V1.2's email_confirm approach
      └─ V1.4  Welcome + Team Page ── needs registration to actually work
@@ -77,13 +79,19 @@ Independent (can happen any time):
 V1.6  Invite Landing Page Branding
 V1.7  RSVP / Availability
 V1.8  Feature Flags for Launch
-V1.9  Store Distribution + Privacy Policy   ── last, needs V1.1 done
+V1.9  Store Distribution + Privacy Policy   ── last, needs V1.1a + V1.1b
 V1.T  Friendly Manager Import   ── separate track, External Leagues only
 ```
 
+**Nothing except V1.9 depends on V1.1.** Everything in V1.2–V1.8 and V1.T
+is web-testable in a browser. Device testing can happen whenever hardware
+becomes available without causing rework — the only known follow-ups after
+device testing are global (safe-area insets for the iPhone notch, minor
+touch-target tweaks), not per-feature rebuilds.
+
 ---
 
-### V1.1 Capacitor + Push Notifications — IN PROGRESS (blocked on hardware)
+### V1.1 Capacitor + Push Notifications — IN PROGRESS (hardware-gated)
 
 **Goal**: App installable on iOS/Android, push notifications working.
 
@@ -105,12 +113,73 @@ V1.T  Friendly Manager Import   ── separate track, External Leagues only
   not fixable via ordinary SQL). Worked around with `pg_net` called
   directly from a trigger — see migration 042 for the full explanation.
 
-**Remaining — needs a Mac (see `docs/project/MAC-SESSION-CHECKLIST.md`):**
+The remaining work splits into two independent hardware tracks. Doing
+**either** one answers the biggest open risk — "does the app actually work
+correctly wrapped in a native WebView?" — so whichever becomes available
+first is worth doing.
+
+#### V1.1a — Android track (does NOT need a Mac)
+
+Android Studio runs on Windows, so this doesn't depend on borrowing
+anything. Doing this track first would de-risk the WebView question early,
+and FCM push works on Android emulators with Play Services — so this can
+prove `device_tokens` populates and `devicesFound` > 0 without any Apple
+involvement.
+
+**Step 0 — decide which machine (DO THIS FIRST)**
+
+Checked this laptop on 2026-08-14 and **it will not fit as it stands**:
+
+| Spec | This laptop | Android Studio needs |
+|------|------------|---------------------|
+| Disk free | **1.4 GB** (of 118 GB — 98.8% full) | ~8 GB min, realistically 20+ GB with SDK, emulator images, Gradle caches |
+| RAM | 7.9 GB | 8 GB bare minimum; 16 GB recommended for IDE + emulator together |
+| CPU | i5-8250U (2017 low-power, 4 cores) | Workable but emulator will be slow |
+
+Clearing this project won't rescue it — measured: `node_modules` 251 MB,
+`_archive` 9 MB, `dist`/`media`/`android`/`ios` ~2 MB each. Total
+reclaimable ≈ 260 MB against a ~20 GB need.
+
+**DECIDED (2026-08-14)**: use the **other laptop** — it has adequate
+disk/RAM to run Android Studio comfortably. This laptop stays as the
+main build machine.
+
+To work on the other laptop you'll need **Kiro installed there** (it's a
+desktop IDE, not browser-accessible), plus the repo cloned and
+`.env.development` copied across — same setup steps as the Mac checklist
+in `docs/project/MAC-SESSION-CHECKLIST.md`, minus the Xcode/CocoaPods
+parts.
+
+⚠️ **Separately and more urgently**: 1.4 GB free is low enough to cause
+problems in its own right — failed installs, slow performance, Windows
+update issues. This is plausibly behind the `npm install` /
+`TAR_ENTRY_ERROR` failures hit while installing `firebase-tools` on
+2026-08-13. Worth addressing regardless of Android Studio, since active
+development is happening on this machine.
+
+**Then:**
+1. Install Android Studio + Android SDK
+2. `npm run build && npx cap sync && npx cap open android`
+3. Run in an emulator (or a real Android phone via USB)
+4. Confirm the app loads, login works, navigation behaves in the WebView
+5. Confirm push permission prompt appears and a row lands in
+   `device_tokens`
+6. Send a real message, confirm `devicesFound` > 0 and a push arrives
+
+#### V1.1b — iOS track (needs a Mac)
+
+See `docs/project/MAC-SESSION-CHECKLIST.md` for the full step-by-step.
+
 1. Install Xcode, install Kiro, clone repo, copy `.env.development` across
-2. Run in simulator, then on a real device
-3. Confirm push permission + token registration populates `device_tokens`
-4. Send a test message, confirm `devicesFound` > 0 and a push arrives
-5. Repeat on Android device/emulator
+2. Install CocoaPods, `npx cap open ios`
+3. Run in simulator, then on a real device
+4. Confirm push permission + token registration populates `device_tokens`
+5. Send a test message, confirm `devicesFound` > 0 and a push arrives
+
+**Note**: testing push on a *real* iPhone requires the paid Apple
+Developer account ($99/yr) — the simulator can request permission but
+can't receive real pushes. Safe-area insets (iPhone notch/home indicator)
+are an iOS-specific polish item that comes out of this track.
 
 ---
 
