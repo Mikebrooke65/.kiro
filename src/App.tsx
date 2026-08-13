@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { router } from './routes';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { useResponsive } from './hooks/useResponsive';
+import { usePushNotifications } from './hooks/usePushNotifications';
 import { useEffect } from 'react';
 
 function AppInitializer() {
@@ -11,6 +12,7 @@ function AppInitializer() {
   // Initialize hooks that need to run at app level
   useOnlineStatus();
   useResponsive();
+  usePushNotifications();
 
   // Show loading screen while checking authentication
   if (isLoading) {

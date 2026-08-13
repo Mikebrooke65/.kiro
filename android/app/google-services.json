@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "173753808982",
+    "project_id": "club-football-app",
+    "storage_bucket": "club-football-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:173753808982:android:a487750bb002c41bb6e3f7",
+        "android_client_info": {
+          "package_name": "com.clubfootball.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBiK4a6ozCBz095fhLZSUSkGri9WtNYgNg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
