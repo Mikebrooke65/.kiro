@@ -78,7 +78,10 @@ export function CompetitionsPage() {
     setError('');
     try {
       if (editingId) {
-        await competitionsApi.updateCompetition(editingId, formData);
+        // Editing clears a 'closed' status - whether the competition is
+        // then actually "Active" depends on whether today falls within
+        // the (possibly just-changed) date range, per isCompetitionActive()
+        await competitionsApi.updateCompetition(editingId, { ...formData, status: 'active' });
       } else {
         await competitionsApi.createCompetition(formData);
       }

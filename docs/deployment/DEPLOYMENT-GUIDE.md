@@ -166,3 +166,28 @@ If deployment breaks production:
 - Netlify auto-deploys on push to `prototype` branch
 - Build time is typically 1-2 minutes
 - Clear cache if deployment seems stuck on old version
+
+## Known Gotcha: Secrets Scanner False Positives on Firebase Config Files
+
+If you add or modify `android/app/google-services.json` or
+`ios/App/App/GoogleService-Info.plist` (Capacitor/Firebase config), be aware
+that Netlify's secrets scanner will flag the API keys inside them as
+"likely secrets" and **fail the build** — even though these files are
+designed by Google to be public and committed to source control (they're
+restricted by package name/bundle ID + SHA fingerprint, not by secrecy).
+
+This already happened once (2026-08-13) and caused every deploy to fail
+silently for about 2 hours before being caught.
+
+**The fix is already in place** (`netlify.toml` → `SECRETS_SCAN_OMIT_PATHS`),
+so this shouldn't recur for these two files. But if Netlify starts failing
+builds again after adding a *new* Firebase-related config file, add its path
+to the same `SECRETS_SCAN_OMIT_PATHS` list in `netlify.toml`.
+
+**Do NOT** try to fix this via `SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES` with
+the actual key value — that backfires, since putting the key into an
+environment variable makes Netlify's separate always-on scanner flag that
+env var's value appearing in the file, a self-referential trap.
+
+If a build fails, check the deploy log for "Secrets scanning found secrets in
+build" — that's the signature of this specific issue.
