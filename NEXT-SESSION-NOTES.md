@@ -248,6 +248,35 @@ lite user registration via `/invite/:code`, promote-to-full flow).
 already aligns with most of this — needs a review pass against real
 Friendly Manager data, not necessarily new build.
 
+### V1.2h Junior Players — User Model Decision (AGREED)
+**Context**: most junior players (U16 and below) don't have their own
+email address or phone. But the current `users` table requires an
+`auth.users` row (which means an email + ability to sign in).
+
+**Agreed approach for V1**:
+- **Juniors get a real `users` row** (same as everyone else), but they
+  **never log in themselves** — the caregiver's account is what receives
+  all notifications, messages, and schedule updates
+- For External League teams: data comes from Friendly Manager imports,
+  admin creates the user row — email can be synthetic/placeholder (e.g.
+  `player-{uuid}@app.internal`) since the child won't use it to sign in
+- For Club Tournament teams: when a manager adds a junior player via the
+  Team page, the form captures the **caregiver's** details (name, email,
+  phone) + the **child's** minimum data (first name, last name). This
+  creates:
+  - A caregiver user (with real email — they're the one who signs in)
+  - A player user (with synthetic email — they don't sign in)
+  - A `player_caregivers` link between them
+- `cellphone` on the junior's user row stays empty — the Team page
+  displays the caregiver's contact info next to the child's name instead
+- **Age threshold**: use `teams.age_group` to determine whether to show
+  caregiver info. U17+ / Open = show player's own phone. U16 and below =
+  show linked caregiver's name + phone.
+- **No schema change needed** for V1 — the existing `users` table,
+  `player_caregivers` relationship, and `caregiver_approvals` workflow
+  all support this. It's purely a UI/flow question (what the Team page
+  captures and displays differently for junior vs senior teams).
+
 ### V1.2g Role-Aware Mobile Navigation — NOT STARTED
 **Constraint**: maximum of **6 nav buttons per role** — this is a hard
 design rule, not a suggestion. The six-button bottom nav is the app's
