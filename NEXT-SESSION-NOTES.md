@@ -174,19 +174,39 @@ proper onboarding experience:
 > Players will get emails to join, just as you have, and will get
 > access to this App.
 
-**New mobile page needed — "My Team" / team management**:
-- Visible to managers/coaches in the mobile app nav (or as a tab)
-- Shows the teams they manage (team_members where role = manager)
-- On selecting a team: list of current players, "+ Add Player" button
-- "+ Add Player" flow: enter name + email → generates invite code →
-  sends email (once V1.2c email service exists) or shows copy-link
-- Can promote one player to co-Manager (max 2 managers per team)
-- Players get the same invite flow (email with link → register → join)
+**New mobile page — "Team" (replaces Home in nav for managers)**:
 
-**Design note**: this is the "self-serve roster management" that makes
-Club Tournaments scale — without it, every player invite has to go
-through the club admin, which defeats the purpose of the lite user
-system entirely.
+**Layout:**
+- Team selector dropdown at top (same pattern as Coaching page —
+  auto-selects first/only team, shows all teams user is a member of)
+- Roster list below, grouped by role: Coach → Manager → Player
+- Users with multiple roles shown once with all roles listed (e.g.
+  "John Smith — Coach, Manager"), NOT duplicated across groups
+- Inactive users shown greyed out at bottom of list
+
+**Role-based permissions on this page:**
+- **Coach/Manager/Admin viewing a Club Tournament team**: full edit
+  - Edit button next to each name: change name details, change role,
+    mark as inactive (greyed, moved to bottom — NOT deleted, in case
+    they come back)
+  - "+ Add User" button at bottom → invite flow (name + email)
+  - Max 2 managers per team enforced
+- **Coach/Manager viewing an External League team**: read-only roster
+  - No edit/add buttons — the Club (admin) manages these rosters, not
+    the team manager (these come from Friendly Manager imports, the
+    club controls registrations with the Federation)
+- **Player/Caregiver (any team)**: read-only roster view
+  - See names + roles (useful for knowing who coaches are, who to
+    contact)
+  - No edit/add buttons
+
+**Key design rules:**
+- No "remove" action — only "mark inactive" (soft disable, reversible)
+- Editing only available for Club Tournament teams (manager self-serves)
+- External League team rosters are club-managed (via desktop admin or
+  Friendly Manager import — V1.2b)
+- This page useful for ALL roles (everyone wants to see who's on their
+  team) — just with different action permissions
 
 ### V1.2b Competitions/Teams/Users Process Review — IN PROGRESS
 **Context (2026-08-13 evening)**: Before going further, need to confirm the
