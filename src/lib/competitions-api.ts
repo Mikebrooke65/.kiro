@@ -66,17 +66,6 @@ class CompetitionsApi extends ApiClient {
     if (error) throw new ApiError(error.message);
   }
 
-  /** Close a competition: set end_date to today and status to 'closed' */
-  async closeCompetition(id: string): Promise<void> {
-    const today = new Date().toISOString().split('T')[0];
-    const { error } = await this.supabase
-      .from('competitions')
-      .update({ end_date: today, status: 'closed', updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (error) throw new ApiError(error.message);
-  }
-
   async getCompetitionTeams(competitionId: string): Promise<CompetitionTeam[]> {
     const { data, error } = await this.supabase
       .from('competition_teams')
@@ -158,13 +147,28 @@ class CompetitionsApi extends ApiClient {
     return { removed, retained };
   }
 
-  /** Check if a competition is currently active based on dates and status */
+  /**
+   * A competition is Active purely based on today's date falling within
+   * start_date/end_date (inclusive) — Closed otherwise. No manual status
+   * override: comparing as YYYY-MM-DD strings avoids timezone drift from
+   * constructing Date objects from date-only values.
+   */
   isCompetitionActive(competition: Competition): boolean {
-    if (competition.status === 'closed') return false;
-    const now = new Date();
-    const start = new Date(competition.start_date);
-    const end = new Date(competition.end_date);
-    return now >= start && now <= end;
+    const today = new Date().toISOString().split('T')[0];
+    return today >= competition.start_date && today <= competition.end_date;
+  }
+
+  /**
+   * A competition is only "fully closed" (lite users eligible for cleanup)
+   * a grace period after its end date — admins may still need to record
+   * scores, resolve invites, etc. in the days right after it finishes.
+   */
+  isCompetitionClosed(competition: Competition): boolean {
+    const gracePeriodDays = 14;
+    const endDate = new Date(competition.end_date);
+    const closesAt = new Date(endDate);
+    closesAt.setDate(closesAt.getDate() + gracePeriodDays);
+    return new Date() >= closesAt;
   }
 }
 

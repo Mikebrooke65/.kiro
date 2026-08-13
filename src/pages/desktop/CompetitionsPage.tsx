@@ -78,10 +78,10 @@ export function CompetitionsPage() {
     setError('');
     try {
       if (editingId) {
-        // Editing clears a 'closed' status - whether the competition is
-        // then actually "Active" depends on whether today falls within
-        // the (possibly just-changed) date range, per isCompetitionActive()
-        await competitionsApi.updateCompetition(editingId, { ...formData, status: 'active' });
+        // Whether this competition is Active/Upcoming/Ended/Closed is now
+        // purely date-driven (isCompetitionActive/isCompetitionClosed) -
+        // no manual status field to update here.
+        await competitionsApi.updateCompetition(editingId, formData);
       } else {
         await competitionsApi.createCompetition(formData);
       }
@@ -101,10 +101,11 @@ export function CompetitionsPage() {
   };
 
   const handleClose = async (comp: Competition) => {
-    if (!confirm(`Close "${comp.name}" now? This sets the end date to today.`)) return;
-    await competitionsApi.closeCompetition(comp.id);
+    if (!confirm(`End "${comp.name}" now? This sets the end date to today.`)) return;
+    const today = new Date().toISOString().split('T')[0];
+    await competitionsApi.updateCompetition(comp.id, { end_date: today });
     await loadData();
-    if (selectedComp?.id === comp.id) setSelectedComp({ ...comp, status: 'closed', end_date: new Date().toISOString().split('T')[0] });
+    if (selectedComp?.id === comp.id) setSelectedComp({ ...comp, end_date: today });
   };
 
   const handleDelete = async (comp: Competition) => {
@@ -223,7 +224,21 @@ export function CompetitionsPage() {
   const linkedTeamIds = compTeams.map((ct: any) => ct.team_id);
   const availableTeams = teams.filter(t => !linkedTeamIds.includes(t.id));
   const isActive = (comp: Competition) => competitionsApi.isCompetitionActive(comp);
+  const isClosed = (comp: Competition) => competitionsApi.isCompetitionClosed(comp);
+  const isUpcoming = (comp: Competition) => new Date().toISOString().split('T')[0] < comp.start_date;
   const isClubTournament = selectedComp?.competition_type === 'club_tournament';
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  };
+
+  const getStatusLabel = (comp: Competition): { label: string; className: string } => {
+    if (isUpcoming(comp)) return { label: 'Upcoming', className: 'bg-blue-100 text-blue-700' };
+    if (isActive(comp)) return { label: 'Active', className: 'bg-green-100 text-green-700' };
+    if (isClosed(comp)) return { label: 'Closed', className: 'bg-gray-100 text-gray-600' };
+    return { label: 'Ended', className: 'bg-orange-100 text-orange-700' };
+  };
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading competitions...</div>;
 
@@ -251,10 +266,20 @@ export function CompetitionsPage() {
               <option value="external_league">External League</option>
               <option value="club_tournament">Club Tournament</option>
             </select>
-            <input type="date" value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })}
-              className="border rounded-lg px-3 py-2" placeholder="Start date" />
-            <input type="date" value={formData.end_date} onChange={e => setFormData({ ...formData, end_date: e.target.value })}
-              className="border rounded-lg px-3 py-2" placeholder="End date" />
+            <div>
+              <input type="date" value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2" placeholder="Start date" />
+              {formData.start_date && (
+                <p className="text-xs text-gray-500 mt-1">{formatDate(formData.start_date)}</p>
+              )}
+            </div>
+            <div>
+              <input type="date" value={formData.end_date} onChange={e => setFormData({ ...formData, end_date: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2" placeholder="End date" />
+              {formData.end_date && (
+                <p className="text-xs text-gray-500 mt-1">{formatDate(formData.end_date)}</p>
+              )}
+            </div>
           </div>
           <div className="flex gap-2 mt-4">
             <button onClick={handleSave} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Save</button>
@@ -287,16 +312,16 @@ export function CompetitionsPage() {
                     </span>
                   </td>
                   <td className="p-3 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${isActive(comp) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {isActive(comp) ? 'Active' : 'Closed'}
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getStatusLabel(comp).className}`}>
+                      {getStatusLabel(comp).label}
                     </span>
                   </td>
-                  <td className="p-3 text-xs text-gray-600 whitespace-nowrap">{comp.start_date} → {comp.end_date}</td>
+                  <td className="p-3 text-xs text-gray-600 whitespace-nowrap">{formatDate(comp.start_date)} → {formatDate(comp.end_date)}</td>
                   <td className="p-3 whitespace-nowrap">
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => handleEdit(comp)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">Edit</button>
                       {isActive(comp) && (
-                        <button onClick={() => handleClose(comp)} className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200">Close</button>
+                        <button onClick={() => handleClose(comp)} className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200">End Now</button>
                       )}
                       <button onClick={() => handleDelete(comp)} className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100">Delete</button>
                     </div>
@@ -342,7 +367,7 @@ export function CompetitionsPage() {
                     ))}
                   </select>
                 )}
-                {isClubTournament && selectedComp.status === 'closed' && (
+                {isClubTournament && isClosed(selectedComp) && (
                   <button onClick={handleCleanup} className="mt-4 w-full px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm hover:bg-orange-200">
                     Cleanup Lite Users
                   </button>
