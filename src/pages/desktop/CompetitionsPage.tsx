@@ -226,6 +226,10 @@ export function CompetitionsPage() {
   const isActive = (comp: Competition) => competitionsApi.isCompetitionActive(comp);
   const isClosed = (comp: Competition) => competitionsApi.isCompetitionClosed(comp);
   const isUpcoming = (comp: Competition) => new Date().toISOString().split('T')[0] < comp.start_date;
+  // Invites should be open as soon as a competition exists (Upcoming), not
+  // just once it's Active - teams/managers need to be onboarded ahead of
+  // the start date, not only from the day it kicks off.
+  const canInvite = (comp: Competition) => isUpcoming(comp) || isActive(comp);
   const isClubTournament = selectedComp?.competition_type === 'club_tournament';
 
   const formatDate = (dateStr: string) => {
@@ -347,7 +351,7 @@ export function CompetitionsPage() {
                     <div key={ct.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                       <span className="text-sm">{ct.team?.age_group} {ct.team?.name}</span>
                       <div className="flex gap-2">
-                        {isClubTournament && isActive(selectedComp) && (
+                        {isClubTournament && canInvite(selectedComp) && (
                           <button onClick={() => openInviteModal(ct.team_id)} 
                             className="text-xs text-blue-600 hover:underline">Invite</button>
                         )}
@@ -372,7 +376,7 @@ export function CompetitionsPage() {
                     Cleanup Lite Users
                   </button>
                 )}
-                {isClubTournament && isActive(selectedComp) && (
+                {isClubTournament && canInvite(selectedComp) && (
                   <button onClick={openAddTeamModal} className="mt-3 w-full px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm hover:bg-blue-200">
                     + Add Tournament Team
                   </button>
