@@ -3,15 +3,15 @@ import { ApiClient, ApiError } from './api-client';
 export interface DeviceToken {
   id: string;
   user_id: string;
-  token: string;
-  platform: 'ios' | 'android';
+  device_token: string;
+  platform: 'web' | 'ios' | 'android';
   created_at: string;
   updated_at: string;
 }
 
 export class DeviceTokensApi extends ApiClient {
   /** Register (or refresh) a device's push notification token for the current user */
-  async registerToken(token: string, platform: 'ios' | 'android'): Promise<DeviceToken> {
+  async registerToken(deviceToken: string, platform: 'ios' | 'android'): Promise<DeviceToken> {
     const { data: { user } } = await this.supabase.auth.getUser();
     if (!user) throw new ApiError('Not authenticated');
 
@@ -20,10 +20,10 @@ export class DeviceTokensApi extends ApiClient {
       .upsert(
         {
           user_id: user.id,
-          token,
+          device_token: deviceToken,
           platform,
         },
-        { onConflict: 'token' }
+        { onConflict: 'user_id,device_token' }
       )
       .select()
       .single();
@@ -33,11 +33,11 @@ export class DeviceTokensApi extends ApiClient {
   }
 
   /** Remove a device token, e.g. on logout so this device stops receiving pushes for this user */
-  async removeToken(token: string): Promise<void> {
+  async removeToken(deviceToken: string): Promise<void> {
     const { error } = await this.supabase
       .from('device_tokens')
       .delete()
-      .eq('token', token);
+      .eq('device_token', deviceToken);
 
     if (error) throw new ApiError(error.message);
   }
