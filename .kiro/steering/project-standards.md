@@ -102,12 +102,29 @@ git push kiro prototype
 West Coast Rangers-specific build, and the possibility of other clubs
 adopting it only entered the picture recently.
 
+**Club-agnostic does NOT mean generic-looking.** The WCR result should
+look exactly as it does today. The difference is that WCR's name, logo and
+colour come from a defined source rather than being baked into components,
+so another club can be delivered by changing data, not code.
+
 **The rule:**
 - **New build**: no hardcoded club name, colours, logo, domain, or URLs.
-  Take them from environment variables or config with sensible generic
-  fallbacks (e.g. `CLUB_NAME`, `CLUB_COLOR`, `APP_URL`).
+- **At every step, explicitly state where each piece of club branding
+  (name / text / colour / logo) comes from.** Don't hardcode, and don't
+  silently invent a new mechanism — use the shared source.
+- **Where branding comes from**:
+  - **Client/UI**: a `club_settings` table via a `useClubBranding()` hook
+    (planned — see `NEXT-SESSION-NOTES.md` V1.B). Until that exists, ask
+    rather than hardcoding.
+  - **Edge Functions**: environment variables with generic fallbacks
+    (`CLUB_NAME`, `CLUB_COLOR`, `APP_URL`, `EMAIL_FROM`,
+    `EMAIL_REPLY_TO`). A DB round-trip per invocation isn't worth the
+    latency. The small duplication with the table is accepted
+    deliberately.
 - **Existing hardcoded code**: leave it alone. It works. Retrofitting is
-  a V3 concern, not something to fix opportunistically.
+  a V3 concern, not something to fix opportunistically. Note that many
+  WCR references live in `src/app/**`, which is dead/unused code — see
+  `docs/deployment/DEPLOYMENT.md`.
 
 **Why the App ID is generic**: `com.clubfootball.app` was chosen
 deliberately (not `nz.wcr.app`) so the store listing doesn't lock the app

@@ -187,7 +187,39 @@ are an iOS-specific polish item that comes out of this track.
 
 ---
 
-### V1.2 Transactional Email Service — NOT STARTED ⚠️ CRITICAL PATH
+### V1.0 Buy a Product Domain — DECIDED, ACTION NEEDED FIRST
+
+**Decision (2026-08-14): Option A — buy a product domain**, not use the
+club's domain. Something like `clubfootballapp.com`. ~$10–15/year.
+
+**Why a product domain rather than the club's**: matches the
+club-agnostic direction, needs no club/DNS cooperation (which — like the
+privacy policy — is the kind of dependency that sits blocked for weeks),
+and works for every club that ever uses this. Resend supports multiple
+verified domains, so any club that later wants invites coming from their
+own address can add theirs, while the product domain stays the default
+that always works.
+
+**One purchase unblocks four things**:
+
+| Need | Currently | With the domain |
+|------|-----------|----------------|
+| Email sending (V1.2) | Test sender only reaches the Resend account owner's own inbox | Real invites to anyone |
+| App URL | `wcrfootball.netlify.app` — club-specific *and* Netlify-branded | e.g. `app.<domain>` |
+| Privacy policy hosting (V1.9) | Nowhere — both stores require a public URL | A page on the domain |
+| Invite deep links (V2 backlog) | Not possible | App Links / Universal Links require a domain you control |
+
+**Consistent with** the App ID already being generic
+(`com.clubfootball.app`, deliberately not `nz.wcr.app`) — that can't be
+changed after publishing, so a matching product domain keeps things
+coherent.
+
+**Then**: verify the domain in Resend (SPF/DKIM DNS records), set
+`EMAIL_FROM` and optionally `EMAIL_REPLY_TO` as Supabase secrets.
+
+---
+
+### V1.2 Transactional Email Service — IN PROGRESS ⚠️ CRITICAL PATH
 
 **Why this is first**: three other items (V1.3, V1.4, V1.5) sit behind
 this. It's currently the single biggest unblocker in V1.
@@ -197,16 +229,33 @@ it into their own email or text. For a launch with multiple teams
 onboarding, this needs to be a "Send" button that emails the recipient
 directly from the app — branded, automated, trackable.
 
-**Scope**:
-- Choose and set up a provider (**Resend recommended** — see Open
-  Decision 1)
-- Supabase Edge Function to send email (invite link, competition name,
-  club branding)
-- Replace "Copy Link" with **"Send Link"** on the Add Tournament Team
-  modal and the per-team Invite modal — sends immediately, shows
-  confirmation
-- Keep "Copy Link" as a fallback (useful, and it changes the security
-  model — see V1.3)
+**Provider: Resend** (decided 2026-08-14).
+
+**Done**:
+- ✅ `supabase/functions/send-email/index.ts` written — generic sender,
+  `team_invite` template first; RSVP reminders and announcements slot
+  into the same `type` switch later. Templates built **server-side** so
+  the client sends `type` + data, never raw HTML (a compromised client
+  can't push arbitrary content through the sending domain). User-supplied
+  values HTML-escaped. Requires an auth header.
+- ✅ Club-agnostic: `CLUB_NAME`, `CLUB_COLOR`, `APP_URL`, `EMAIL_FROM`,
+  `EMAIL_REPLY_TO` all from env vars with generic fallbacks.
+
+**Remaining**:
+1. Resend account + API key → set as `RESEND_API_KEY` Supabase secret
+2. `supabase functions deploy send-email`
+3. Test send (works to your own Resend signup address without a domain)
+4. Wire **"Send Link"** into `CompetitionsPage` — the Add Tournament Team
+   modal and the per-team Invite modal. Keep "Copy Link" as a fallback
+   (it's genuinely useful, and it changes the security model — see V1.3).
+
+**Not verified**: no Deno runtime locally to type-check or execute the
+function. Same caveat as `send-message-push`.
+
+**Send-only by design** — no mailbox needed on the sending domain,
+`noreply@` is fine. But SPF/DKIM are still required or mail lands in
+spam, and replies bounce unless `EMAIL_REPLY_TO` points at a monitored
+address. Decision needed on whether invites should be repliable.
 
 **Also unlocks later**: RSVP reminders by email, announcements by email,
 custom password-reset emails.
@@ -466,6 +515,61 @@ on name/email. Design after seeing real data, not before.
 **Likely shape**: a staging table the export is loaded into, then a
 reconcile step that applies changes into the main tables. Not designed
 yet.
+
+---
+
+### V1.B Club Branding Config — NOT STARTED (standing pattern)
+
+**The point (stated 2026-08-14)**: club-agnostic does **not** mean
+generic-looking. The WCR result should look exactly as it does now — the
+difference is that WCR's name, logo and colour come from a defined source
+rather than being baked into components, so another club can be delivered
+by changing data, not code.
+
+**Standing rule for all new build**: at every step, explicitly state
+where each piece of club branding (name / text / colour / logo) comes
+from. Don't hardcode, and don't silently invent a new mechanism — use the
+shared source below. (This rule is also in
+`.kiro/steering/project-standards.md` so it applies automatically in
+future sessions.)
+
+**Live hardcoded branding — the actual list (audited 2026-08-14)**:
+
+| File | What's hardcoded |
+|------|-----------------|
+| `src/pages/Login.tsx` | "West Coast Rangers FC" |
+| `src/layouts/MainLayout.tsx` | "Urrah" + subtitle |
+| `src/layouts/DesktopLayout.tsx` | logo PNG import, "WCRF Admin", "Urrah", `#0091f3` header |
+| `src/lib/invites-api.ts` | a comment only — harmless |
+
+Smaller than it first appears: a lot of WCR references live in
+`src/app/**`, which `docs/deployment/DEPLOYMENT.md` marks as dead/unused
+code. Ignore those.
+
+**Two open questions before building**:
+1. **Is "Urrah" the product name or a WCR term?** It's the app title in
+   both layouts. Product name → stays hardcoded (another club sees it
+   too). WCR term → becomes config.
+2. **Are the six page colours club branding or product design?**
+   (Coaching green, Games orange, Resources purple, Schedule cyan,
+   Messaging grey.) Instinct: these are *product* semantic colours and
+   only the **primary/header colour** is club branding — but that's a
+   real decision, not obvious.
+
+**Proposed approach** (to confirm):
+- A single-row `club_settings` table: club name, short name, logo URL,
+  primary colour, app URL. Editable without redeploy, and it naturally
+  becomes the `clubs` table when full multi-tenancy arrives (V2/V3
+  backlog) rather than being thrown away.
+- A `useClubBranding()` hook so components read from one place.
+- **Edge Functions keep using env vars** (as `send-email` already does) —
+  a DB round-trip per email adds latency and needs service-role access.
+  Accepting a small duplication between env vars and the table is
+  simpler than the alternatives; worth noting rather than hiding.
+
+**Sequencing**: no need to build this before V1.2/V1.3. It matters when
+V1.4 (Team page) and V1.6 (invite landing page branding) get built, since
+those are new UI that would otherwise hardcode more WCR references.
 
 ---
 
