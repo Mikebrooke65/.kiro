@@ -96,6 +96,32 @@ git push kiro prototype
 - Never override font-family with inline styles — theme.css handles this
 - Use font-bold (700) for page headings, font-semibold (600) for section headings, font-medium (500) for labels/buttons
 
+## Club-Agnostic Rule (NEW BUILD ONLY) — added 2026-08-14
+
+**All new code must be club-agnostic.** This app started as a
+West Coast Rangers-specific build, and the possibility of other clubs
+adopting it only entered the picture recently.
+
+**The rule:**
+- **New build**: no hardcoded club name, colours, logo, domain, or URLs.
+  Take them from environment variables or config with sensible generic
+  fallbacks (e.g. `CLUB_NAME`, `CLUB_COLOR`, `APP_URL`).
+- **Existing hardcoded code**: leave it alone. It works. Retrofitting is
+  a V3 concern, not something to fix opportunistically.
+
+**Why the App ID is generic**: `com.clubfootball.app` was chosen
+deliberately (not `nz.wcr.app`) so the store listing doesn't lock the app
+to one club. App IDs can't be changed after publishing without relisting.
+
+**Reference implementation**: `supabase/functions/send-email/index.ts`
+takes club name, colour, app URL, from-address and reply-to entirely from
+env vars, with generic defaults. Follow that pattern.
+
+**Related**: full multi-club support (a `clubs` table above `teams`,
+per-club theming) is a V2/V3 backlog item — see `NEXT-SESSION-NOTES.md`.
+The rule above is about not making that future work *harder*, not about
+building it now.
+
 ## Code Conventions
 
 ### File Organization
