@@ -346,10 +346,45 @@ Supabase secrets.
 
 ---
 
-### V1.2 Transactional Email Service — IN PROGRESS ⚠️ CRITICAL PATH
+### V1.2 Transactional Email Service — ✅ DONE (2026-08-14)
 
-**Why this is first**: three other items (V1.3, V1.4, V1.5) sit behind
-this. It's currently the single biggest unblocker in V1.
+**Live and verified end-to-end.** A real email was sent through the
+deployed function and Resend returned a message ID.
+
+- Resend account: **separate account, separate login** from the Riverhead
+  Community one. Resend's free plan allows only **one domain per team**,
+  that team's slot was already used by `riverheadcommunity.org.nz`, and
+  creating a second team is a paid feature ($20/mo Pro). A second free
+  account was the sane answer.
+- Sending domain: **`send.clubfootball.app`**, verified, region Tokyo
+  (`ap-northeast-1` — closest offered to NZ).
+- DNS records added manually in Cloudflare (**not** Resend's "Auto
+  configure", which would have granted a standing OAuth token with DNS
+  write access to the same zone that points the app at Netlify):
+  DKIM TXT at `resend._domainkey.send`, SPF TXT + MX at `send.send`,
+  DMARC TXT at `_dmarc`. All four confirmed resolving.
+  - Resend presents record names **relative to the zone root**, which is
+    exactly what Cloudflare expects — enter them verbatim. Appending
+    `.clubfootball.app` yourself produces
+    `send.send.clubfootball.app.clubfootball.app`.
+- **"Enable Receiving" deliberately left OFF** — send-only by design, no
+  mailbox on the domain.
+- Supabase secrets set: `RESEND_API_KEY`, `EMAIL_FROM`
+  (`West Coast Rangers <noreply@send.clubfootball.app>`), `APP_URL`
+  (`https://clubfootball.app`), `CLUB_NAME` (`West Coast Rangers`),
+  `CLUB_COLOR` (`#0091f3`).
+- `supabase functions deploy send-email` — deployed.
+- Test send returned `{"success":true,"id":"..."}`.
+
+**Still open — `EMAIL_REPLY_TO` is not set.** Replies to invite emails
+will bounce. Decide whether invites should be repliable and, if so, which
+monitored address they go to. Setting a personal address exposes it to
+every recipient, which is why this wasn't just picked.
+
+**Security note**: the first API key was pasted into chat and was
+therefore revoked immediately and replaced. The replacement was created
+with **Sending access only** (not Full access) and transferred via a file
+outside the repo, which was deleted after use. Do it that way every time.
 
 **The problem**: the admin has to manually copy an invite link and paste
 it into their own email or text. For a launch with multiple teams

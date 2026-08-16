@@ -347,6 +347,28 @@ After ANY code changes, update:
 - Build: `npm run build`
 - Publish: `dist/`
 
+### Email (Resend)
+- Provider: **Resend**, on a **separate account** from the Riverhead
+  Community project (free plan allows one domain per team, and a second
+  team is a paid feature)
+- Sending domain: `send.clubfootball.app` (subdomain deliberately, so
+  deliverability problems can't damage the root domain the app is served
+  from), region `ap-northeast-1`
+- From: `West Coast Rangers <noreply@send.clubfootball.app>`
+- **Send-only** — no mailbox, "Enable Receiving" off in Resend
+- Edge Function: `supabase/functions/send-email`
+- Client wrapper: `src/lib/email-api.ts` — sends data only, never branding
+- `EMAIL_REPLY_TO` is **not set**, so replies bounce (open decision)
+
+### Secrets — how to hand them over
+**Never paste a secret into chat.** Save it to a plain text file
+**outside the repo** (e.g. `C:\Users\miker\<name>.txt`), say it's there,
+and it gets piped into `supabase secrets set` and the file deleted. A key
+pasted into a transcript must be treated as compromised and rotated.
+
+Scope keys to the minimum permission the job needs (the Resend key is
+Sending access only, not Full access).
+
 ### Domain (Cloudflare)
 - `clubfootball.app` — registered at Cloudflare Registrar, DNS on Cloudflare
 - Apex: CNAME → `apex-loadbalancer.netlify.com`, **proxy OFF (DNS only)**

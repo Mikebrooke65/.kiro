@@ -4,6 +4,42 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+## [2026-08-14 - Part 4] - Transactional Email Live (V1.2 Complete)
+
+### Added
+- **Resend sending domain `send.clubfootball.app`**, verified, Tokyo
+  region. DKIM, SPF, MX and DMARC records added in Cloudflare and all
+  confirmed resolving.
+- Supabase secrets: `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`,
+  `CLUB_NAME`, `CLUB_COLOR`.
+- `send-email` Edge Function deployed. **Test send succeeded** —
+  Resend returned a message ID.
+
+### Technical Notes
+- **Separate Resend account, not the existing one.** The free plan allows
+  one domain per team; the existing team's slot was used by another
+  project, and creating a second team is a paid Pro feature ($20/mo).
+- **Manual DNS entry chosen over Resend's "Auto configure"** — the latter
+  grants an OAuth token with ongoing DNS write access to the same zone
+  that points the app at Netlify. Four one-time records, verified by DNS
+  lookup, is the better trade.
+- **Resend shows record names relative to the zone root**, which is what
+  Cloudflare expects. Enter them verbatim; appending the domain yourself
+  yields `send.send.clubfootball.app.clubfootball.app`.
+- "Enable Receiving" left off — send-only by design.
+- Sending from the `send.` subdomain rather than the root isolates email
+  reputation from the domain serving the app.
+
+### Security
+- The first Resend API key was pasted into chat and so was **revoked and
+  replaced immediately**. The replacement is scoped to **Sending access
+  only** and was transferred via a file outside the repo, deleted after
+  use. Recorded as a standing rule in the steering file.
+
+### Outstanding
+- `EMAIL_REPLY_TO` unset, so replies to invites bounce. Needs a decision
+  on whether invites should be repliable and to which monitored address.
+
 ## [2026-08-14 - Part 3] - Product Domain Live: clubfootball.app
 
 ### Added
