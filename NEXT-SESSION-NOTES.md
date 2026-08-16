@@ -231,11 +231,25 @@ a product domain, not a club asset.
 
 #### DNS / hostname plan
 
-| Hostname | Purpose | Record |
-|----------|---------|--------|
-| `clubfootball.app` (root) | The app itself | CNAME/ALIAS → Netlify |
-| `clubfootball.app/privacy` | Privacy policy (V1.9) | Static HTML page, **not** a React route — store reviewers must get it even if the app bundle fails to load |
-| `send.clubfootball.app` | Sending domain verified in Resend | TXT (SPF, DKIM), optional DMARC |
+| Hostname | Purpose | Record | Proxy |
+|----------|---------|--------|-------|
+| `clubfootball.app` (apex) | The app itself | CNAME → `apex-loadbalancer.netlify.com` | **DNS-only** |
+| `www` | Redirects to apex (Netlify handles this) | CNAME → `wcrfootball.netlify.app` | **DNS-only** |
+| `clubfootball.app/privacy` | Privacy policy (V1.9) | Static HTML page, **not** a React route — store reviewers must get it even if the app bundle fails to load | — |
+| `send.clubfootball.app` | Sending domain verified in Resend | TXT (SPF, DKIM), optional DMARC | — |
+
+Cloudflare flattens apex CNAMEs automatically (it can't be switched off at
+the apex), which is why a CNAME works at the root here where most
+registrars would need an A record. Netlify explicitly lists flattened
+CNAMEs at Cloudflare as a supported apex setup, and
+`apex-loadbalancer.netlify.com` is their current recommended target —
+better than a hardcoded IP, which is what bit sites when Netlify retired
+an old load balancer address in 2025.
+
+**No code changes needed for the domain switch.** "Copy Link" builds from
+`window.location.origin`, so it follows whatever domain the admin is on.
+Emailed links build from the Edge Function's `APP_URL` secret. Both adapt
+without a rebuild.
 
 **App at the root**, not `app.clubfootball.app` — shortest to share, and
 there's no marketing site competing for it.
@@ -245,10 +259,18 @@ root. If deliverability ever goes bad it damages the subdomain's
 reputation, not the domain the app itself is served from. Free to do now,
 painful to retrofit.
 
-#### Three gotchas to get right on the day
+#### Four gotchas to get right
+
+**0. Verify the ICANN registrant email immediately after purchase.** If
+it isn't verified within 15 days, ICANN requires the registrar to place a
+hold and Cloudflare replaces the nameservers with parking nameservers —
+the domain stops resolving. Verifying restores them automatically, but
+Cloudflare's forum shows people stuck in that state waiting on support
+tickets. (Flagged 2026-08-14, on purchase.)
 
 Cloudflare Registrar **requires the domain's DNS to be on Cloudflare**,
-so their proxy is in the path by default. That's where the traps are:
+so their proxy is in the path by default. That's where the rest of the
+traps are:
 
 1. **Set the Netlify record to DNS-only (grey cloud), not proxied
    (orange).** Netlify issues its own certificate. Proxying on
