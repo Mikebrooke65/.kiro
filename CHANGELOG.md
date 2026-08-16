@@ -36,9 +36,22 @@ All notable changes to the football coaching app prototype will be documented in
   only** and was transferred via a file outside the repo, deleted after
   use. Recorded as a standing rule in the steering file.
 
+### Fixed
+- **Invite emails now include a plain-text alternative.** HTML-only mail
+  is a recognised spam signal, and the first test email landed in
+  Outlook's Junk folder.
+- **Subject line was using HTML-escaped values.** A team named
+  "Mike's Team" would have arrived as "Mike&#39;s Team". Subject lines and
+  the plain-text part now use raw values; only the HTML body is escaped.
+
 ### Outstanding
 - `EMAIL_REPLY_TO` unset, so replies to invites bounce. Needs a decision
   on whether invites should be repliable and to which monitored address.
+- **Deliverability needs reputation, not configuration.** New sending
+  domain with no history; Outlook filed the first message as junk despite
+  correct SPF/DKIM/DMARC. Marking messages "Not junk" and real recipient
+  engagement are the fixes. Revisit tightening DMARC from `p=none` to
+  `p=quarantine` after a couple of weeks of clean sending.
 
 ## [2026-08-14 - Part 3] - Product Domain Live: clubfootball.app
 

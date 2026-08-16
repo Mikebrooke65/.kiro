@@ -73,17 +73,45 @@ interface Branding {
 function buildTeamInvite(
   data: TeamInviteData,
   branding: Branding
-): { subject: string; html: string } {
-  const teamName = escapeHtml(data.teamName);
-  const competitionName = data.competitionName ? escapeHtml(data.competitionName) : null;
-  const greetingName = data.recipientName ? escapeHtml(data.recipientName) : null;
+): { subject: string; html: string; text: string } {
+  // Raw values are used for the subject line and the plain-text part.
+  // Neither is HTML, so escaping there would leak entities into what the
+  // recipient actually reads - a team called "Mike's Team" would arrive
+  // as "Mike&#39;s Team".
+  const rawTeam = data.teamName;
+  const rawCompetition = data.competitionName || null;
+  const rawGreeting = data.recipientName || null;
   const inviteUrl = `${branding.appUrl}/invite/${encodeURIComponent(data.inviteCode)}`;
+
+  const teamName = escapeHtml(rawTeam);
+  const competitionName = rawCompetition ? escapeHtml(rawCompetition) : null;
+  const greetingName = rawGreeting ? escapeHtml(rawGreeting) : null;
   const clubName = escapeHtml(branding.clubName);
   const clubColor = escapeHtml(branding.clubColor);
 
-  const subject = competitionName
-    ? `You're invited to join ${teamName} for ${competitionName}`
-    : `You're invited to join ${teamName}`;
+  const subject = rawCompetition
+    ? `You're invited to join ${rawTeam} for ${rawCompetition}`
+    : `You're invited to join ${rawTeam}`;
+
+  // A plain-text alternative alongside the HTML. Sending HTML only is a
+  // recognised spam signal, and some clients render the text part anyway.
+  const text = [
+    rawGreeting ? `Hi ${rawGreeting},` : 'Hi,',
+    '',
+    rawCompetition
+      ? `You've been invited to join ${rawTeam} for ${rawCompetition}.`
+      : `You've been invited to join ${rawTeam}.`,
+    '',
+    'Set up your account here:',
+    inviteUrl,
+    '',
+    "Once you're in, you'll be able to see your schedule, get team messages,",
+    "and add your own players if you're managing the team.",
+    '',
+    "If you weren't expecting this invitation, you can safely ignore this email.",
+    '',
+    branding.clubName,
+  ].join('\n');
 
   const html = `<!DOCTYPE html>
 <html>
@@ -140,7 +168,7 @@ function buildTeamInvite(
   </body>
 </html>`;
 
-  return { subject, html };
+  return { subject, html, text };
 }
 
 Deno.serve(async (req) => {
@@ -182,6 +210,7 @@ Deno.serve(async (req) => {
 
     let subject: string;
     let html: string;
+    let text: string;
 
     switch (body.type) {
       case 'team_invite': {
@@ -191,7 +220,7 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
-        ({ subject, html } = buildTeamInvite(body.data, branding));
+        ({ subject, html, text } = buildTeamInvite(body.data, branding));
         break;
       }
       default:
@@ -212,6 +241,7 @@ Deno.serve(async (req) => {
         to: [body.to],
         subject,
         html,
+        text,
         ...(replyTo ? { reply_to: replyTo } : {}),
       }),
     });

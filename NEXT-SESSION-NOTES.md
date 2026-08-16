@@ -376,6 +376,33 @@ deployed function and Resend returned a message ID.
 - `supabase functions deploy send-email` — deployed.
 - Test send returned `{"success":true,"id":"..."}`.
 
+**First real email landed in Outlook's Junk folder.** Expected, not a
+misconfiguration — the domain was verified minutes earlier and has no
+sending reputation, and Outlook is unusually harsh on new domains.
+SPF/DKIM/DMARC were all confirmed resolving correctly beforehand.
+
+Two things were fixed in response:
+- ✅ **Added a plain-text alternative** alongside the HTML. HTML-only mail
+  is a recognised spam signal. Redeployed and re-tested.
+- ✅ **Fixed the subject line**, which was using HTML-escaped values — a
+  team called "Mike's Team" would have arrived as "Mike&#39;s Team".
+
+**Deliverability is now mostly a reputation problem, which needs time and
+volume, not more configuration:**
+1. Mark the test emails **"Not junk"** in Outlook — direct positive signal.
+2. Real invites to real recipients who open them build reputation fastest.
+3. After a couple of weeks of clean sending, consider tightening DMARC
+   from `p=none` to `p=quarantine`. Don't do it sooner — `p=none` is the
+   monitoring phase and tightening early can bounce legitimate mail.
+4. Setting `EMAIL_REPLY_TO` to a real monitored address also helps, since
+   `noreply@` with no reply path is a mild negative signal.
+
+**To confirm authentication actually passed** (worth doing once): open the
+message in Outlook → View message source, and look for
+`Authentication-Results` showing `spf=pass`, `dkim=pass`, `dmarc=pass`.
+Easier alternative: send one to a Gmail address, where "Show original"
+displays all three in plain language.
+
 **Still open — `EMAIL_REPLY_TO` is not set.** Replies to invite emails
 will bounce. Decide whether invites should be repliable and, if so, which
 monitored address they go to. Setting a personal address exposes it to
