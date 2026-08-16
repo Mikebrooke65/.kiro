@@ -4,6 +4,43 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+## [2026-08-14 - Part 2] - "Send Link" — Invites Emailed Directly from the App
+
+### Added
+- **`src/lib/email-api.ts`**: client wrapper for the `send-email` Edge
+  Function. Sends only data (recipient, team name, competition name,
+  invite code) — deliberately **no branding from the browser**, so club
+  name/colour/app URL have exactly one source (the function's env vars).
+  Also unwraps `functions.invoke` errors, which otherwise surface as an
+  unhelpful "Edge Function returned a non-2xx status code".
+- **"Send Link" buttons on the Competitions page**, in three places:
+  1. Add Tournament Team modal, once the team and manager invite exist
+  2. Per-team Invite modal, once the code is generated
+  3. Each pending row in the Invites panel — so an invite can be resent
+     later without regenerating the code
+
+### Changed
+- Invite emails send the team name in the project's standard display
+  format, `"{age_group} {name}"` (e.g. "Open Bozos"), not the bare name.
+- Modal helper text now mentions emailing rather than only sharing.
+- `.kiro/steering/project-standards.md`: recorded which values are club
+  branding (configurable — including "Urrah") versus product design
+  (fixed — the six page colours, typography, layout). Only the
+  primary/header colour is club branding.
+
+### Technical Notes
+- **"Copy Link" is retained everywhere as a fallback.** It's not legacy —
+  it stays useful, and it carries a different security model: a pasted
+  link proves nothing about who clicked it, whereas an emailed link
+  proves the recipient owns the address (this is what unblocks V1.3).
+  If a send fails, the error message tells the admin to use Copy Link, so
+  an email outage never blocks onboarding.
+- Send state is tracked per invite code, so each row shows its own
+  Sending/Sent state. The button becomes "Resend Link" after a send.
+- **Not yet functional end-to-end**: needs `RESEND_API_KEY` set and
+  `send-email` deployed. `npm run build` passes; no Deno runtime locally
+  to execute the function.
+
 ## [2026-08-13 - Part 3] - Push Notification Pipeline Confirmed Working End-to-End
 
 ### Added

@@ -1,0 +1,73 @@
+import { ApiClient, ApiError } from './api-client';
+
+/**
+ * Client wrapper for the `send-email` Edge Function.
+ *
+ * CLUB-AGNOSTIC BY DESIGN: this client sends only *data* (team name,
+ * competition name, invite code, recipient). Every piece of club branding
+ * in the resulting email — club name, header colour, app URL used to build
+ * the invite link, from-address and reply-to — comes from the Edge
+ * Function's environment variables (`CLUB_NAME`, `CLUB_COLOR`, `APP_URL`,
+ * `EMAIL_FROM`, `EMAIL_REPLY_TO`). Nothing club-specific is hardcoded
+ * here or passed from the browser.
+ *
+ * The HTML itself is also built server-side, so a compromised client
+ * can't push arbitrary content through the sending domain.
+ */
+
+export interface TeamInviteEmailParams {
+  /** Recipient email address */
+  to: string;
+  /** Optional first name for the greeting */
+  recipientName?: string;
+  /** Display name, e.g. "U9 Lithium" (age group + name, per project standard) */
+  teamName: string;
+  /** Optional competition name for context, e.g. "Summer Football" */
+  competitionName?: string;
+  /** The invite code — the function builds the link as `${APP_URL}/invite/{code}` */
+  inviteCode: string;
+}
+
+class EmailApi extends ApiClient {
+  /** Send a team invite email. Resolves on success, throws ApiError otherwise. */
+  async sendTeamInvite(params: TeamInviteEmailParams): Promise<{ id?: string }> {
+    const { to, ...data } = params;
+
+    const { data: result, error } = await this.supabase.functions.invoke('send-email', {
+      body: { type: 'team_invite', to, data },
+    });
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+
+    if (result?.error) {
+      throw new ApiError(result.error);
+    }
+
+    return { id: result?.id };
+  }
+}
+
+/**
+ * `functions.invoke` surfaces non-2xx responses as an opaque error — the
+ * useful message is in the response body, which has to be read off
+ * `error.context`. Without this, every failure reads "Edge Function
+ * returned a non-2xx status code", which is not actionable.
+ */
+async function extractFunctionError(error: unknown): Promise<string> {
+  const context = (error as { context?: Response })?.context;
+  if (context && typeof context.json === 'function') {
+    try {
+      const body = await context.json();
+      if (body?.error) {
+        return typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+      }
+    } catch {
+      // Body wasn't JSON — fall through to the generic message.
+    }
+  }
+  return error instanceof Error ? error.message : 'Failed to send email';
+}
+
+export const emailApi = new EmailApi();

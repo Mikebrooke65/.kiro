@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { competitionsApi } from '../../lib/competitions-api';
 import { invitesApi } from '../../lib/invites-api';
+import { emailApi } from '../../lib/email-api';
 import type { Competition, CompetitionTeam, Team, InviteCode } from '../../types/database';
 
 export function CompetitionsPage() {
@@ -30,7 +31,12 @@ export function CompetitionsPage() {
   const [managerEmail, setManagerEmail] = useState('');
   const [managerPhone, setManagerPhone] = useState('');
   const [addTeamLoading, setAddTeamLoading] = useState(false);
-  const [addTeamResult, setAddTeamResult] = useState<{ teamName: string; code: string } | null>(null);
+  const [addTeamResult, setAddTeamResult] = useState<{ teamName: string; email: string; code: string } | null>(null);
+
+  // Invite email state - tracked per invite code so each row can show its
+  // own Sending/Sent state without a single global spinner.
+  const [sendingCode, setSendingCode] = useState<string | null>(null);
+  const [sentCodes, setSentCodes] = useState<string[]>([]);
 
   useEffect(() => { loadData(); }, []);
 
@@ -175,6 +181,39 @@ export function CompetitionsPage() {
     alert('Invite link copied to clipboard!');
   };
 
+  /** Team display name per project standard: "{age_group} {name}" */
+  const teamLabel = (teamId: string) => {
+    const t = teams.find(x => x.id === teamId);
+    return t ? `${t.age_group || ''} ${t.name}`.trim() : 'your team';
+  };
+
+  /**
+   * Email the invite link directly, instead of the admin copying it into
+   * their own mail client. Club branding in the email (club name, colour,
+   * from-address, and the app URL the link is built from) all comes from
+   * the send-email Edge Function's env vars - nothing is passed from here.
+   */
+  const sendInviteLink = async (opts: { code: string; email: string; teamName: string }) => {
+    setError('');
+    setSendingCode(opts.code);
+    try {
+      await emailApi.sendTeamInvite({
+        to: opts.email,
+        teamName: opts.teamName,
+        competitionName: selectedComp?.name,
+        inviteCode: opts.code,
+      });
+      setSentCodes(prev => (prev.includes(opts.code) ? prev : [...prev, opts.code]));
+    } catch (e: any) {
+      setError(`Couldn't email ${opts.email}: ${e.message}. Use Copy Link and send it manually.`);
+    } finally {
+      setSendingCode(null);
+    }
+  };
+
+  const sendLabel = (code: string) =>
+    sendingCode === code ? 'Sending...' : sentCodes.includes(code) ? 'Resend Link' : 'Send Link';
+
   const handleAddTournamentTeam = async () => {
     if (!selectedComp || !newTeamName || !managerEmail) return;
     setAddTeamLoading(true);
@@ -199,7 +238,11 @@ export function CompetitionsPage() {
         selectedComp.id
       );
 
-      setAddTeamResult({ teamName: newTeamName, code: invite.code });
+      setAddTeamResult({
+        teamName: `${newTeamAgeGroup || 'Open'} ${newTeamName}`.trim(),
+        email: managerEmail,
+        code: invite.code,
+      });
 
       // Refresh data
       await loadData();
@@ -413,10 +456,25 @@ export function CompetitionsPage() {
                         </div>
                       </div>
                       {!inv.redeemed_by && new Date(inv.expires_at) >= new Date() && (
-                        <button onClick={() => copyInviteLink(inv.code)} 
-                          className="mt-1 text-xs text-blue-600 hover:underline">
-                          Copy Link
-                        </button>
+                        <div className="mt-1 flex items-center gap-3">
+                          <button
+                            onClick={() => sendInviteLink({
+                              code: inv.code,
+                              email: inv.recipient_email,
+                              teamName: `${inv.team?.age_group || ''} ${inv.team?.name || ''}`.trim(),
+                            })}
+                            disabled={sendingCode === inv.code}
+                            className="text-xs font-medium text-green-700 hover:underline disabled:opacity-50">
+                            {sendLabel(inv.code)}
+                          </button>
+                          <button onClick={() => copyInviteLink(inv.code)}
+                            className="text-xs text-blue-600 hover:underline">
+                            Copy Link
+                          </button>
+                          {sentCodes.includes(inv.code) && (
+                            <span className="text-xs text-green-600">Sent</span>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -444,7 +502,20 @@ export function CompetitionsPage() {
                   <p className="text-xs text-gray-500 mb-1">Share this link:</p>
                   <p className="text-sm font-mono break-all">{window.location.origin}/invite/{generatedCode}</p>
                 </div>
+                {sentCodes.includes(generatedCode) && (
+                  <p className="text-sm text-green-700 mb-3">Invite emailed to {inviteEmail}</p>
+                )}
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => sendInviteLink({
+                      code: generatedCode,
+                      email: inviteEmail,
+                      teamName: teamLabel(inviteTeamId),
+                    })}
+                    disabled={sendingCode === generatedCode}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                    {sendLabel(generatedCode)}
+                  </button>
                   <button onClick={() => copyInviteLink(generatedCode)} 
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                     Copy Link
@@ -472,7 +543,7 @@ export function CompetitionsPage() {
                   </div>
                 </div>
                 <div className="bg-blue-50 rounded-lg p-3 mt-4 text-sm text-blue-700">
-                  <p>An invite code will be generated. Share the link with the player to let them register as a lite user.</p>
+                  <p>An invite code will be generated. You can then email the link straight to the player, or copy it and send it yourself.</p>
                 </div>
                 <div className="flex gap-2 mt-4">
                   <button onClick={handleGenerateInvite} disabled={!inviteEmail || inviteLoading}
@@ -511,7 +582,20 @@ export function CompetitionsPage() {
                 <p className="text-xs text-gray-500 mb-4">
                   The manager registers via this link, then they can share it with their players to onboard them.
                 </p>
+                {sentCodes.includes(addTeamResult.code) && (
+                  <p className="text-sm text-green-700 mb-3">Invite emailed to {addTeamResult.email}</p>
+                )}
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => sendInviteLink({
+                      code: addTeamResult.code,
+                      email: addTeamResult.email,
+                      teamName: addTeamResult.teamName,
+                    })}
+                    disabled={sendingCode === addTeamResult.code}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                    {sendLabel(addTeamResult.code)}
+                  </button>
                   <button onClick={() => copyInviteLink(addTeamResult.code)} 
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                     Copy Link
@@ -555,7 +639,7 @@ export function CompetitionsPage() {
                   </div>
                 </div>
                 <div className="bg-blue-50 rounded-lg p-3 mt-4 text-sm text-blue-700">
-                  <p>This creates the team, links it to the tournament, and generates an invite code for the manager. Share the link so they can register and onboard their players.</p>
+                  <p>This creates the team, links it to the tournament, and generates an invite code for the manager. You can then email the invite straight to them, or copy the link and send it yourself.</p>
                 </div>
                 <div className="flex gap-2 mt-4">
                   <button onClick={handleAddTournamentTeam} disabled={!newTeamName || !managerEmail || addTeamLoading}

@@ -241,13 +241,33 @@ directly from the app — branded, automated, trackable.
 - ✅ Club-agnostic: `CLUB_NAME`, `CLUB_COLOR`, `APP_URL`, `EMAIL_FROM`,
   `EMAIL_REPLY_TO` all from env vars with generic fallbacks.
 
-**Remaining**:
+- ✅ **"Send Link" wired into `CompetitionsPage`** (2026-08-14) — three
+  places, all with **"Copy Link" kept as a fallback** (genuinely useful,
+  and it changes the security model — see V1.3):
+  1. Add Tournament Team modal, after the team is created
+  2. Per-team Invite modal, after the code is generated
+  3. Each pending row in the Invites panel — so an invite can be
+     **resent** later without regenerating the code
+  Button label changes to "Resend Link" once sent. On failure the error
+  explicitly tells the admin to fall back to Copy Link, so a Resend
+  outage never blocks onboarding.
+- ✅ `src/lib/email-api.ts` — client wrapper. Passes **only data** (team
+  name, competition name, code, recipient); **no branding from the
+  browser**, so branding has one source (the function's env vars).
+  Also unwraps `functions.invoke` errors, which otherwise surface as an
+  unhelpful "Edge Function returned a non-2xx status code".
+- ✅ `npm run build` passes.
+
+**Remaining** — all of it needs the domain (V1.0) or a Resend account:
 1. Resend account + API key → set as `RESEND_API_KEY` Supabase secret
+   (save the key to a **file**, pipe it to `supabase secrets set`, delete
+   the file — don't paste it into chat)
 2. `supabase functions deploy send-email`
 3. Test send (works to your own Resend signup address without a domain)
-4. Wire **"Send Link"** into `CompetitionsPage` — the Add Tournament Team
-   modal and the per-team Invite modal. Keep "Copy Link" as a fallback
-   (it's genuinely useful, and it changes the security model — see V1.3).
+4. Click "Send Link" in the app and confirm the email arrives
+
+**Note on team names in the email**: passed as `"{age_group} {name}"`
+(e.g. "Open Bozos") per the project display standard, not the bare name.
 
 **Not verified**: no Deno runtime locally to type-check or execute the
 function. Same caveat as `send-message-push`.
@@ -546,26 +566,43 @@ Smaller than it first appears: a lot of WCR references live in
 `src/app/**`, which `docs/deployment/DEPLOYMENT.md` marks as dead/unused
 code. Ignore those.
 
-**Two open questions before building**:
-1. **Is "Urrah" the product name or a WCR term?** It's the app title in
-   both layouts. Product name → stays hardcoded (another club sees it
-   too). WCR term → becomes config.
-2. **Are the six page colours club branding or product design?**
-   (Coaching green, Games orange, Resources purple, Schedule cyan,
-   Messaging grey.) Instinct: these are *product* semantic colours and
-   only the **primary/header colour** is club branding — but that's a
-   real decision, not obvious.
+**Both open questions now RESOLVED (2026-08-14)**:
+1. ✅ **"Urrah" is configurable** — it's a club-specific term, so it
+   becomes part of the branding config, not a hardcoded product name.
+2. ✅ **The six page colours are product-standard, NOT configurable** —
+   Coaching green, Games orange, Resources purple, Schedule cyan,
+   Messaging grey stay fixed for every club. They're semantic product
+   design, not club identity. **Only the primary/header colour is club
+   branding.**
 
-**Proposed approach** (to confirm):
-- A single-row `club_settings` table: club name, short name, logo URL,
-  primary colour, app URL. Editable without redeploy, and it naturally
-  becomes the `clubs` table when full multi-tenancy arrives (V2/V3
-  backlog) rather than being thrown away.
+**Agreed approach**:
+
+A single-row `club_settings` table, editable without redeploy, which
+naturally becomes the `clubs` table when full multi-tenancy arrives
+(V2/V3 backlog) rather than being thrown away:
+
+| Field | Example (WCR) | Used by |
+|-------|--------------|---------|
+| `club_name` | "West Coast Rangers FC" | Login page, email footer |
+| `club_short_name` | "WCRF" | Desktop sidebar ("WCRF Admin") |
+| `app_title` | "Urrah" | Mobile + desktop header |
+| `app_subtitle` | *(current MainLayout subtitle)* | Mobile header |
+| `logo_url` | the gannet PNG | Sidebar, headers, login |
+| `primary_color` | `#0091f3` | Header background, primary buttons |
+| `app_url` | `https://...` | Email links, deep links |
+
+**Explicitly NOT in the table** (product design, same for all clubs): the
+six page colours, typography, layout, iconography.
+
 - A `useClubBranding()` hook so components read from one place.
 - **Edge Functions keep using env vars** (as `send-email` already does) —
   a DB round-trip per email adds latency and needs service-role access.
   Accepting a small duplication between env vars and the table is
   simpler than the alternatives; worth noting rather than hiding.
+- **Logo** needs somewhere to live — currently a bundled PNG import.
+  Options: keep bundled per-deployment, or move to Supabase Storage so
+  it's swappable without a rebuild. Storage is the better fit for the
+  table-driven approach; not yet decided.
 
 **Sequencing**: no need to build this before V1.2/V1.3. It matters when
 V1.4 (Team page) and V1.6 (invite landing page branding) get built, since

@@ -130,9 +130,27 @@ so another club can be delivered by changing data, not code.
 deliberately (not `nz.wcr.app`) so the store listing doesn't lock the app
 to one club. App IDs can't be changed after publishing without relisting.
 
+**What IS club branding vs what is product design** (resolved 2026-08-14):
+
+| Club branding — configurable | Product design — fixed for every club |
+|------------------------------|---------------------------------------|
+| Club name ("West Coast Rangers FC") | The six page colours below (Coaching green, Games orange, Resources purple, Schedule cyan, Messaging grey) |
+| Club short name ("WCRF") | Typography, layout, iconography |
+| App title — **"Urrah" is configurable**, it's a club-specific term, not a product name | The six-button mobile nav pattern |
+| App subtitle | |
+| Logo | |
+| **Primary/header colour only** (`#0091f3`) | |
+| App URL | |
+
+The page colours are **semantic product design** — they tell the user which
+area of the app they're in. They are not club identity and must not be
+made configurable. Only the primary/header colour is club branding.
+
 **Reference implementation**: `supabase/functions/send-email/index.ts`
 takes club name, colour, app URL, from-address and reply-to entirely from
-env vars, with generic defaults. Follow that pattern.
+env vars, with generic defaults. Follow that pattern. Its client wrapper
+`src/lib/email-api.ts` deliberately passes **no** branding from the
+browser — only data — so branding has exactly one source.
 
 **Related**: full multi-club support (a `clubs` table above `teams`,
 per-club theming) is a V2/V3 backlog item — see `NEXT-SESSION-NOTES.md`.
