@@ -5,7 +5,8 @@
 
 ## Quick Reference
 
-**App URL**: https://wcrfootball.netlify.app
+**App URL**: https://clubfootball.app  *(live 2026-08-14 — the old
+`wcrfootball.netlify.app` still works but this is the one to use)*
 **Branch**: `prototype`
 **Single remote (`kiro`), push here every time**:
 ```bash
@@ -187,7 +188,61 @@ are an iOS-specific polish item that comes out of this track.
 
 ---
 
-### V1.0 Buy a Product Domain — DECIDED, ACTION NEEDED FIRST
+### V1.0 Buy a Product Domain — ✅ DONE (2026-08-14)
+
+**`clubfootball.app` is bought, configured and live.** Verified from here:
+HTTPS 200 on the apex, `www` 301s to it, certificate covers both.
+
+What was done:
+1. Registered at Cloudflare Registrar (~$14.20/yr). ICANN contact
+   verification already satisfied from a pre-existing Cloudflare account.
+2. Added `clubfootball.app` as a custom domain on the Netlify site.
+3. Two Cloudflare DNS records, **both proxy-off / DNS-only**:
+   apex CNAME → `apex-loadbalancer.netlify.com`, `www` CNAME →
+   `wcrfootball.netlify.app`.
+4. Netlify issued the Let's Encrypt certificate.
+
+**Netlify's DNS verification flip-flopped** — reported success, then
+"clubfootball.app doesn't appear to be served by Netlify", then success
+again. It was wrong: at the time it failed, the apex already resolved to
+exactly the same IPs as `apex-loadbalancer.netlify.com` from multiple
+resolvers, and plain HTTP already returned `200` with `Server: Netlify`
+serving the real app. Their check seems to trip on HTTPS not being live
+yet — which is the thing the certificate fixes. **If this happens again,
+just retry; don't start changing DNS records.**
+
+#### ⚠️ Immediate follow-up — Supabase Auth URL configuration
+
+**Not yet done, and it will break things quietly if skipped.** Supabase
+Auth has its own allowlist that knows nothing about the new domain:
+
+Supabase dashboard → Authentication → URL Configuration:
+1. **Site URL** → `https://clubfootball.app`
+2. **Redirect URLs** → add `https://clubfootball.app/**`
+   (keep `https://wcrfootball.netlify.app/**` and `http://localhost:5173/**`
+   so the old domain and local dev both keep working)
+
+Why it matters concretely:
+- `AuthContext.resetPassword()` builds its redirect from
+  `window.location.origin`, so from the new domain it asks Supabase for
+  `https://clubfootball.app/reset-password`. Supabase **silently ignores**
+  redirect targets that aren't allowlisted and falls back to the Site URL
+  — so password resets would bounce people to the old domain instead of
+  failing loudly, which is harder to notice.
+- Supabase's own signup confirmation emails use the **Site URL**, which
+  currently still points at `wcrfootball.netlify.app`. Relevant to V1.3.
+
+Two Netlify suggestions were deliberately **declined**:
+- *"Use Netlify DNS"* — impossible here. Cloudflare Registrar only
+  registers domains that use Cloudflare's own nameservers.
+- *"Make `www` your primary domain"* — apex gets marginally less optimal
+  CDN routing, but this URL goes into invite emails, texts to parents and
+  eventually app deep links. `clubfootball.app` wins on shareability.
+  Revisit only if performance actually becomes a problem.
+
+---
+
+### V1.0 Reference — the original decision
 
 **Decision (2026-08-14): Option A — buy a product domain**, not use the
 club's domain. Something like `clubfootballapp.com`. ~$10–15/year.
@@ -330,7 +385,7 @@ directly from the app — branded, automated, trackable.
   unhelpful "Edge Function returned a non-2xx status code".
 - ✅ `npm run build` passes.
 
-**Remaining** — all of it needs the domain (V1.0) or a Resend account:
+**Remaining** — V1.0 (domain) is now done, so all that's left is Resend:
 1. Resend account + API key → set as `RESEND_API_KEY` Supabase secret
    (save the key to a **file**, pipe it to `supabase secrets set`, delete
    the file — don't paste it into chat)

@@ -17,7 +17,8 @@ git push kiro prototype
 
 ## Netlify Configuration
 
-- **Site**: https://wcrfootball.netlify.app
+- **Site**: https://clubfootball.app (Netlify URL
+  https://wcrfootball.netlify.app also still works)
 - **Watches**: github.com/Mikebrooke65/WCR-Football-App
 - **Branch**: prototype
 - **Build command**: npm run build
@@ -30,7 +31,7 @@ git push kiro prototype
 3. Commit: `git add -A && git commit -m "message"`
 4. Push: `git push kiro prototype`
 5. Wait 1-2 minutes for Netlify to build and deploy
-6. Verify at https://wcrfootball.netlify.app
+6. Verify at https://clubfootball.app
 
 ## File Locations (IMPORTANT!)
 

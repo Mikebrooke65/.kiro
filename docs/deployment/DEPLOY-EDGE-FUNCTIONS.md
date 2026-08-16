@@ -54,7 +54,7 @@ Go to your Supabase Dashboard:
 
 ### 6. Test in Your App
 
-1. Open your app: https://wcrfootball.netlify.app
+1. Open your app: https://clubfootball.app
 2. Login as admin
 3. Go to User Management page
 4. Click "Add User"

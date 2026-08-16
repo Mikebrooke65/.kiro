@@ -4,6 +4,61 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+## [2026-08-14 - Part 3] - Product Domain Live: clubfootball.app
+
+### Added
+- **`clubfootball.app`** registered at Cloudflare Registrar (~$14.20/yr)
+  and now serving the app over HTTPS. `www.clubfootball.app` 301-redirects
+  to the apex; the Let's Encrypt certificate covers both hostnames.
+- DNS: apex CNAME → `apex-loadbalancer.netlify.com`, `www` CNAME →
+  `wcrfootball.netlify.app`, **both with the Cloudflare proxy disabled
+  (DNS only)**.
+
+### Changed
+- Active docs and scripts now reference `https://clubfootball.app` as the
+  production URL: steering standards, `DEPLOYMENT.md`,
+  `DEPLOYMENT-GUIDE.md`, `DEPLOY-EDGE-FUNCTIONS.md`, `TROUBLESHOOTING.md`,
+  `UPTIME-MONITORING.md`, `scripts/bulk-import-users.js`. The old
+  `wcrfootball.netlify.app` still resolves and remains the Netlify build
+  target.
+- `send-email` Edge Function `DEFAULT_APP_URL` → `https://clubfootball.app`.
+  Still overridable via the `APP_URL` secret, and still club-agnostic —
+  this is the *product* domain, which is the right default for any club
+  deploying unchanged.
+
+### Fixed
+- `docs/deployment/TROUBLESHOOTING.md` named the archived
+  `coaching-app-prototype` repo and a `main` branch. Corrected to
+  `WCR-Football-App` / `prototype`.
+
+### Technical Notes
+- **Netlify's DNS verification is unreliable — don't trust it over
+  evidence.** It reported success, then "clubfootball.app doesn't appear
+  to be served by Netlify", then success again. At the point it claimed
+  failure, the apex already resolved to exactly the same IPs as
+  `apex-loadbalancer.netlify.com` from both Cloudflare and Google
+  resolvers, and plain HTTP returned `200` with `Server: Netlify` serving
+  the real app. Their check appears to depend on HTTPS being live, which
+  is the very thing the certificate provides. Retry rather than changing
+  DNS records.
+- **Cloudflare proxy must stay off.** On Cloudflare's default "Flexible"
+  SSL mode a proxied record produces a redirect loop and blocks Netlify's
+  certificate. Cloudflare's dashboard actively nags to enable proxying —
+  ignore it.
+- Cloudflare flattens CNAMEs at the apex automatically, which satisfies
+  Netlify's *recommended* apex configuration. The `75.2.60.5` A-record
+  fallback isn't needed, and avoiding a hardcoded IP is what protects
+  against repeats of Netlify's 2025 load-balancer IP retirement.
+- **Declined**: "Use Netlify DNS" (impossible — Cloudflare Registrar
+  requires Cloudflare nameservers) and "make `www` primary" (marginal CDN
+  gain, but this URL goes into invite emails, texts and future app deep
+  links, where the short form wins).
+- **Outstanding**: Supabase Auth URL Configuration still points at the old
+  domain. `resetPassword()` derives its redirect from
+  `window.location.origin`, and Supabase silently falls back to the Site
+  URL for non-allowlisted redirects — so resets would bounce to the old
+  domain rather than error visibly. See NEXT-SESSION-NOTES V1.0.
+
 ## [2026-08-14 - Part 2] - "Send Link" — Invites Emailed Directly from the App
 
 ### Added

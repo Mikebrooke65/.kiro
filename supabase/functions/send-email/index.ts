@@ -14,7 +14,7 @@
 //   CLUB_NAME      e.g. "West Coast Rangers"   (email header + copy)
 //   CLUB_COLOR     e.g. "#0091f3"              (email header background)
 //   EMAIL_REPLY_TO e.g. "admin@yourclub.co.nz" (see note below)
-//   APP_URL        e.g. "https://wcrfootball.netlify.app"
+//   APP_URL        e.g. "https://clubfootball.app"
 //
 // SEND-ONLY BY DESIGN: this function never receives mail, so the sending
 // domain needs no mailbox — "noreply@" is fine. But note that send-only
@@ -37,7 +37,10 @@ const corsHeaders = {
 const DEFAULT_FROM = 'Club Football <onboarding@resend.dev>';
 const DEFAULT_CLUB_NAME = 'Club Football';
 const DEFAULT_CLUB_COLOR = '#0091f3';
-const DEFAULT_APP_URL = 'https://wcrfootball.netlify.app';
+// The product domain, deliberately not a club-specific one - this is the
+// right default for any club deploying this unchanged. Override with the
+// APP_URL secret if a club serves the app from their own domain.
+const DEFAULT_APP_URL = 'https://clubfootball.app';
 
 interface TeamInviteData {
   recipientName?: string;

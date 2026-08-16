@@ -14,7 +14,8 @@ archived (read-only) on GitHub. It is retired and not used for anything.
 **Repository**: `github.com/Mikebrooke65/WCR-Football-App`
 - This is what Netlify watches for deployments
 - Default branch: `prototype`
-- Deploys to: https://wcrfootball.netlify.app
+- Deploys to: **https://clubfootball.app** (also still reachable at
+  https://wcrfootball.netlify.app)
 
 ### Git Remotes Configuration
 
@@ -111,7 +112,8 @@ git remote set-url kiro https://github.com/Mikebrooke65/WCR-Football-App.git
 - **Branch**: prototype
 - **Build command**: npm run build
 - **Publish directory**: dist
-- **Production URL**: https://wcrfootball.netlify.app
+- **Production URL**: https://clubfootball.app
+- **Netlify URL**: https://wcrfootball.netlify.app (still works)
 
 ## Database Migrations
 
@@ -157,7 +159,9 @@ If deployment breaks production:
 
 - **Netlify Dashboard**: https://app.netlify.com
 - **Build logs**: Available in Netlify for each deployment
-- **Production site**: https://wcrfootball.netlify.app
+- **Production site**: https://clubfootball.app
+- **DNS / registrar**: Cloudflare (see "Domain" in
+  `.kiro/steering/project-standards.md` — keep the proxy OFF)
 - **Deploy notifications**: Check Netlify email notifications
 
 ## Notes

@@ -21,7 +21,9 @@ It is not used for anything going forward.
 **Single repository**: `github.com/Mikebrooke65/WCR-Football-App`
 - Connected to Netlify for production deployments
 - Default branch: `prototype`
-- URL: https://wcrfootball.netlify.app
+- **Primary URL: https://clubfootball.app** (live 2026-08-14)
+- The old `https://wcrfootball.netlify.app` still resolves and is the
+  Netlify build target, but `clubfootball.app` is the URL to use and share
 
 ### Git Remotes
 
@@ -340,9 +342,20 @@ After ANY code changes, update:
 
 ### Netlify
 - Site: wcrfootball
-- URL: https://wcrfootball.netlify.app
+- Primary URL: https://clubfootball.app (`www.clubfootball.app` 301s to it)
+- Netlify URL: https://wcrfootball.netlify.app (still works)
 - Build: `npm run build`
 - Publish: `dist/`
+
+### Domain (Cloudflare)
+- `clubfootball.app` — registered at Cloudflare Registrar, DNS on Cloudflare
+- Apex: CNAME → `apex-loadbalancer.netlify.com`, **proxy OFF (DNS only)**
+- `www`: CNAME → `wcrfootball.netlify.app`, **proxy OFF (DNS only)**
+- **Never turn the orange cloud on** without also setting SSL mode to
+  Full (strict) — the default "Flexible" mode causes a redirect loop and
+  blocks Netlify from renewing its certificate
+- `.app` is HSTS-preloaded: browsers refuse plain HTTP with no override,
+  so a certificate problem presents as a hard failure, not a warning
 
 ## Support Resources
 

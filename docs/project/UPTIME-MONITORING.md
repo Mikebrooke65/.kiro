@@ -18,7 +18,7 @@ Keep Supabase database active by pinging the app weekly to prevent automatic pau
    
 3. **Fill in the form**:
    - **Title**: `WCR Football App - Weekly Ping`
-   - **Address (URL)**: `https://wcrfootball.netlify.app`
+   - **Address (URL)**: `https://clubfootball.app`
    
 4. **Set the Schedule** (choose ONE method):
 

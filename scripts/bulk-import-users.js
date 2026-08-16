@@ -45,7 +45,7 @@ const users = [
 ];
 
 // INSTRUCTIONS TO GET YOUR ACCESS TOKEN:
-// 1. Open https://wcrfootball.netlify.app in your browser
+// 1. Open https://clubfootball.app in your browser
 // 2. Log in as an admin user
 // 3. Open browser DevTools (F12)
 // 4. Go to Console tab
@@ -55,7 +55,7 @@ const users = [
 // 8. Paste it below replacing 'YOUR_ACCESS_TOKEN_HERE'
 
 const ACCESS_TOKEN = 'YOUR_ACCESS_TOKEN_HERE';
-const NETLIFY_FUNCTION_URL = 'https://wcrfootball.netlify.app/.netlify/functions/create-user';
+const NETLIFY_FUNCTION_URL = 'https://clubfootball.app/.netlify/functions/create-user';
 
 async function createUser(userData) {
   try {
@@ -123,7 +123,7 @@ async function bulkImport() {
 if (ACCESS_TOKEN === 'YOUR_ACCESS_TOKEN_HERE') {
   console.error('❌ ERROR: Please set your ACCESS_TOKEN in the script');
   console.error('\nInstructions:');
-  console.error('1. Open https://wcrfootball.netlify.app in your browser');
+  console.error('1. Open https://clubfootball.app in your browser');
   console.error('2. Log in as an admin user');
   console.error('3. Open browser DevTools (F12)');
   console.error('4. Go to Console tab');

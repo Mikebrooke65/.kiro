@@ -122,11 +122,16 @@
 - Project ID: pikrxkxpizdezazlwxhb
 
 **Netlify Deployment**:
-- URL: https://wcrfootball.netlify.app
-- Repository: https://github.com/Mikebrooke65/coaching-app-prototype
-- Branch: main
+- URL: https://clubfootball.app (Netlify URL
+  https://wcrfootball.netlify.app also still works)
+- Repository: https://github.com/Mikebrooke65/WCR-Football-App
+- Branch: `prototype`
 - Build Command: `npm run build`
 - Publish Directory: `dist`
+
+*(Corrected 2026-08-14 — this previously named the `coaching-app-prototype`
+repo and `main` branch. That repo is archived and read-only; see
+`docs/deployment/DEPLOYMENT-GUIDE.md`.)*
 
 **Test User**:
 - Email: mikerbrooke@outlook.com
