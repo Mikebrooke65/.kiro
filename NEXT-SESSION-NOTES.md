@@ -214,8 +214,58 @@ that always works.
 changed after publishing, so a matching product domain keeps things
 coherent.
 
-**Then**: verify the domain in Resend (SPF/DKIM DNS records), set
-`EMAIL_FROM` and optionally `EMAIL_REPLY_TO` as Supabase secrets.
+**Domain and registrar DECIDED (2026-08-14): `clubfootball.app` from
+Cloudflare Registrar, ~$14.20/yr.**
+
+Domainz was considered first (familiarity — used for a previous project)
+but **doesn't sell `.app`** and was more expensive, so familiarity wasn't
+worth a worse outcome. Cloudflare sells at registry cost with no markup
+and no first-year teaser rate, so ~$14.20 is roughly the ongoing renewal
+too. DNS hosting, WHOIS privacy and registry lock are included free.
+
+`clubfootball.app` mirrors the App ID `com.clubfootball.app`, which can't
+be changed after publishing.
+
+**Register personally, not under the club** — consistent with this being
+a product domain, not a club asset.
+
+#### DNS / hostname plan
+
+| Hostname | Purpose | Record |
+|----------|---------|--------|
+| `clubfootball.app` (root) | The app itself | CNAME/ALIAS → Netlify |
+| `clubfootball.app/privacy` | Privacy policy (V1.9) | Static HTML page, **not** a React route — store reviewers must get it even if the app bundle fails to load |
+| `send.clubfootball.app` | Sending domain verified in Resend | TXT (SPF, DKIM), optional DMARC |
+
+**App at the root**, not `app.clubfootball.app` — shortest to share, and
+there's no marketing site competing for it.
+
+**Email from a subdomain** (`noreply@send.clubfootball.app`), not the
+root. If deliverability ever goes bad it damages the subdomain's
+reputation, not the domain the app itself is served from. Free to do now,
+painful to retrofit.
+
+#### Three gotchas to get right on the day
+
+Cloudflare Registrar **requires the domain's DNS to be on Cloudflare**,
+so their proxy is in the path by default. That's where the traps are:
+
+1. **Set the Netlify record to DNS-only (grey cloud), not proxied
+   (orange).** Netlify issues its own certificate. Proxying on
+   Cloudflare's default "Flexible" SSL mode produces a redirect loop. If
+   the proxy is ever wanted, SSL mode must be Full (strict).
+2. **`.app` is HSTS-preloaded** — browsers refuse plain HTTP outright,
+   with no fallback. Fine with Netlify, but it means a misconfigured
+   certificate presents as a hard failure rather than a warning. Know
+   this so it isn't misdiagnosed.
+3. **Deep links (V2)** need `/.well-known/assetlinks.json` (Android) and
+   `/.well-known/apple-app-site-association` (iOS) served over HTTPS with
+   correct content types and no redirects. Another reason to keep the
+   record DNS-only.
+
+**Then**: verify `send.clubfootball.app` in Resend (SPF/DKIM DNS
+records), set `EMAIL_FROM`, `APP_URL` and optionally `EMAIL_REPLY_TO` as
+Supabase secrets.
 
 ---
 
