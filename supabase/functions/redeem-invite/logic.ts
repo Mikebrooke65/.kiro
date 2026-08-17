@@ -443,3 +443,43 @@ export function plannedCompensations(created: CreationLedger | null | undefined)
 
   return compensations;
 }
+
+// ---------------------------------------------------------------------------
+// Intended-role resolution (6.2, 6.3, 6.4, 6.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The only roles an invite is allowed to grant on redemption. `admin` is
+ * deliberately absent: club-wide administrator authority is never conferred by
+ * redeeming an invite, so an invite carrying `role: 'admin'` must not elevate
+ * the registrant.
+ */
+export type IntendedRole = 'player' | 'coach' | 'manager';
+
+/** The valid set, frozen so it can double as a test oracle. */
+export const INTENDED_ROLES: readonly IntendedRole[] = Object.freeze([
+  'player',
+  'coach',
+  'manager',
+]);
+
+/**
+ * Resolve the effective role to apply to both the `users.role` profile column
+ * (6.2) and the `team_members.role` membership column (6.3) when a registrant
+ * redeems an invite.
+ *
+ * Rules, preserved exactly from the design's "Redeem-invite role fix" section:
+ *   - a value already in the valid set → that value (6.2 / 6.3)
+ *   - `null` or absent (`undefined`) → `player`, without error (6.4)
+ *   - anything else, including `'admin'` → `player` (6.5)
+ *
+ * The default-to-`player` behaviour is what makes 6.5 safe: an unrecognised or
+ * privileged value can never grant an elevated role, it silently degrades to the
+ * least-privileged role. Because both the profile and the membership call this
+ * one function, they can never diverge.
+ */
+export function resolveEffectiveRole(inviteRole: string | null | undefined): IntendedRole {
+  return (INTENDED_ROLES as readonly string[]).includes(inviteRole ?? '')
+    ? (inviteRole as IntendedRole)
+    : 'player';
+}
