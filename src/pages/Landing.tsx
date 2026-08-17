@@ -4,6 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { Bell, TrendingUp, Users, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { teamsApi } from '../lib/teams-api';
+import { UserRole } from '../types/database';
 
 interface Announcement {
   id: string;
@@ -37,6 +39,9 @@ export function Landing() {
     users: 0,
     teams: 0,
   });
+  // Isolated error flag for the "Teams" stat only (Req 7.7) so a failed
+  // team-membership query never affects the other stats.
+  const [teamsError, setTeamsError] = useState(false);
 
   useEffect(() => {
     fetchUserTeams();
@@ -67,27 +72,45 @@ export function Landing() {
   };
 
   const fetchStats = async () => {
+    if (!user) return;
+
+    // Users count — independent of the Teams stat so a failure here or there
+    // never affects the other (Req 7.7).
     try {
-      // Fetch total users count
       const { count: usersCount, error: usersError } = await supabase
         .from('users')
         .select('*', { count: 'exact', head: true });
 
       if (usersError) throw usersError;
 
-      // Fetch total teams count
-      const { count: teamsCount, error: teamsError } = await supabase
-        .from('teams')
-        .select('*', { count: 'exact', head: true });
-
-      if (teamsError) throw teamsError;
-
-      setStats({
-        users: usersCount || 0,
-        teams: teamsCount || 0,
-      });
+      setStats((prev) => ({ ...prev, users: usersCount || 0 }));
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      console.error('Error fetching users count:', error);
+    }
+
+    // Teams count. Player-role users get their personal count derived from
+    // team_members (Req 7.1-7.3, 7.5) rather than a club-wide `teams` count that
+    // RLS zeroes for players. Admins may still see the club-wide count (Req 7.6).
+    try {
+      setTeamsError(false);
+
+      if (user.role === UserRole.ADMIN) {
+        const { count: teamsCount, error: teamsCountError } = await supabase
+          .from('teams')
+          .select('*', { count: 'exact', head: true });
+
+        if (teamsCountError) throw teamsCountError;
+
+        setStats((prev) => ({ ...prev, teams: teamsCount || 0 }));
+      } else {
+        const teamCount = await teamsApi.getMyTeamCount(user.id);
+        setStats((prev) => ({ ...prev, teams: teamCount }));
+      }
+    } catch (error) {
+      console.error('Error fetching teams count:', error);
+      // Show an error indicator for the Teams stat only, leaving other stats
+      // unaffected, rather than a misleading number (Req 7.7).
+      setTeamsError(true);
     }
   };
 
@@ -180,7 +203,16 @@ export function Landing() {
           <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#ea7800] flex items-center justify-center mb-2">
             <TrendingUp className="w-5 h-5" />
           </div>
-          <p className="text-2xl font-bold text-gray-900 mb-0.5">{stats.teams}</p>
+          {teamsError ? (
+            <p
+              className="text-2xl font-bold text-red-500 mb-0.5"
+              title="Couldn't load your teams"
+            >
+              !
+            </p>
+          ) : (
+            <p className="text-2xl font-bold text-gray-900 mb-0.5">{stats.teams}</p>
+          )}
           <p className="text-xs text-gray-600">Teams</p>
         </div>
 

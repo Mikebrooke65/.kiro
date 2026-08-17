@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { teamsApi } from '../lib/teams-api';
+import type { Team as DbTeam } from '../types/database';
 
 interface Team {
   id: string;
@@ -55,19 +57,26 @@ export function Coaching() {
 
     try {
       setIsLoading(true);
-      // Fetch teams where this user is the coach
-      const { data, error } = await supabase
-        .from('teams')
-        .select('id, name, age_group, division')
-        .eq('coach_id', user.id)
-        .order('age_group');
+      // Read team data through the team_members -> teams join keyed on the
+      // current user so the result equals the user's membership and isn't
+      // reduced to zero by the `teams` SELECT policy for players (Req 7.4).
+      const memberships = await teamsApi.getMyTeams(user.id);
 
-      if (error) throw error;
+      const userTeams: Team[] = memberships
+        .map((tm) => tm.team)
+        .filter((team): team is DbTeam => Boolean(team))
+        .map((team) => ({
+          id: team.id,
+          name: team.name,
+          age_group: team.age_group,
+          division: team.division,
+        }))
+        .sort((a, b) => a.age_group.localeCompare(b.age_group));
 
-      setTeams(data || []);
+      setTeams(userTeams);
       // Set first team as selected by default
-      if (data && data.length > 0) {
-        setSelectedTeam(data[0]);
+      if (userTeams.length > 0) {
+        setSelectedTeam(userTeams[0]);
       }
     } catch (error) {
       console.error('Error fetching teams:', error);

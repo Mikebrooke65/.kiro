@@ -4,6 +4,19 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+### Fixed
+- **Player home dashboard "Teams" count (Finding A)** — the home dashboard
+  "Teams" stat counted all `teams` rows, which RLS reduces to zero for
+  player-role users. Player-role users now see their personal count derived
+  from `team_members` via `teamsApi.getMyTeamCount`; admins still see the
+  club-wide count. A failed team-membership query now shows an error
+  indicator for the "Teams" stat only, leaving the other stats unaffected.
+- **Games and Coaching team reads** — both pages now read team data through
+  the `team_members → teams` join keyed on the current user
+  (`teamsApi.getMyTeams`) so the result equals the user's membership rather
+  than being reduced to zero by the `teams` SELECT policy. Coaching previously
+  read `teams` filtered by `coach_id`, which returned nothing for players.
+
 ### Added
 - **Add-a-Junior consent flow — API layer** (`caregivers-api.addJunior` + consent
   handlers). Orchestrates the double opt-in for adding a child to a Club

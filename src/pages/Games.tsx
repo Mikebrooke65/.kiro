@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { Calendar, MapPin, Trophy, Clock, ChevronLeft, ChevronRight, Save, ArrowRightCircle } from 'lucide-react';
 import { gamesApi } from '../lib/games-api';
 import { eventsApi } from '../lib/events-api';
+import { teamsApi } from '../lib/teams-api';
 import type { Game, GameFeedbackRecord, Team, User } from '../types/database';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -67,18 +68,15 @@ export function Games() {
       setError(null);
       
       console.log('Games: Fetching teams for user:', user.id);
-      
-      // Get teams based on user role - using team_members table (same as TeamsManagement)
-      const { data, error } = await gamesApi.supabase
-        .from('team_members')
-        .select('team:teams(*)')
-        .eq('user_id', user.id);
 
-      console.log('Games: Query result:', { data, error });
+      // Read team data through the team_members -> teams join keyed on the
+      // current user so the result equals the user's membership and isn't
+      // reduced to zero by the `teams` SELECT policy for players (Req 7.4).
+      const memberships = await teamsApi.getMyTeams(user.id);
 
-      if (error) throw error;
-
-      const userTeams = data.map((tm: any) => tm.team).filter(Boolean);
+      const userTeams = memberships
+        .map((tm) => tm.team)
+        .filter((team): team is Team => Boolean(team));
       console.log('Games: User teams:', userTeams);
       setTeams(userTeams);
 

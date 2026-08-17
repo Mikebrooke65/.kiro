@@ -1,4 +1,4 @@
--- Migration 046: Add child provenance and sign-in capability columns to users
+-- Migration 050: Add child provenance and sign-in capability columns to users
 -- Supports the Add-a-Junior flow for the post-registration welcome and team page feature.
 --
 -- A child row carries is_child = true, a synthetic email, active = false until consent,

@@ -215,13 +215,13 @@ observed failing and task 2 must be observed passing on the unfixed code.
     - Orphan adoption: seed an auth user with no profile row for the invited address, register, and confirm the orphan is adopted with the submitted password; then the same with a non-invited address, which must be refused with the "account already exists" message rather than adopted
     - _Requirements: 2.3, 2.4_
 
-  - [~] 4.3 (Optional) One-off orphan sweep for pre-fix orphans
+  - [ ] 4.3 (Optional) One-off orphan sweep for pre-fix orphans
     - `scripts/cleanup-orphan-auth-users.ts`: report `auth.users` rows with no `public.users` row
     - Only for orphans whose email does not match an invite and therefore cannot be adopted by the handler
     - Destructive - default to dry-run and require an explicit flag to delete, with a guard against real accounts
     - _Requirements: 2.3_
 
-- [-] 5. Checkpoint - Ensure all tests pass
+- [x] 5. Checkpoint - Ensure all tests pass
   - Run `npm run build` and `vitest --run`, plus the `tsx` exploration, preservation and integration scripts
   - Confirm no console errors in the browser during the registration flow
   - Update `CHANGELOG.md` (Fixed) and `CONVERSATION-HISTORY.md` per project standards

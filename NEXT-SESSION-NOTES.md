@@ -1,5 +1,5 @@
 # Next Session Notes
-## Current State — 14 August 2026
+## Current State — 17 August 2026
 
 ---
 
@@ -48,15 +48,71 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
+## V1 — Where Things Stand (updated 2026-08-17)
+
+One-line status per item. Detail is in the sections further down.
+
+| Item | Status | What's left |
+|------|--------|-------------|
+| V1.0 Product domain | ✅ DONE | — |
+| V1.1 Capacitor + push | 🟡 Hardware-gated | Pipeline proven to `devicesFound: 0`. Needs a real device to finish |
+| V1.1a Android testing | ⬜ Not started | Android Studio on the other laptop. **No Mac needed — the cheapest way to de-risk the WebView question** |
+| V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
+| V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
+| V1.3 Self-registration fix | ✅ DONE & browser-confirmed (2026-08-18) | 3 small follow-ups. 2 new findings (A, B) — see V1.3 |
+| V1.4 Welcome + Team page | ⬜ **Next in the chain** | Whole thing. Now unblocked |
+| V1.5 Role-aware nav | ⬜ Not started | Needs V1.4 first. Decision 4 open |
+| V1.6 Invite page branding | ⬜ Not started | Independent. Partly improved already — the team name now renders |
+| V1.7 RSVP / availability | ⬜ Not started | **Biggest competitive gap.** Schema exists, UI/flow to build. Decision 5 open |
+| V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
+| V1.9 Store + privacy policy | ⬜ Not started | Needs V1.1a/b. **Privacy policy has the longest lead time — start the club conversation now** |
+| V1.T Friendly Manager import | ⬜ Blocked | Waiting on an export sample (Decision 6) |
+
+**Substantive build work left for V1**: V1.4, V1.5, V1.6, V1.7, V1.8, plus
+the V1.3 follow-ups. Everything else is hardware, accounts, or decisions.
+
+### Next session — agreed order (2026-08-17)
+
+1. **✅ DONE (2026-08-18): browser run-through of the registration flow.**
+   Ran on clubfootball.app in an incognito window with the console open,
+   using a fresh tournament-team invite ("Open riverhead tests", code
+   SPEC67RG). All checks passed: invite page showed the correct team name
+   (not "undefined undefined"), registration succeeded, the `team_members`
+   row was created (confirmed in the admin Teams view), and immediate login
+   on the invited address worked with no confirmation gate. **V1.3 is now
+   fully confirmed.**
+   - Two findings surfaced during the run, neither blocking V1.3 — see
+     **Findings A and B** in the V1.3 section below.
+   - Also verified the Supabase Auth URL config beforehand (Site URL +
+     redirect list both correct) — see the V1.0 immediate-follow-up.
+2. **Then start V1.4** — next in the chain, now unblocked, and it's what a
+   newly-registered manager actually hits next. The success screen is
+   small; the Team page is the real work. Fold V1.3 follow-up 2
+   (confirmation email for non-matching addresses) into it.
+3. **Privacy policy — user-owned, running in parallel.** The club does
+   **not** have an existing one to extend (confirmed 2026-08-17), so it has
+   to be written from scratch. Templates and starting points are in V1.9
+   below. Not a coding task, but the longest lead time in V1.
+
+If you'd rather not start something big: V1.3 follow-up 1 (the expired-code
+notification) and follow-up 3 (the 23505 branch) are both small and
+self-contained.
+
+---
+
 ## V1 — Open Decisions Needed
 
 These block or shape work below. Listed here so they don't stay buried.
 
 | # | Decision | Blocks | Recommendation |
 |---|----------|--------|----------------|
-| 1 | **Email provider** — Resend, SendGrid, Postmark, or AWS SES? | V1.2 (and therefore V1.3, V1.4, V1.5) | **Resend** — simplest setup, generous free tier, good deliverability, minimal config |
+| 1 | ~~**Email provider** — Resend, SendGrid, Postmark, or AWS SES?~~ | V1.2 | **RESOLVED 2026-08-14** — Resend, live and sending. See V1.2 |
+| 1b | **`EMAIL_REPLY_TO` is not set** — replies to invite emails bounce | Nothing, but affects deliverability and looks unpolished | Decide whether invites should be repliable, and which monitored address. See V1.2 |
+| 8 | **Rate limiting on `redeem-invite`** — it's an unauthenticated endpoint that can create auth users; the invite code is the only authorization | Public launch, not the trial | Fine for a small trial. Needs a decision before wider release. See V1.3 |
 | 2 | **Which events trigger a push in V1?** Candidates: new message (built), new schedule event, event change/cancellation, RSVP reminder | V1.1 completion | Start with new message (done) + event change/cancellation. RSVP reminders once V1.7 exists |
-| 3 | **Privacy policy** — see V1.9 below for full explanation | V1.9 store submission | Needs a real decision, see advice in V1.9 |
+| 3 | **Privacy policy** — club has none to extend (confirmed 2026-08-17), so writing from scratch | V1.9 store submission | **User-owned, in progress.** Start from the Privacy Commissioner's Priv-o-matic generator — templates and the store questionnaires are listed in V1.9 |
+| 3b | **Play Console target-audience declaration** — is this an app for children, or an app about children used by adults? | V1.9, and whether Google's Families policy applies | Almost certainly adults-only audience (coaches/managers/caregivers are the users), which keeps it out of Families policy. Confirm deliberately — see V1.9 |
+| 3c | **Data retention** — how long is a child's data kept after they leave a team, and what triggers removal? | The privacy statement can't be finished without it | The app has no delete, only "mark inactive". Either justify indefinite retention or add a deletion path |
 | 4 | **Player/Caregiver nav — 2 undecided slots** | V1.5 | Options: Announcements, or fold Announcements into Home and leave 5 buttons |
 | 5 | **Does RSVP apply to Club Tournament teams, or only club teams?** | V1.7 scope | Probably club teams only for V1 — social/summer teams may just turn up |
 | 6 | **Friendly Manager export format** — waiting on sample | V1.T | User to obtain export sample or screenshot |
@@ -71,9 +127,9 @@ Dependency chain. Items further down depend on items above them.
 ```
 V1.1a Android device testing    ── needs a machine that can run Android Studio
 V1.1b iOS device testing        ── needs Mac + Xcode (borrowed)
-V1.2  Email Service             ── CRITICAL PATH, unblocks 3 items below
- └─ V1.3  Fix Self-Registration ── needs V1.2's email_confirm approach
-     └─ V1.4  Welcome + Team Page ── needs registration to actually work
+V1.2  Email Service             ── ✅ DONE (2026-08-14)
+ └─ V1.3  Fix Self-Registration ── ✅ DONE (2026-08-17), 3 follow-ups open
+     └─ V1.4  Welcome + Team Page ── UNBLOCKED, next in the chain
          └─ V1.5  Role-Aware Nav  ── needs Team page to exist first
 
 Independent (can happen any time):
@@ -211,10 +267,15 @@ serving the real app. Their check seems to trip on HTTPS not being live
 yet — which is the thing the certificate fixes. **If this happens again,
 just retry; don't start changing DNS records.**
 
-#### ⚠️ Immediate follow-up — Supabase Auth URL configuration
+#### ✅ Immediate follow-up — Supabase Auth URL configuration — DONE (2026-08-18)
 
-**Not yet done, and it will break things quietly if skipped.** Supabase
-Auth has its own allowlist that knows nothing about the new domain:
+**Completed and verified in the dashboard.** Both fields confirmed set:
+- **Site URL** → `https://clubfootball.app` ✅
+- **Redirect URLs** → `https://clubfootball.app/**` present, alongside
+  `https://wcrfootball.netlify.app/**`, `https://wcrfootball.netlify.app/login`
+  and `http://localhost:5173/**` ✅
+
+The original instructions are kept below for the record.
 
 Supabase dashboard → Authentication → URL Configuration:
 1. **Site URL** → `https://clubfootball.app`
@@ -447,13 +508,13 @@ directly from the app — branded, automated, trackable.
   unhelpful "Edge Function returned a non-2xx status code".
 - ✅ `npm run build` passes.
 
-**Remaining** — V1.0 (domain) is now done, so all that's left is Resend:
-1. Resend account + API key → set as `RESEND_API_KEY` Supabase secret
-   (save the key to a **file**, pipe it to `supabase secrets set`, delete
-   the file — don't paste it into chat)
-2. `supabase functions deploy send-email`
-3. Test send (works to your own Resend signup address without a domain)
-4. Click "Send Link" in the app and confirm the email arrives
+~~**Remaining**~~ — **all four steps below are now DONE** (2026-08-14):
+Resend account + `RESEND_API_KEY` secret, `supabase functions deploy
+send-email`, test send returning a message ID, and "Send Link" confirmed
+from the app. Kept for the record; nothing here is outstanding.
+
+**The only V1.2 item still open is `EMAIL_REPLY_TO`** (Open Decision 1b) —
+replies to invite emails currently bounce.
 
 **Note on team names in the email**: passed as `"{age_group} {name}"`
 (e.g. "Open Bozos") per the project display standard, not the bare name.
@@ -471,11 +532,128 @@ custom password-reset emails.
 
 ---
 
-### V1.3 Fix Lite User Self-Registration — BLOCKED (needs V1.2)
+### V1.3 Fix Lite User Self-Registration — ✅ DONE (2026-08-17)
 
-**Current status**: the invite flow works right up to the registration
-form, then submitting fails with *"new row violates row-level security
-policy for table users"*.
+**Shipped.** Self-registration from an invite link works. Built as a spec
+(`.kiro/specs/lite-user-registration-fix/`) with the full record of what
+was observed, decided and verified.
+
+What landed:
+- New `redeem-invite` Edge Function runs the whole redemption server-side
+  as `service_role` — account, profile row, team membership, then mark the
+  code redeemed **last** so a failure never burns the invite. **Deployed
+  and ACTIVE; it does NOT ship with `git push`.**
+- Compensating rollback undoes only what a failed attempt created, never
+  pre-existing records. A retry with the same email and code then works.
+- Pre-confirmation follows the email match: register with the address the
+  invite was sent to → confirmed immediately, no confirmation email, log
+  straight in. A different address → account and membership still created,
+  but held behind Supabase's confirmation gate.
+- Orphaned accounts from the old bug are **adopted** for the invited
+  address; an account on a non-invited address is refused, not taken over.
+- Registration errors are plain language — no policy or constraint text
+  can reach the page.
+- **Migration `045`** grants the anonymous role a *scoped* read on `teams`
+  (only teams with a live invite). This fixed the invite heading rendering
+  "undefined undefined" for anonymous visitors — a second latent defect
+  found while verifying. Applied via the SQL Editor.
+
+Verified: 101 unit/property tests, plus four live scripts against the real
+project (12 exploration, 15 preservation, 39 integration, 21 rollback), all
+green. `npm run build` clean.
+
+#### V1.3 follow-ups still open — carried into V1
+
+These were found while verifying and deliberately left out of the bugfix.
+None of them block V1.4.
+
+1. **Expired-code notification to the inviter emits nothing.**
+   `validateInviteCode()` stays client-side and anonymous, so it can't read
+   the inviter from `public.users` (RLS returns 0 rows silently). It is also
+   still a `console.log` TODO with no in-app message wired. Fix: move the
+   notification server-side, or grant a scoped read. **Small.**
+2. **A non-matching-email registrant can't get past the login gate.**
+   The account is correctly left unconfirmed, but GoTrue sends no
+   confirmation email for an admin-created account, so nothing reaches
+   them. Needs a resend/confirmation trigger. **Naturally belongs with
+   V1.4's welcome email** — do it there rather than separately.
+   **DECIDED 2026-08-18 (see V1.4)**: Option A + one explanatory line —
+   generate the confirmation link server-side and send it via the Resend
+   `send-email` function, with a sentence noting the address differs from
+   the invited one. No correction workflow.
+3. **Duplicate-key branch in `redeem-invite/index.ts` is too broad.**
+   It treats any 23505 on the profile insert as the migration-006 trigger
+   case, so a genuine email collision on a different id surfaces the wrong
+   message. Rollback still holds and nothing leaks. Unreachable in normal
+   use on this project (that trigger isn't live). Fix: narrow the check to
+   the id conflict, or check affected rows. **Small, low urgency.**
+
+Also outstanding, recorded not fixed: `redeem-invite` is an
+unauthenticated endpoint that can create auth users — the invite code is
+the authorization and **rate limiting is out of scope**. Worth a decision
+before a public launch.
+
+**✅ Browser pass DONE (2026-08-18).** Opened `/invite/SPEC67RG` on
+clubfootball.app in an incognito window with the console open, for a fresh
+tournament team "Open riverhead tests". Verified:
+- Invite heading rendered the real team name ("Join Open riverhead tests"),
+  not "undefined undefined" — migration 045's scoped anonymous read on
+  `teams` working under a genuine anonymous session.
+- Registration with the invited address succeeded; the success screen
+  ("You've been added to Open riverhead tests") rendered.
+- The `team_members` row was created — confirmed in the admin Teams view
+  (member "mikey Brooo" / mandcbrooke1@gmail.com / role `player`).
+- Immediate login on the invited address worked, landed on the home
+  dashboard, no confirmation gate.
+
+The matching-address path is signed off. The non-matching-address path was
+not exercised (its outcome is known and scheduled — V1.4 Option A).
+
+#### V1.3 browser-pass findings (2026-08-18) — NOT blockers, carried forward
+
+**Finding A — player home dashboard shows "Teams: 0".** Reproduced on both
+desktop and phone for the newly-registered player: the home dashboard shows
+"Users: 19" but "Teams: 0", despite the player being a valid member of one
+team (verified in the admin view).
+- **Root cause**: `src/pages/Landing.tsx` → `fetchStats()` renders the
+  "Teams" card as a **club-wide `count(*)` on the `teams` table**
+  (`.from('teams').select('*', { count: 'exact', head: true })`), the same
+  shape as the Users count. Under RLS, a player-role user gets 0 rows back
+  from `teams` — the SELECT policy keys on the coach relationship, not
+  `team_members` — so the count is 0. The Users count isn't similarly
+  restricted, hence 19 vs 0. Admin sees 11 because admin RLS is
+  unrestricted.
+- **Two angles to resolve**:
+  1. **Verify the player isn't also starved elsewhere by the same `teams`
+     RLS.** `Games.tsx`/`Coaching.tsx` read teams via a `team_members`
+     join (`team:teams(*)`); if the `teams` SELECT policy blocks players,
+     that join may also return empty for a player. Check before assuming
+     the impact is cosmetic.
+  2. **Design**: a *player* arguably shouldn't see a club-wide "Teams"
+     total at all — the card should show "the teams I'm in". Fold the
+     display decision into **V1.4 / V1.5 role-aware home**.
+
+**Finding B — a Manager invite assigns `role: 'player'`.** The Add
+Tournament Team modal issues a "Manager invite code", but the registrant
+comes through as a **Player** (confirmed on the dashboard and in the admin
+Teams view). Root cause: `redeem-invite/index.ts` hardcodes `role:
+'player'` for both the `users` profile row and the `team_members` row,
+regardless of the invite's intent. So the manager-onboarding path produces
+a player, which contradicts V1.4's welcome copy ("the teams you can
+manage") and the whole Team-page permission model. **Fold into V1.4** —
+that's where role/permissions are built. The invite likely needs to carry
+an intended role that `redeem-invite` honours instead of hardcoding.
+
+**Cleanup note**: this session created two throwaway tournament teams —
+"Open Riverhead Frogs" (code PPZ65DXS, created on the old netlify.app
+domain) and "Open riverhead tests" (code SPEC67RG). Mark inactive or remove
+when convenient so they don't clutter real data.
+
+#### Original diagnosis, kept for context
+
+The invite flow worked right up to the registration form, then submitting
+failed with *"new row violates row-level security policy for table
+users"*.
 
 **Root cause (confirmed by testing 2026-08-14)**: `signUp()` with email
 confirmation enabled does **not** grant a session immediately. Supabase
@@ -514,7 +692,47 @@ person, one account, multiple team memberships.
 
 ---
 
-### V1.4 Post-Registration Welcome & Team Page — NOT STARTED (needs V1.3)
+### V1.4 Post-Registration Welcome & Team Page — NOT STARTED (V1.3 done, so UNBLOCKED)
+
+**Fold in V1.3 follow-up 2 here**: a registrant who used an address the
+invite was *not* sent to is left unconfirmed with no email from Supabase.
+The welcome email this section adds is the natural place to give them a
+confirmation/resend path.
+
+#### DECIDED (2026-08-18) — how the non-matching-address case is handled
+
+**Chosen: Option A + one explanatory line. No correction workflow.**
+
+Why this exists at all: on the non-matching path `redeem-invite` correctly
+creates the account with `email_confirm: false` and returns
+`email_confirmation_required: true`, but `admin.auth.admin.createUser` does
+**not** send a confirmation email the way normal `signUp` does. So the
+person ends up with an account they can't log into and no way out. That's
+the dead end being fixed here.
+
+The fix:
+1. On the non-matching path, generate a confirmation/magic link
+   **server-side** (`admin.auth.admin.generateLink`) and send it through
+   the existing Resend `send-email` Edge Function — **do not** rely on
+   GoTrue's built-in mail. Resend is the one real sending path on this
+   project, and routing it ourselves keeps branding in one place (the
+   function's env vars) per the club-agnostic rule.
+2. The email carries **one explanatory sentence**, roughly:
+   > You registered for {team} using this address, which is different from
+   > the one your invite was sent to. If that was intentional, confirm
+   > below to finish. If it was a mistake, ignore this email and register
+   > again using the address your invite was sent to.
+
+**Explicitly NOT building** a correction/re-point flow, undo logic, or any
+"change your address" UI — judged over the top for V1. The typo case is
+handled by the sentence above: the wrong account simply stays unconfirmed
+and inert (no cleanup needed, it never becomes usable), and the person
+re-registers with the right address.
+
+Scope: this is **two copy variants of the same email** (plain welcome for
+the matching path, welcome-with-context for the non-matching path), not two
+systems. The link-generation + Resend plumbing is shared with 4a's welcome
+email, so it's not throwaway work.
 
 Two related pieces: the success screen after registering, and the new
 Team page it points people to.
@@ -591,6 +809,11 @@ because each role's six slots are chosen for that role's actual workflow.
 ### V1.6 Invite Landing Page — Branding & Context — NOT STARTED
 
 Independent of the chain above; can be done any time.
+
+**Partly improved already by V1.3**: migration 045 means the team name now
+actually renders for an anonymous visitor. Before that the heading read
+"undefined undefined", which would have undercut any branding added here.
+The remaining work below is unchanged.
 
 When someone clicks an invite link they currently land on a bare white
 "Join [Team]" form — no branding, no competition context, no sense of
@@ -678,21 +901,75 @@ That's a genuinely good start and shows the thinking is already right —
 but an in-app consent notice is **not** the same thing as a hosted
 privacy policy document, and won't satisfy the stores.
 
-**Practical options** (I'm not a lawyer — this is process advice, not
-legal advice):
-1. **Does the club already have a privacy policy** for its website or
-   membership? If so, extending it to cover the app is usually the
-   simplest and most defensible route.
-2. **Use a reputable policy generator**, then have someone at the club
-   (or the club's usual advisor) review it — particularly the sections on
-   children's data and data retention.
-3. Host it at a **stable public URL** — a page in this app would work, or
-   a page on the club's website. It must stay reachable; stores re-check.
+#### Templates and starting points (researched 2026-08-17)
 
-**Recommendation**: raise it with the club early rather than at
-submission time. It's the kind of thing that's quick if someone already
-has one and slow if nobody owns it. Worth confirming who at the club is
-responsible before it becomes the thing blocking launch.
+**The club has no existing privacy policy to extend** (confirmed
+2026-08-17), so this is being written from scratch. User-owned task,
+running in parallel with the build.
+
+*Not legal advice — this is process guidance and a list of sources.*
+
+**Start here — the NZ Privacy Commissioner's own generator.** The Office of
+the Privacy Commissioner publishes **Priv-o-matic**, a free privacy
+statement generator built for small and medium organisations. Their own
+description is that it takes about five minutes and covers the core
+elements a statement needs under NZ law. It's the most defensible starting
+point available, because it comes from the regulator rather than a
+commercial template vendor.
+- [OPC transparency guidance, links to Priv-o-matic](https://privacy.org.nz/responsibilities/poupou-matatapu-doing-privacy-well/transparency/)
+- [Priv-o-matic source, open on GitHub](https://github.com/OPCNZ/priv-o-matic) — confirms it's a real OPC tool, not a third-party lookalike
+- [OPC's own website privacy statement](https://www.privacy.org.nz/about-us/website-privacy-statement/) — usable as a worked example of the finished article
+
+**Useful supporting reading:**
+- [What a privacy statement must include](https://www.privacy.org.nz/resources-and-learning/knowledge-base/view/312/)
+- [Statement vs notice vs policy](https://www.privacy.org.nz/resources-and-learning/a-z-topics/whats-the-difference-between-a-privacy-statement-notice-and-policy/) — the stores ask for a public-facing **statement**; the internal **policy** is a different document
+- [digital.govt.nz guidance on privacy statements for websites](https://www.digital.govt.nz/standards-and-guidance/design-and-ux/usability/privacy-statements-for-websites)
+
+**Then the two store questionnaires**, which are separate from the hosted
+document and must agree with it:
+- [Google Play Data safety section](https://support.google.com/googleplay/android-developer/answer/10787469) — a mandatory form in Play Console
+- [Apple App Privacy in App Store Connect](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy/) — Apple's guidance is to answer inclusively, and to cover third-party code you integrate (for us: Supabase, Firebase Cloud Messaging, Resend)
+
+**One distinction worth getting right before filling in the store forms.**
+This app holds data *about* children, but children are not the intended
+*users* — coaches, managers and caregivers are. That likely puts it outside
+Google's Families programme, which is aimed at apps designed for children,
+while leaving the Privacy Act 2020 obligations fully intact either way. The
+target-audience declaration in Play Console is what commits you, so worth
+deciding deliberately rather than clicking through.
+- [Google Play Families policies](https://support.google.com/googleplay/android-developer/answer/9893335) — Google requires apps targeting children to comply with applicable children's laws including COPPA and GDPR. Worth reading to confirm we're *outside* it rather than assuming.
+- Also worth a look given Team Messaging exists: [Child Safety Standards policy](https://support.google.com/googleplay/android-developer/answer/14747720). It's aimed at Social, Dating and anonymous/random chat apps — closed team messaging in a known group probably isn't in scope, but confirm rather than assume, because getting a category declaration wrong is a rejection.
+
+**Sections that need real thought for this app specifically** — a generator
+won't fill these in for you:
+- **Children's data** — names, team affiliation, attendance, and caregiver
+  contact details for U16 and below
+- **Data retention** — how long after a child leaves a team is their data
+  kept, and what triggers deletion. The app currently has *no* delete, only
+  "mark inactive" (a deliberate V1.4 rule), which is a retention decision
+  the policy has to describe honestly
+- **Who can see what** — the existing in-app consent notice already covers
+  this well and is a good source of wording
+- **Third parties** — Supabase (database, hosting the data), Firebase Cloud
+  Messaging (push), Resend (email), Netlify/Cloudflare (hosting, DNS)
+- **Overseas storage** — worth checking which region the Supabase project
+  sits in, since sending personal information offshore has its own
+  Privacy Act principle (IPP 12). The Resend sending domain is already in
+  Tokyo (`ap-northeast-1`)
+
+**What already exists and helps**: the lite-user registration page shows a
+privacy notice with a consent checkbox (name/role visible to coaches,
+caregiver details visible to other caregivers, data used only for team
+coordination), and consent is recorded in `users.privacy_consent_at` —
+verified still working as part of V1.3. That's the right thinking and good
+raw material for the wording, but an in-app notice is **not** a hosted
+privacy statement and won't satisfy either store on its own.
+
+**Hosting**: `clubfootball.app/privacy` as a static HTML page, **not** a
+React route — store reviewers must be able to reach it even if the app
+bundle fails to load. Already noted in the V1.0 DNS table.
+
+*Sources above were summarised and rephrased rather than reproduced.*
 
 ---
 
@@ -796,6 +1073,108 @@ six page colours, typography, layout, iconography.
 **Sequencing**: no need to build this before V1.2/V1.3. It matters when
 V1.4 (Team page) and V1.6 (invite landing page branding) get built, since
 those are new UI that would otherwise hardcode more WCR references.
+
+---
+
+### Adult / Child User Model — CONFIRMED & EXPANDED (2026-08-18)
+
+Foundational for the Team page (V1.4), the Friendly Manager import (V1.T)
+and the **privacy policy** (V1.9). Builds on the 2026-08-14 Junior Player
+model below, which stands — this section confirms it and adds the consent
+architecture.
+
+**Age split**: adults are **U17 and up**, children are **U16 and down**.
+The band comes from `teams.age_group`, not a per-player DOB (we deliberately
+do **not** collect birthdates — see point 4 below).
+
+#### Model A CONFIRMED — child never logs in, caregiver is the account
+
+A child (U16 and down) is a **data record, not a login**. They get a real
+`users` row with a synthetic email, but they **never sign in and never
+interact with the app directly**. The **caregiver's** account is the active
+one — it receives all notifications, messages and schedule updates and acts
+on the child's behalf.
+
+Model B (children interacting directly) is **explicitly rejected for V1**:
+it drags in child logins, messaging safeguarding, contactability and a far
+larger privacy surface. Not a V1 conversation.
+
+**Future direction (V2/V3, noted 2026-08-18) — a scoped child view.** If we
+later want children to see e.g. their next game, we handle it *separately
+and simply*, as a deliberately limited, opt-in experience gated on explicit
+caregiver authorisation. The idea: with the caregiver's approval, a child
+gets read-mostly access to a **narrow slice** of the app for **their team
+only** — roughly the Team tab, the Calendar/Schedule tab and (team-only)
+Messaging, or similar. This is **not** the same as full Model B: it's a
+constrained, caregiver-authorised child mode, not a general child login.
+Recorded so the V1 model doesn't foreclose it — the synthetic-email junior
+record and the `player_caregivers` link are compatible with bolting a
+limited child login on later. Out of scope for V1; safeguarding and the
+per-tab access rules would need their own design.
+
+Every child **must** be linked to at least one caregiver (an adult). The
+link table `player_caregivers` (many-to-many, so more than one caregiver is
+allowed) already supports this.
+
+#### Two-path consent — CONFIRMED
+
+**Who is responsible for a child's authorisation depends on how the child
+entered the system, and that path is already encoded in the team type:**
+
+| Path | Team type | Consent responsibility | Consent record |
+|------|-----------|------------------------|----------------|
+| **Import** | External League (club-managed, read-only in app) | **Upstream — the club.** The club's own systems managed authorisation before the data reached us. The fact the club supplies a child record is the assertion it's authorised. | Club's assertion at import time; **no** `caregiver_approvals` row |
+| **Self-service** | Club Tournament (manager adds in-app) | **Ours — we capture it.** No upstream system exists. | A `caregiver_approvals` row (`status='approved'`, `responded_at`) is the provable consent record |
+
+**Both paths still need a caregiver *link*** (child never logs in, so
+notifications must reach an adult) — but only the tournament path runs the
+**approval** step. Import relies on the club's upstream consent and just
+stores the caregiver contact for notifications.
+
+#### Points to carry into the V1.4 spec and the privacy policy
+
+1. **Record provenance per child** — which path a child came in on
+   (inferable from team type today; make it explicit for audit).
+2. **Capture the club's assertion for imports** — record that the club
+   warrants it holds consent, at import time. Protects the app; our
+   position is "the club is the source of truth," not "we obtained it."
+3. **Confirm the Friendly Manager export includes caregiver contact**
+   (blocked on the export sample — Decision 6). Without it, imported
+   children have nowhere to send notifications.
+4. **No DOB collected** — age band is by `teams.age_group`. Privacy-
+   friendly but approximate; accepted edge case: a 17-year-old in a U15
+   team is treated as a child. State this deliberately in the policy.
+5. **Minimal child data** — first/last name only. No contact, no DOB, no
+   photo. Enforce in the add-a-junior form. "We hold only a child's name"
+   is a strong, simple privacy claim.
+6. **Active consent vs notification (tournament path)** — the child record
+   should be **inactive until the caregiver approves** (double opt-in), not
+   active-on-entry. Strongest position and the schema supports it.
+7. **If consent never comes** — define what happens to an unapproved child
+   record and after how long (ties to Decision 3c: app has no delete, only
+   "mark inactive"). The policy can't be finished without this answer.
+8. **Multiple / separated caregivers** — two caregivers are allowed. Do
+   both have equal rights; can either remove the other? Don't need to fully
+   solve for V1, but UI and policy must not assume exactly one caregiver.
+9. **Dual roles** — a caregiver is often also a coach/manager. One person
+   must be caregiver + coach at once; the Team page must render them
+   sensibly (once, all roles listed).
+10. **Age-boundary transition** — when a child moves to U17/Open, define
+    the path from caregiver-proxy to their own login (manual in V1 is fine).
+11. **Child consent timestamp** — adults get `privacy_consent_at` on their
+    own row; a child's "authorisation to be here" is the caregiver's
+    approval. Point at `caregiver_approvals.responded_at`, or copy a
+    consent timestamp onto the child row, as the auditable record.
+
+**Legal caveat**: the privacy-law framing (valid parental consent,
+controller vs processor, retention obligations) needs review against the NZ
+Privacy Act and the app-store children's policies before launch. The model
+above is the data/flow design, not legal advice.
+
+**Schema already supports all of this — no change needed**: `users`
+(synthetic-email juniors), `player_caregivers` (the link),
+`caregiver_approvals` (pending→approved→denied→escalated, with
+`requested_by` / `responded_by` / `responded_at`).
 
 ---
 
