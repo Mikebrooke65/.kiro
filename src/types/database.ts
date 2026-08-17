@@ -13,6 +13,12 @@ export type TeamRole = 'player' | 'coach' | 'manager';
 // User type (full club member vs temporary lite access)
 export type UserType = 'full' | 'lite';
 
+// Team classification (migration 1.2). Drives editability + consent path.
+export type TeamType = 'club_tournament' | 'external_league';
+
+// Where a child record originated (migration 1.5).
+export type ChildProvenance = 'club_tournament' | 'external_league';
+
 // User model
 export interface User {
   id: string;
@@ -26,6 +32,10 @@ export interface User {
   created_at: string;
   last_login?: string;
   privacy_consent_at?: string;
+  /** true for a Model-A child row (synthetic email, never signs in). */
+  is_child?: boolean;
+  /** Origin of a child record; null/undefined for ordinary users. */
+  child_provenance?: ChildProvenance | null;
 }
 
 // Team model
@@ -39,6 +49,8 @@ export interface Team {
   game_players?: number;
   half_duration?: number;
   created_at: string;
+  /** Club Tournament (editable, in-app consent) vs External League (read-only). */
+  team_type: TeamType;
 }
 
 // User team assignment
@@ -333,6 +345,8 @@ export interface InviteCode {
   redeemed_at: string | null;
   expires_at: string;
   created_at: string;
+  /** Role granted on redemption. NULL defaults to 'player' server-side; 'admin' is excluded by design. */
+  intended_role: 'player' | 'coach' | 'manager' | null;
 }
 
 // Invite code validation result

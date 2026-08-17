@@ -230,12 +230,14 @@ export function CompetitionsPage() {
       // 2. Link team to competition
       await competitionsApi.linkTeam(selectedComp.id, team.id);
 
-      // 3. Generate invite code for the manager
+      // 3. Generate invite code for the manager — records intended_role so the
+      //    registrant is granted the Manager role on redemption (Requirement 6.7).
       const invite = await invitesApi.generateInviteCode(
         team.id,
         managerEmail,
         managerPhone || undefined,
-        selectedComp.id
+        selectedComp.id,
+        'manager'
       );
 
       setAddTeamResult({
