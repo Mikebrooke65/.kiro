@@ -12,6 +12,7 @@ import { Login } from '../pages/Login';
 // Mobile pages
 import { Landing } from '../pages/Landing';
 import { Coaching } from '../pages/Coaching';
+import { TeamPage } from '../pages/TeamPage';
 import { Lessons } from '../pages/Lessons';
 import { LessonDetail } from '../pages/LessonDetail';
 import { Games } from '../pages/Games';
@@ -136,6 +137,10 @@ export const router = createBrowserRouter([
             <Resources />
           </ProtectedRoute>
         ),
+      },
+      {
+        path: 'team',
+        element: <TeamPage />,
       },
       {
         path: 'schedule',
