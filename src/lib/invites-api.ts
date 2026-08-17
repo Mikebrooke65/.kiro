@@ -1,11 +1,18 @@
 import { ApiClient, ApiError } from './api-client';
+import { emailApi } from './email-api';
+import { formatTeamLabel } from './success-screen-logic';
+import type { RedeemInviteResult } from './success-screen-logic';
 import type {
   InviteCode,
   InviteCodeValidation,
   LiteRegistrationData,
   InvitePlayerData,
-  User,
 } from '../types/database';
+
+// The Success Screen and this wrapper share one result shape. It lives in
+// `success-screen-logic` (where its pure consumers are tested); re-exported here
+// so callers can import it alongside `invitesApi` without redefining it.
+export type { RedeemInviteResult };
 
 /** Generate a random alphanumeric code */
 function generateCode(length = 8): string {
@@ -18,12 +25,20 @@ function generateCode(length = 8): string {
 }
 
 class InvitesApi extends ApiClient {
-  /** Generate a new invite code for a team, optionally linked to a competition */
+  /**
+   * Generate a new invite code for a team, optionally linked to a competition.
+   *
+   * `intendedRole` records the role the invite is created for (Requirement 6.1/6.7).
+   * It is persisted on the `invite_codes` row and honoured by `redeem-invite`,
+   * which defaults a null/absent value to `player` server-side. `admin` is not a
+   * valid intended role and is excluded by the DB CHECK constraint (migration 049).
+   */
   async generateInviteCode(
     teamId: string,
     recipientEmail: string,
     recipientPhone?: string,
-    competitionId?: string
+    competitionId?: string,
+    intendedRole?: 'player' | 'coach' | 'manager'
   ): Promise<InviteCode> {
     const { data: { user: authUser } } = await this.supabase.auth.getUser();
     if (!authUser) throw new ApiError('Not authenticated');
@@ -41,6 +56,7 @@ class InvitesApi extends ApiClient {
         recipient_email: recipientEmail,
         recipient_phone: recipientPhone || null,
         expires_at: expiresAt.toISOString(),
+        intended_role: intendedRole ?? null,
       })
       .select()
       .single();
@@ -90,7 +106,10 @@ class InvitesApi extends ApiClient {
    * DEPLOYMENT: Edge Functions do NOT ship with `git push`. This call fails until
    * `supabase functions deploy redeem-invite` has been run.
    */
-  async redeemInviteCode(code: string, userData: LiteRegistrationData): Promise<User> {
+  async redeemInviteCode(
+    code: string,
+    userData: LiteRegistrationData
+  ): Promise<RedeemInviteResult> {
     // Only data the person typed, plus the code from the link. `role`,
     // `user_type`, `team_id` and `active` are decided server-side — sending them
     // from here would be ignored anyway.
@@ -121,7 +140,57 @@ class InvitesApi extends ApiClient {
       throw new ApiError(REGISTRATION_FALLBACK_MESSAGE);
     }
 
-    return result.user as User;
+    // Shape the raw Edge Function response into the typed result the Success
+    // Screen consumes. Every field beyond `user` is optional: the two paths and
+    // the generic fallback each populate a different subset.
+    const typed: RedeemInviteResult = {
+      success: result.success,
+      user: result.user,
+      team: result.team ?? null,
+      email_confirmed: result.email_confirmed,
+      email_confirmation_required: result.email_confirmation_required,
+      competition_name: result.competition_name ?? null,
+    };
+
+    // Matching-address path (Req 2.1): the account is already confirmed, so send
+    // a welcome to the EXACT address the registrant submitted. Fire-and-forget —
+    // the registration is already committed server-side and a welcome-email
+    // failure must never block or roll it back (Req 2.10).
+    if (typed.email_confirmed === true) {
+      this.triggerWelcomeEmail(userData.email, typed);
+    }
+
+    return typed;
+  }
+
+  /**
+   * Trigger the matching-path welcome email without awaiting it (Req 2.1/2.10).
+   *
+   * The team name is rendered as `{age_group} {name}` from the redemption
+   * result's server-supplied team data — the client never invents branding or a
+   * team name. If no team data is present there is nothing to welcome the
+   * registrant to, so the send is skipped rather than sending an empty label.
+   *
+   * Any rejection is logged and swallowed: the registration has already
+   * completed and must not be affected by an email failure.
+   */
+  private triggerWelcomeEmail(to: string, result: RedeemInviteResult): void {
+    const teamLabel = formatTeamLabel(
+      result.team ? { age_group: result.team.age_group, name: result.team.name } : null
+    );
+    if (!teamLabel) return;
+
+    void emailApi
+      .sendWelcome({
+        to,
+        recipientName: result.user?.first_name || undefined,
+        teamName: teamLabel,
+        competitionName: result.competition_name || undefined,
+      })
+      .catch((err) => {
+        // Fire-and-forget: never rethrow. The registration stands regardless.
+        console.warn('Welcome email send failed (registration unaffected):', err);
+      });
   }
 
   /** Get all pending (unredeemed, unexpired) invite codes */

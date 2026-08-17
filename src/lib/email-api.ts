@@ -28,6 +28,26 @@ export interface TeamInviteEmailParams {
   inviteCode: string;
 }
 
+/**
+ * Data for the matching-address welcome email (Req 2.1). Sent when a registrant
+ * used the invited address and the account is already confirmed — a pure
+ * welcome, no confirmation action required.
+ *
+ * DATA ONLY: like every method here, this carries no branding. Club name,
+ * colour, and app URL come from the `send-email` function's env vars. The
+ * `teamName` must already be formatted `{age_group} {name}` by the caller.
+ */
+export interface WelcomeEmailParams {
+  /** Recipient email address — the exact address the registrant submitted */
+  to: string;
+  /** Optional first name for the greeting */
+  recipientName?: string;
+  /** Display name, e.g. "U9 Lithium" (age group + name, per project standard) */
+  teamName: string;
+  /** Optional competition name for context, e.g. "Summer Football" */
+  competitionName?: string;
+}
+
 class EmailApi extends ApiClient {
   /** Send a team invite email. Resolves on success, throws ApiError otherwise. */
   async sendTeamInvite(params: TeamInviteEmailParams): Promise<{ id?: string }> {
@@ -35,6 +55,33 @@ class EmailApi extends ApiClient {
 
     const { data: result, error } = await this.supabase.functions.invoke('send-email', {
       body: { type: 'team_invite', to, data },
+    });
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+
+    if (result?.error) {
+      throw new ApiError(result.error);
+    }
+
+    return { id: result?.id };
+  }
+
+  /**
+   * Send the matching-address welcome email (Req 2.1). Resolves on success,
+   * throws ApiError otherwise.
+   *
+   * The caller decides whether a failure matters. On the registration path it
+   * is fire-and-forget: a failed welcome must never roll back the completed
+   * registration (Req 2.10), so `invites-api` calls this without awaiting and
+   * logs any rejection.
+   */
+  async sendWelcome(params: WelcomeEmailParams): Promise<{ id?: string }> {
+    const { to, ...data } = params;
+
+    const { data: result, error } = await this.supabase.functions.invoke('send-email', {
+      body: { type: 'welcome', to, data },
     });
 
     if (error) {
