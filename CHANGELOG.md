@@ -4,6 +4,88 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+## [2026-08-17] - Lite User Registration From An Invite Link (Bug Fix)
+
+### Fixed
+- **Self-registration from an invite link now works.** It previously failed
+  with *"new row violates row-level security policy for table users"* and
+  no account was created. Cause: with email confirmation enabled,
+  `supabase.auth.signUp()` returns **no session**, so the browser was still
+  the anonymous role when it tried to insert the profile row, and the
+  `id = auth.uid()` policy could never pass.
+- **The whole redemption is now one server-side transaction** in a new
+  `redeem-invite` Edge Function running as `service_role`: create or resolve
+  the account, insert the `users` row, add the `team_members` row, then mark
+  the code redeemed last, so a failure never burns the invite code.
+- **No half-finished accounts.** If any step fails, the function undoes, in
+  reverse, only what that attempt created — membership, then profile row,
+  then auth user — and never touches records that already existed. A retry
+  with the same email and the same code then succeeds.
+- **Registrants who use the address the invite was sent to are confirmed
+  immediately** and can log straight in with no confirmation email. Someone
+  registering with a *different* address still gets the account and the team
+  membership, but stays behind Supabase's email-confirmation gate.
+- **Accounts orphaned by the old bug are adopted, not blocked.** Where the
+  old flow created a login but never got as far as the profile row, the
+  invited address now takes that account over and sets the submitted
+  password. A login that exists for an address the invite was *not* sent to
+  is refused with "an account already exists for this email — try logging in
+  instead" rather than being taken over.
+- **Registration errors are now plain language.** Nothing on the page can
+  show a policy name, constraint name or raw database text; the raw detail is
+  logged server-side only.
+- **Invite pages no longer show "undefined undefined" as the team.** New
+  migration `045_anon_select_teams_for_invites.sql` grants the anonymous role
+  a **scoped** read on `teams` — only teams reachable through a valid,
+  unexpired, unredeemed invite code. A team whose only invite has expired
+  stays invisible, and anonymous visitors still cannot write to `teams`. The
+  invite heading and success screen now read "U9 Hydrogen".
+
+### Technical Notes
+- **This fix needs `supabase functions deploy redeem-invite`.** Already run —
+  the function is ACTIVE at version 1 on `pikrxkxpizdezazlwxhb`, deployed
+  with default JWT verification (`--no-verify-jwt` was not needed; the anon
+  key supabase-js sends satisfies it).
+- **`git push kiro prototype` does NOT deploy Edge Functions.** Pushing app
+  code alone would leave the client calling a function that does not exist.
+  Migration `045` must be run in the Supabase SQL Editor the same way — it
+  has been applied.
+- The client wrapper `invitesApi.redeemInviteCode()` keeps its signature and
+  is now a single `functions.invoke('redeem-invite', …)` plus an error-body
+  read, so `functions.invoke` cannot collapse every failure into
+  "Edge Function returned a non-2xx status code".
+- `validateInviteCode()` deliberately stays client-side and anonymous, so the
+  three invite states (Invalid Code / Already Used / Code Expired) and their
+  copy are unchanged.
+- The function is club-agnostic: it returns data only, no club name, colour,
+  logo or URL. `LiteLandingPage` still formats the team as
+  `{age_group} {name}`.
+- Test tooling added: `vitest` + `fast-check` as devDependencies with
+  `npm test` (`vitest --run`, never watch mode), plus `tsx` verification
+  scripts under `scripts/` for the paths that need real RLS and real GoTrue
+  behaviour.
+
+### Security
+- `redeem-invite` is an **unauthenticated** endpoint that can create auth
+  users; the invite code is the authorization, and any client-supplied
+  `role`, `user_type`, `team_id` or `active` is ignored and set server-side.
+  **Rate limiting is out of scope for this fix** and remains an open item.
+
+### Outstanding
+- A registrant who signs up with an address the invite was *not* sent to is
+  left unconfirmed, and GoTrue does not send a confirmation email for an
+  admin-created account — so they need a resend/confirmation trigger before
+  they can get past the login gate.
+- The expired-code notification to the inviter still emits nothing:
+  `validateInviteCode()` stays anonymous and cannot read the inviter from
+  `public.users`. It is also still a `console.log` TODO with no in-app
+  message wired.
+- The duplicate-key branch on the profile insert treats **any** 23505 as the
+  migration-006 trigger case, so a genuine `users_email_key` collision on a
+  different id would surface the wrong message. Unreachable in normal use on
+  this project (that trigger is not live); needs the check narrowed to the id
+  conflict or an affected-row count.
+
 ## [2026-08-14 - Part 4] - Transactional Email Live (V1.2 Complete)
 
 ### Added

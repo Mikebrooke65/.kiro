@@ -1,5 +1,154 @@
 # Conversation History
 
+## Session: August 17, 2026 - Lite User Registration Fix (Invite Redemption)
+
+### Context
+Self-registration from an invite link failed outright: the form reported
+*"new row violates row-level security policy for table users"* and no account
+was created. Worked as a bugfix spec — `.kiro/specs/lite-user-registration-fix/`
+— using the bug-condition methodology: prove the bug with a failing test first,
+lock in the surrounding behaviour second, only then fix.
+
+### The Journey
+
+**Root cause, confirmed not assumed.** With email confirmation enabled,
+`supabase.auth.signUp()` returns **no session**. The browser was therefore still
+the `anon` role when it ran the follow-up `users` insert, so migration 044's
+`id = auth.uid()` check could never pass. The exploration script observed
+`getSession()` as null immediately after `signUp()`, which is the single
+observation that settles the mechanism.
+
+**A second, latent defect surfaced while writing the preservation tests.**
+`anon` has no SELECT grant on `public.users`, and RLS *filters silently*
+(`rows=0, error=none`) rather than erroring. So the existing-user lookup and the
+duplicate-membership guard in the old client flow were both blind — every
+registrant, new or existing, was pushed into `signUp()`. Recorded as a deviation
+rather than quietly widening the fix; moving the work server-side fixed it as a
+consequence.
+
+**A third problem found the same way**: nothing granted `anon` SELECT on `teams`,
+so the `team:teams(*)` embed came back null and the invite page heading rendered
+**"undefined undefined"** for the anonymous visitor the page is built for. That
+needed a decision, and got migration 045.
+
+**The fix**: a new `redeem-invite` Edge Function under `service_role` doing the
+whole transaction, with compensating rollback in reverse creation order, and
+pre-confirmation gated on the submitted email matching the invite's
+`recipient_email`. The client wrapper kept its signature and became a single
+`functions.invoke`.
+
+**Rollback had to be proven, and the obvious injection was impossible.** A
+crafted invite with a nonexistent `team_id` cannot exist here —
+`invite_codes.team_id` is `NOT NULL REFERENCES teams(id) ON DELETE CASCADE` and
+the constraint is live. The failure was injected through the *other* foreign key
+(`team_members_user_id_fkey`) using data alone, with no constraint added or
+dropped on the live database.
+
+### Tasks Completed
+1. Bug-condition exploration test — observed **failing** on unfixed code, with
+   the RLS error reproduced verbatim under `anon`.
+2. Preservation tests (`vitest` + `fast-check` added, plus a `tsx` script) —
+   observed **passing** on unfixed code, with five deviations recorded.
+3. The fix: pure decision helpers (`logic.ts`), the `redeem-invite` Edge
+   Function, the thin client wrapper, landing-page error copy, unit and property
+   tests, deploy, and re-runs of tasks 1 and 2 (task 1 now passes, task 2 shows
+   no regressions — 4 of the 5 deviations resolved).
+4. Integration verification: pre-confirmation in both directions and end-to-end
+   registration (task 4.1), rollback under injected failure plus orphan adoption
+   and refusal (task 4.2). Task 4.3 (one-off orphan sweep) **skipped as
+   optional** — the function now adopts orphans on invited addresses
+   automatically, so the sweep would only cover non-invited orphans, which is a
+   destructive housekeeping job better run deliberately.
+5. Checkpoint: full verification sweep, docs, commit.
+
+### Verification (this session)
+- `npm run build` — clean (only the pre-existing chunk-size and
+  dynamic-import warnings).
+- `npm test` — **2 files, 101 passed, 0 failed** (after fixing a flaky generator,
+  see below). Green three runs in a row.
+- `scripts/explore-lite-registration-bug.ts` — **12 of 12 assertions, exit 0**
+  (Property 1 held).
+- `scripts/preserve-lite-registration.ts` — **15 assertions, 0 failures**, 4
+  deviations recorded (unchanged from task 3.8).
+- `scripts/verify-lite-registration-integration.ts` — **39 checks, 0 failures,
+  exit 0** (Property 3 held).
+- `scripts/verify-lite-registration-rollback.ts` — **21 checks, 0 failures,
+  exit 0** (Property 4 held).
+- `scripts/verify-anon-team-embed.ts` — **6 passed, 0 failed, 0 skipped**.
+- Every script cleans up after itself, uses `wcr-*@mailinator.com` throwaway
+  addresses only, and guards auth-user deletion by prefix **and** domain.
+- **Browser check not performed** — there is no browser driver in this
+  environment. What was checked instead: the production build compiles clean,
+  the registration path was exercised end to end through the deployed function
+  by the scripts above, and the only `console.error` calls on this path are
+  inside the Edge Function (server-side, deliberate) — `LiteLandingPage` renders
+  the returned message through `safeRegistrationErrorMessage()` and logs
+  nothing. A real browser pass through `/invite/{code}` is still worth doing.
+
+### Flaky tests found
+1. **Fixed — `logic.test.ts` → "deriveInviteStatus is total and specific for any
+   invite record (3.3)"** threw `RangeError: Invalid time value` *inside its own
+   generator*: fast-check 4.x `fc.date()` can yield `Invalid Date`, and
+   `.toISOString()` then throws before the property body runs. Seed dependent —
+   the same file re-run alone passed 77/77. The code under test was never
+   reached, let alone implicated. Both `fc.date()` calls now pass
+   `noInvalidDate: true`; no assertion changed, and unparseable `expires_at`
+   strings are still covered by the neighbouring `constantFrom` generator.
+2. **Exploration script case 5** ("existing-user path returns the existing
+   user") failed once with `success=true, existingUserFoundByAnon=false`, then
+   passed on re-run. The registration itself succeeded both times; what wobbled
+   was the script's own service-role pre-read of the profile row. An
+   observation-side flake, not a behaviour change.
+
+### Files Created/Modified
+- **New**: `supabase/functions/redeem-invite/index.ts`, `…/logic.ts`,
+  `…/logic.test.ts`
+- **New**: `supabase/migrations/045_anon_select_teams_for_invites.sql`
+- **New**: `scripts/explore-lite-registration-bug.ts`,
+  `scripts/preserve-lite-registration.ts`,
+  `scripts/verify-lite-registration-integration.ts`,
+  `scripts/verify-lite-registration-rollback.ts`,
+  `scripts/verify-anon-team-embed.ts`
+- **New**: `src/lib/invites-api.preservation.test.ts`, `vitest.config.ts`
+- **Modified**: `src/lib/invites-api.ts` (wrapper only),
+  `src/pages/LiteLandingPage.tsx` (error copy only),
+  `docs/deployment/DEPLOY-EDGE-FUNCTIONS.md`, `package.json`,
+  `package-lock.json`
+- **Spec**: `.kiro/specs/lite-user-registration-fix/`
+
+### Technical Decisions
+- **Edge Function, not a Netlify function.** The Android/Capacitor wrapper runs
+  under `androidScheme: 'https'`, where a relative `/api/...` path resolves
+  against the local webview origin. supabase-js was observed requesting the
+  absolute `https://<project-ref>.supabase.co/functions/v1/redeem-invite`, and
+  `src/lib/supabase.ts` never reads `window.location`.
+- **Accepted tradeoff**: Edge Functions do **not** ship with
+  `git push kiro prototype`. `supabase functions deploy redeem-invite` is a
+  separate step, and migration 045 is a separate SQL Editor step. Both done.
+- **Pre-confirm only on an email match.** Confirming an address the invite was
+  not sent to would let someone confirm a mailbox they do not control.
+- **Invite code is the authorization.** No new secrets; client-supplied `role`,
+  `user_type`, `team_id` and `active` are ignored. Rate limiting deliberately
+  out of scope for a bugfix, and recorded as exposure.
+- **Redeem last.** The code is marked redeemed only after every other write
+  succeeds, so a mid-transaction failure never burns an invite.
+- **Migration 045 is scoped, not a blanket grant.** `anon` can read a team only
+  through a valid, unexpired, unredeemed invite; expired invites make the team
+  invisible again, and no write is granted.
+- **Deviations were recorded, never edited away.** The two documented-intent
+  skips in the preservation tests stayed visible until the fix landed, then were
+  re-enabled and passed.
+
+### Open items carried out of this bugfix
+1. Non-matching-email registrants need a resend/confirmation trigger — GoTrue
+   sends nothing for an admin-created account.
+2. `notifyExpiredCodeUsage()` still emits nothing (anonymous client cannot read
+   the inviter) and is still a `console.log` TODO.
+3. The 23505 branch on the profile insert should be narrowed to the id conflict,
+   or check affected rows, so a genuine email collision reports the right thing.
+
+---
+
 ## Session: April 7, 2026 (Part 2) - Lite Users & Tournament Preparation
 
 ### Context

@@ -74,85 +74,54 @@ class InvitesApi extends ApiClient {
     return { valid: true, invite: data, team: data.team };
   }
 
-  /** Redeem an invite code — creates lite user or adds existing user to team */
+  /**
+   * Redeem an invite code — creates a lite user or adds an existing user to the team.
+   *
+   * Spec: `.kiro/specs/lite-user-registration-fix/` (task 3.3)
+   *
+   * This is a thin wrapper over the `redeem-invite` Edge Function. The whole
+   * transaction (auth user, `users` row, `team_members` row, redemption) now runs
+   * server-side under `service_role`, because `supabase.auth.signUp()` returns no
+   * session while email confirmation is enabled — so the browser was still `anon`
+   * when it tried to insert into `users`, and migration 044's `id = auth.uid()`
+   * check could never pass (2.1, 2.6). The client-side `signUp()` / insert /
+   * update sequence is deliberately gone: nothing here needs a session.
+   *
+   * DEPLOYMENT: Edge Functions do NOT ship with `git push`. This call fails until
+   * `supabase functions deploy redeem-invite` has been run.
+   */
   async redeemInviteCode(code: string, userData: LiteRegistrationData): Promise<User> {
-    const validation = await this.validateInviteCode(code);
-    if (!validation.valid || !validation.invite) {
-      throw new ApiError(validation.error || 'Invalid invite code');
-    }
-
-    const invite = validation.invite;
-
-    // Check if user already exists
-    const { data: existingUser } = await this.supabase
-      .from('users')
-      .select('*')
-      .eq('email', userData.email)
-      .single();
-
-    let userId: string;
-
-    if (existingUser) {
-      // Existing user — skip account creation, just add to team
-      userId = existingUser.id;
-    } else {
-      // Create new Supabase auth user
-      const { data: authData, error: authError } = await this.supabase.auth.signUp({
+    // Only data the person typed, plus the code from the link. `role`,
+    // `user_type`, `team_id` and `active` are decided server-side — sending them
+    // from here would be ignored anyway.
+    const { data: result, error } = await this.supabase.functions.invoke('redeem-invite', {
+      body: {
+        code,
         email: userData.email,
         password: userData.password,
-      });
-      if (authError) throw new ApiError(authError.message);
-      if (!authData.user) throw new ApiError('Failed to create auth user');
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        privacy_consent: userData.privacy_consent === true,
+      },
+    });
 
-      userId = authData.user.id;
-
-      // Create user record
-      const { error: userError } = await this.supabase
-        .from('users')
-        .insert({
-          id: userId,
-          email: userData.email,
-          first_name: userData.first_name,
-          last_name: userData.last_name,
-          cellphone: '',
-          role: 'player',
-          user_type: 'lite',
-          active: true,
-          privacy_consent_at: userData.privacy_consent ? new Date().toISOString() : null,
-        });
-      if (userError) throw new ApiError(userError.message);
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
     }
 
-    // Add to team (skip if already a member)
-    const { data: existingMember } = await this.supabase
-      .from('team_members')
-      .select('id')
-      .eq('team_id', invite.team_id)
-      .eq('user_id', userId)
-      .single();
-
-    if (!existingMember) {
-      const { error: tmError } = await this.supabase
-        .from('team_members')
-        .insert({ team_id: invite.team_id, user_id: userId, role: 'player' });
-      if (tmError) throw new ApiError(tmError.message);
+    // A 2xx response carrying an `error` field — shouldn't happen, but the
+    // message is already safe to show if it does.
+    if (result?.error) {
+      throw new ApiError(
+        typeof result.error === 'string' ? result.error : REGISTRATION_FALLBACK_MESSAGE
+      );
     }
 
-    // Mark invite as redeemed
-    await this.supabase
-      .from('invite_codes')
-      .update({ redeemed_by: userId, redeemed_at: new Date().toISOString() })
-      .eq('id', invite.id);
+    if (!result?.user) {
+      throw new ApiError(REGISTRATION_FALLBACK_MESSAGE);
+    }
 
-    // Return the user
-    const { data: user, error: fetchError } = await this.supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (fetchError) throw new ApiError(fetchError.message);
-    return user as User;
+    return result.user as User;
   }
 
   /** Get all pending (unredeemed, unexpired) invite codes */
@@ -245,6 +214,41 @@ class InvitesApi extends ApiClient {
       console.warn('Failed to notify inviter about expired code');
     }
   }
+}
+
+/**
+ * Shown when the function fails without a usable message of its own. Plain
+ * language, no database text (2.4).
+ */
+const REGISTRATION_FALLBACK_MESSAGE =
+  "Something went wrong and we couldn't complete your registration. Please try again.";
+
+/**
+ * `functions.invoke` surfaces non-2xx responses as an opaque error — the useful
+ * message is in the response body, which has to be read off `error.context`.
+ * Without this, every failure reads "Edge Function returned a non-2xx status
+ * code", which would defeat 2.4: the registrant would never see the plain-language
+ * reason (expired code, already-used code, email already registered) that
+ * `redeem-invite` took the trouble to produce.
+ *
+ * Same approach as `extractFunctionError` in `src/lib/email-api.ts`; kept local so
+ * the fallback message suits registration rather than email sending.
+ */
+async function extractFunctionError(error: unknown): Promise<string> {
+  const context = (error as { context?: Response })?.context;
+  if (context && typeof context.json === 'function') {
+    try {
+      const body = await context.json();
+      if (body?.error) {
+        return typeof body.error === 'string' ? body.error : REGISTRATION_FALLBACK_MESSAGE;
+      }
+    } catch {
+      // Body wasn't JSON — fall through to the generic message.
+    }
+  }
+  // Deliberately not `error.message`: that is either the opaque invoke text or a
+  // transport error, neither of which is useful to the person registering.
+  return REGISTRATION_FALLBACK_MESSAGE;
 }
 
 export const invitesApi = new InvitesApi();

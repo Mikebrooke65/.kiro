@@ -1,7 +1,61 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { invitesApi } from '../lib/invites-api';
+import { ApiError } from '../lib/api-client';
 import type { InviteCodeValidation } from '../types/database';
+
+/**
+ * Spec: `.kiro/specs/lite-user-registration-fix/` (task 3.4)
+ *
+ * Shown whenever registration fails without a message we know is safe to
+ * display. Plain language, no database text (2.4).
+ */
+const REGISTRATION_FALLBACK_MESSAGE =
+  "Something went wrong and we couldn't complete your registration. Please try again.";
+
+/**
+ * Text that must never reach the person registering (2.4). This is the wording
+ * the observed RLS failure was built from — *"new row violates row-level
+ * security policy for table users"* — plus the neighbouring database vocabulary.
+ */
+const FORBIDDEN_MESSAGE_FRAGMENTS = [
+  'row-level security',
+  'row level security',
+  'violates',
+  'constraint',
+  'policy',
+  'permission denied',
+  'sql',
+];
+
+/**
+ * Decide what to show when `redeemInviteCode()` rejects.
+ *
+ * Only an `ApiError` from the wrapper is trusted: it carries the `redeem-invite`
+ * function's own plain-language message, drawn from the safe set in
+ * `supabase/functions/redeem-invite/logic.ts` (expired code, already-used code,
+ * email already registered, and so on). Anything else — a transport failure, a
+ * thrown string, a supabase-js internal — is replaced wholesale rather than
+ * rendered, because that is the path that used to leak *"new row violates
+ * row-level security policy for table users"* straight into the form.
+ *
+ * The fragment screen is deliberate belt-and-braces at the render boundary: even
+ * if a raw database message ever found its way into an `ApiError`, it still would
+ * not be shown.
+ */
+function safeRegistrationErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) return REGISTRATION_FALLBACK_MESSAGE;
+
+  const message = typeof err.message === 'string' ? err.message.trim() : '';
+  if (message === '') return REGISTRATION_FALLBACK_MESSAGE;
+
+  const lower = message.toLowerCase();
+  if (FORBIDDEN_MESSAGE_FRAGMENTS.some(fragment => lower.includes(fragment))) {
+    return REGISTRATION_FALLBACK_MESSAGE;
+  }
+
+  return message;
+}
 
 export function LiteLandingPage() {
   const { code } = useParams<{ code: string }>();
@@ -48,8 +102,10 @@ export function LiteLandingPage() {
         privacy_consent: form.consent,
       });
       setSuccess(true);
-    } catch (err: any) {
-      setFormError(err.message || 'Registration failed. Please try again.');
+    } catch (err) {
+      // Never `err.message` unconditionally — that is what put raw policy text
+      // in front of registrants (2.4).
+      setFormError(safeRegistrationErrorMessage(err));
     } finally {
       setSubmitting(false);
     }

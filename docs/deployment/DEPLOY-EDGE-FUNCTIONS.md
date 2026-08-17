@@ -2,7 +2,15 @@
 
 ## What You Need to Do
 
-You need to deploy 2 edge functions to Supabase so the User Management system can create users automatically.
+You need to deploy the edge functions to Supabase: 2 for the User Management system (so it can
+create users automatically), and `redeem-invite` for lite-user self-registration from an invite
+link.
+
+> **Edge Functions do NOT deploy with the app.** `git push kiro prototype` publishes the web app
+> only. Every function below has to be deployed separately with `supabase functions deploy`.
+> The symptom of forgetting is the client calling a function that does not exist - the browser
+> gets a 404 from `/functions/v1/<name>` and the user sees a failure with no server logs to show
+> for it.
 
 ## Step-by-Step Instructions
 
@@ -33,6 +41,7 @@ supabase link --project-ref pikrxkxpizdezazlwxhb
 ```powershell
 supabase functions deploy create-user
 supabase functions deploy bulk-create-users
+supabase functions deploy redeem-invite
 ```
 
 You should see:
@@ -41,6 +50,7 @@ Deploying create-user (project ref: pikrxkxpizdezazlwxhb)
 Deployed Function create-user
 Deploying bulk-create-users (project ref: pikrxkxpizdezazlwxhb)
 Deployed Function bulk-create-users
+Deployed Functions on project pikrxkxpizdezazlwxhb: redeem-invite
 ```
 
 ### 5. Verify Deployment
@@ -51,6 +61,13 @@ Go to your Supabase Dashboard:
 3. You should see:
    - create-user
    - bulk-create-users
+   - redeem-invite
+
+Or from PowerShell:
+```powershell
+supabase functions list
+```
+Each function should show `ACTIVE`.
 
 ### 6. Test in Your App
 
@@ -87,7 +104,75 @@ Check in Supabase Dashboard:
 3. Go to Table Editor → users
 4. You should see the same users with their details
 
+## redeem-invite (Lite User Registration)
+
+`redeem-invite` runs the whole invite-redemption transaction server-side under `service_role`:
+it validates the code, creates or resolves the auth user, inserts the `users` profile row and the
+`team_members` row, then marks the invite redeemed - rolling back anything it created if a step
+fails. Without it, self-registration from an invite link fails with *"new row violates row-level
+security policy for table users"*, because the browser is still the `anon` role at that point.
+
+Spec: `.kiro/specs/lite-user-registration-fix/`.
+
+### Deploy it
+
+```powershell
+supabase functions deploy redeem-invite
+```
+
+Expected output:
+```
+Uploading asset (redeem-invite): supabase/functions/redeem-invite/index.ts
+Uploading asset (redeem-invite): supabase/functions/redeem-invite/logic.ts
+Deployed Functions on project pikrxkxpizdezazlwxhb: redeem-invite
+```
+
+Notes:
+- **Default JWT verification is correct here - do NOT use `--no-verify-jwt`.** This endpoint is
+  called before the person has an account, so there is no user session, but supabase-js sends the
+  anon key as the bearer token and that satisfies verification. Verified on deploy: a POST with
+  the anon key reaches the handler and returns the handler's own validation errors, not a 401.
+  A POST with no `Authorization` header at all is rejected by the gateway with
+  `UNAUTHORIZED_NO_AUTH_HEADER`, which is expected and harmless.
+- `supabase/functions/redeem-invite/logic.test.ts` (vitest + fast-check) sits next to the source
+  on purpose. It is **not** uploaded - the CLI bundles only what the entrypoint imports - so it
+  does not affect the deploy. Leave it where it is.
+- No new secrets. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically.
+- The invite code is the authorization. Rate limiting is a known, accepted gap.
+
+### Verify it responds
+
+```powershell
+supabase functions list
+```
+`redeem-invite` should be `ACTIVE`.
+
+Then probe it with a deliberately invalid code so nothing is written. From PowerShell, using the
+values in `.env.production`:
+
+```powershell
+$url  = "https://pikrxkxpizdezazlwxhb.supabase.co/functions/v1/redeem-invite"
+$anon = "<VITE_SUPABASE_ANON_KEY from .env.production>"
+Invoke-WebRequest -Uri $url -Method Options -Headers @{ Authorization = "Bearer $anon"; apikey = $anon } -UseBasicParsing
+```
+
+Expected: `200` with body `ok` (the CORS preflight).
+
+A POST with an invalid code should come back `400` with a plain-language message:
+```json
+{"error":"This invite code is not valid. Please check the link and try again.","status":"invalid"}
+```
+
+Anything that looks like a 404, or the client-side error "Edge Function returned a non-2xx status
+code" with no function logs in the Dashboard, means the function is not deployed.
+
 ## Troubleshooting
+
+### Registration fails and there are no `redeem-invite` logs
+- The function was never deployed, or a code change was not redeployed. Run
+  `supabase functions deploy redeem-invite` and check `supabase functions list` shows a bumped
+  version number.
+- Remember `git push kiro prototype` does not deploy it.
 
 ### "Command not found: supabase"
 - Close and reopen PowerShell after installing
@@ -109,6 +194,7 @@ Check in Supabase Dashboard:
 ## What This Enables
 
 Once deployed, you can:
+- ✅ Invited lite users can self-register from an invite link without the RLS failure
 - ✅ Add individual users via the form (no more manual UUID copying!)
 - ✅ Import 200+ users via CSV in minutes
 - ✅ Users are automatically created in both Auth and users table
