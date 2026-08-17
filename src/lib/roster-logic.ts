@@ -1,0 +1,257 @@
+// Pure logic for the mobile Team Page roster.
+//
+// Spec: `.kiro/specs/post-registration-welcome-and-team-page/` (task 3.1)
+//
+// These helpers are deliberately free of React and Supabase so the roster's
+// age-band derivation, caregiver-contact selection, role merging, grouping/
+// ordering, and team-selection state can be unit- and property-tested in
+// isolation (design "Team Page" component interface).
+//
+// Source-of-truth rules honoured here:
+//   - Roster membership comes from `team_members` (Req 3.10).
+//   - Age band is derived from `teams.age_group` ONLY, never a per-player DOB
+//     (Req 3.9). U17/Open => adult; U16-and-below => child.
+//   - Team names render everywhere as `{age_group} {name}` (Req 3.3).
+
+import type { TeamRole, TeamMemberWithTeam } from '../types/database';
+
+/** Contact-display / login category derived from the team's age group. */
+export type AgeBand = 'adult' | 'child';
+
+/**
+ * How a roster member's contact is presented (design "ContactDisplay").
+ *
+ * - `self` — U17/Open band: the player's own cellphone (Req 3.7).
+ * - `caregiver` — U16-and-below band: the linked caregiver's name + cellphone
+ *   (Req 3.8).
+ * - `missing` — U16-and-below band with no linked caregiver (Req 3.11).
+ */
+export type ContactDisplay =
+  | { kind: 'self'; cellphone: string }
+  | { kind: 'caregiver'; name: string; cellphone: string }
+  | { kind: 'missing' };
+
+/**
+ * A caregiver link for a child player, as needed to choose the contact of
+ * record. `isPrimary` flags the designated primary caregiver; `linkedAt` is the
+ * ISO timestamp the link was created, used to break ties by "most recently
+ * linked" when none is primary (Req 3.8).
+ */
+export interface CaregiverLink {
+  name: string;
+  cellphone: string;
+  isPrimary: boolean;
+  linkedAt: string;
+}
+
+/**
+ * A single `team_members`-derived roster row before merging. One user may
+ * appear in several rows when they hold more than one role on the team.
+ */
+export interface RosterMember {
+  userId: string;
+  displayName: string;
+  role: TeamRole;
+  active: boolean;
+  contact: ContactDisplay;
+  /** Child awaiting caregiver consent — greyed + non-selectable (Req 5.10). */
+  pending?: boolean;
+}
+
+/**
+ * A merged, display-ready roster row: one per user with every held role listed
+ * together (design "RosterEntry", Req 3.5).
+ */
+export interface RosterEntry {
+  userId: string;
+  displayName: string;
+  roles: TeamRole[];
+  active: boolean;
+  contact: ContactDisplay;
+  pending?: boolean;
+}
+
+/** A selectable team option for the Team Page dropdown. */
+export interface TeamOption {
+  teamId: string;
+  /** `{age_group} {name}` (Req 3.3). */
+  label: string;
+}
+
+/**
+ * The resolved state of the team selector (design "Selection behaviour").
+ *
+ * - exactly one team  => `selectedTeamId` set, no prompt, not empty (Req 3.2)
+ * - two or more teams => `selectedTeamId` null, `prompt` true (Req 3.13)
+ * - zero teams        => empty options, `empty` true (Req 3.14)
+ */
+export interface TeamSelectionState {
+  options: TeamOption[];
+  selectedTeamId: string | null;
+  /** Show a "select a team" prompt with no roster (2+ teams, Req 3.13). */
+  prompt: boolean;
+  /** User belongs to no team — show empty state (Req 3.14). */
+  empty: boolean;
+}
+
+// Canonical group/sort priority for roster roles: Coach, then Manager, then
+// Player (Req 3.4). Lower rank sorts first.
+const ROLE_RANK: Record<TeamRole, number> = {
+  coach: 0,
+  manager: 1,
+  player: 2,
+};
+
+/**
+ * Derive the age band from a team's `age_group` string alone (Req 3.9).
+ *
+ * Rule (Req 3.7 / 3.8): U17 or Open => `adult`; U16 and below => `child`.
+ * The string is matched case-insensitively. "Open" (any age band named open)
+ * is adult; a `U<n>` value is adult when n >= 17 and child otherwise.
+ *
+ * Unrecognised values default to `child`, the privacy-protective choice: a
+ * child contact routes through a caregiver rather than exposing a would-be
+ * minor's own number.
+ */
+export function deriveAgeBand(ageGroup: string): AgeBand {
+  const value = (ageGroup ?? '').trim().toLowerCase();
+  if (value === '') return 'child';
+  if (value.includes('open')) return 'adult';
+
+  const match = value.match(/(\d+)/);
+  if (match) {
+    const age = Number.parseInt(match[1], 10);
+    return age >= 17 ? 'adult' : 'child';
+  }
+
+  return 'child';
+}
+
+/**
+ * Choose the caregiver contact of record for a child player (Req 3.8 / 3.11).
+ *
+ * Selection order:
+ *   1. the caregiver flagged primary (first one if several are flagged);
+ *   2. otherwise the most recently linked caregiver (latest `linkedAt`);
+ *   3. when there are no caregivers, a `missing` indication (Req 3.11).
+ */
+export function selectCaregiverContact(caregivers: CaregiverLink[]): ContactDisplay {
+  if (!caregivers || caregivers.length === 0) {
+    return { kind: 'missing' };
+  }
+
+  const primary = caregivers.find((c) => c.isPrimary);
+  const chosen =
+    primary ??
+    caregivers.reduce((latest, current) =>
+      current.linkedAt > latest.linkedAt ? current : latest,
+    );
+
+  return { kind: 'caregiver', name: chosen.name, cellphone: chosen.cellphone };
+}
+
+/**
+ * Collapse many `team_members` rows into one row per user, combining all held
+ * roles (Req 3.5). Roles are de-duplicated and ordered Coach, Manager, Player.
+ * A user is active if any of their memberships is active, and pending if any is
+ * pending; the first-seen display name and contact are retained. Input order of
+ * distinct users is preserved.
+ */
+export function mergeRoles(members: RosterMember[]): RosterEntry[] {
+  const byUser = new Map<string, RosterEntry>();
+
+  for (const member of members) {
+    const existing = byUser.get(member.userId);
+    if (!existing) {
+      byUser.set(member.userId, {
+        userId: member.userId,
+        displayName: member.displayName,
+        roles: [member.role],
+        active: member.active,
+        contact: member.contact,
+        pending: member.pending,
+      });
+      continue;
+    }
+
+    if (!existing.roles.includes(member.role)) {
+      existing.roles.push(member.role);
+    }
+    existing.active = existing.active || member.active;
+    existing.pending = existing.pending || member.pending;
+  }
+
+  for (const entry of byUser.values()) {
+    entry.roles.sort((a, b) => ROLE_RANK[a] - ROLE_RANK[b]);
+  }
+
+  return Array.from(byUser.values());
+}
+
+/**
+ * Produce the display-ready roster: one row per user (via `mergeRoles`) ordered
+ * by group Coach -> Manager -> Player, and within each group all active members
+ * before any inactive member (Req 3.4 / 3.6).
+ *
+ * A user's group is their highest-priority role (Coach outranks Manager
+ * outranks Player), so a coach who is also a player appears in the Coach group.
+ * Sorting is stable, so members that tie on group and active status keep their
+ * merged order.
+ */
+export function groupAndSortRoster(members: RosterMember[]): RosterEntry[] {
+  const merged = mergeRoles(members);
+
+  return merged
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const groupA = groupRank(a.entry.roles);
+      const groupB = groupRank(b.entry.roles);
+      if (groupA !== groupB) return groupA - groupB;
+
+      // Active members sort above inactive within the group (Req 3.6).
+      if (a.entry.active !== b.entry.active) return a.entry.active ? -1 : 1;
+
+      // Stable fallback preserves merged order.
+      return a.index - b.index;
+    })
+    .map(({ entry }) => entry);
+}
+
+// The group a merged entry belongs to = the highest-priority role it holds.
+function groupRank(roles: TeamRole[]): number {
+  return roles.reduce(
+    (best, role) => Math.min(best, ROLE_RANK[role]),
+    ROLE_RANK.player,
+  );
+}
+
+/**
+ * Map a user's `team_members` set to selector options plus auto-selection state
+ * (Req 3.1, 3.2, 3.13, 3.14).
+ *
+ * Duplicate memberships for the same team (a user holding several roles) are
+ * collapsed to a single option keyed on `team_id`, so "exactly one team" is
+ * judged on distinct teams. Options are labelled `{age_group} {name}` (Req 3.3)
+ * in the order teams first appear.
+ */
+export function buildTeamSelection(teams: TeamMemberWithTeam[]): TeamSelectionState {
+  const options: TeamOption[] = [];
+  const seen = new Set<string>();
+
+  for (const membership of teams ?? []) {
+    const team = membership.team;
+    if (!team || seen.has(team.id)) continue;
+    seen.add(team.id);
+    options.push({ teamId: team.id, label: `${team.age_group} ${team.name}` });
+  }
+
+  if (options.length === 0) {
+    return { options, selectedTeamId: null, prompt: false, empty: true };
+  }
+
+  if (options.length === 1) {
+    return { options, selectedTeamId: options[0].teamId, prompt: false, empty: false };
+  }
+
+  return { options, selectedTeamId: null, prompt: true, empty: false };
+}
