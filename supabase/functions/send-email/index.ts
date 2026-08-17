@@ -68,12 +68,22 @@ interface ConfirmRegistrationData {
   confirmationLink: string;
 }
 
+// Sent when a Manager adds a junior on a Club Tournament team (Req 5.9). The
+// linked caregiver is asked to approve (double opt-in) before the child's
+// record is activated. Copy only — the approval action happens in-app.
+interface CaregiverApprovalRequestData {
+  recipientName?: string;
+  childName: string;
+  teamName: string;
+}
+
 // The union of everything this function can send. Adding a member here forces
 // a matching branch in the send switch, so no type can be sent without copy.
 type EmailRequest =
   | { type: 'team_invite'; to: string; data: TeamInviteData }
   | { type: 'welcome'; to: string; data: WelcomeData }
-  | { type: 'confirm_registration'; to: string; data: ConfirmRegistrationData };
+  | { type: 'confirm_registration'; to: string; data: ConfirmRegistrationData }
+  | { type: 'caregiver_approval_request'; to: string; data: CaregiverApprovalRequestData };
 
 function escapeHtml(s: string): string {
   return s
@@ -354,6 +364,29 @@ function buildConfirmRegistration(
   );
 }
 
+// Add-a-junior approval request (Req 5.9). Copy only — the caregiver approves
+// or declines inside the app, so no link/CTA is generated here.
+function buildCaregiverApprovalRequest(
+  data: CaregiverApprovalRequestData,
+  branding: Branding
+): { subject: string; html: string; text: string } {
+  const rawChild = data.childName;
+  const rawTeam = data.teamName;
+
+  const subject = `Please confirm adding ${rawChild} to ${rawTeam}`;
+
+  const paragraphs = [
+    `${rawChild} has been added to ${rawTeam} and listed you as their caregiver.`,
+    'Before their place is confirmed we need your approval. Open the app to review the request and approve or decline it.',
+    "If you weren't expecting this, you can decline the request in the app or simply ignore this email.",
+  ];
+
+  return buildOnboardingEmail(
+    { subject, greetingName: data.recipientName || null, paragraphs },
+    branding
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -426,6 +459,18 @@ Deno.serve(async (req) => {
           );
         }
         ({ subject, html, text } = buildConfirmRegistration(body.data, branding));
+        break;
+      }
+      case 'caregiver_approval_request': {
+        if (!body.data?.childName || !body.data?.teamName) {
+          return new Response(
+            JSON.stringify({
+              error: 'caregiver_approval_request requires data.childName and data.teamName',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        ({ subject, html, text } = buildCaregiverApprovalRequest(body.data, branding));
         break;
       }
       default:

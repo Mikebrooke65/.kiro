@@ -5,6 +5,29 @@ All notable changes to the football coaching app prototype will be documented in
 ## [Unreleased]
 
 ### Added
+- **Add-a-Junior consent flow — API layer** (`caregivers-api.addJunior` + consent
+  handlers). Orchestrates the double opt-in for adding a child to a Club
+  Tournament team: validates the form, resolves or creates the caregiver
+  (reusing an existing `users` row where the email matches, otherwise creating
+  a sign-in-capable account), creates an inactive child `users` row with a
+  synthetic non-sign-in email and recorded provenance, links child↔caregiver
+  in `player_caregivers` (no duplicates), inserts a pending `caregiver_approvals`
+  record (`request_kind = 'add_child'`), and emails the caregiver an
+  approval request. Consent handlers (`approveJunior` / `denyJunior` /
+  `escalateJunior`) set the approval status + `responded_at` and activate or
+  keep the child inactive accordingly. All decision logic reuses the pure
+  helpers in `add-junior-logic.ts`.
+- **`create-auth-user` Edge Function** — service-role primitive that creates a
+  single `auth.users` + `public.users` row and returns the id. Needed because
+  the browser cannot mint auth users. Creates sign-in-capable caregivers (real
+  email) or no-sign-in children (server-generated synthetic `.invalid` email,
+  unconfirmed). Gated to admin or coach/manager callers. Requires
+  `supabase functions deploy create-auth-user`.
+- **`caregiver_approval_request` email type** (`send-email` Edge Function) — the
+  add-a-junior approval-request notification to caregivers, sharing the existing
+  onboarding email build/send path; copy only, club branding still from env vars.
+
+
 - **Welcome and confirmation onboarding emails** (`send-email` Edge Function).
   The function now accepts two new email types alongside `team_invite`:
   - `welcome` — sent on the matching-address registration path to greet the

@@ -15,6 +15,17 @@ import { ApiClient, ApiError } from './api-client';
  * can't push arbitrary content through the sending domain.
  */
 
+export interface CaregiverApprovalRequestEmailParams {
+  /** Caregiver's real, deliverable email address. */
+  to: string;
+  /** Optional caregiver first name for the greeting. */
+  recipientName?: string;
+  /** Child's display name, e.g. "Sam Jones". */
+  childName: string;
+  /** Display name, e.g. "U9 Lithium" (age group + name, per project standard). */
+  teamName: string;
+}
+
 export interface TeamInviteEmailParams {
   /** Recipient email address */
   to: string;
@@ -82,6 +93,33 @@ class EmailApi extends ApiClient {
 
     const { data: result, error } = await this.supabase.functions.invoke('send-email', {
       body: { type: 'welcome', to, data },
+    });
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+
+    if (result?.error) {
+      throw new ApiError(result.error);
+    }
+
+    return { id: result?.id };
+  }
+
+  /**
+   * Send the add-a-junior approval request to a caregiver (Req 5.9).
+   *
+   * Like every other email here, this sends only *data* (child name, team name,
+   * recipient) — all club branding is applied server-side from the Edge
+   * Function's env vars. Resolves on success, throws ApiError otherwise.
+   */
+  async sendCaregiverApprovalRequest(
+    params: CaregiverApprovalRequestEmailParams
+  ): Promise<{ id?: string }> {
+    const { to, ...data } = params;
+
+    const { data: result, error } = await this.supabase.functions.invoke('send-email', {
+      body: { type: 'caregiver_approval_request', to, data },
     });
 
     if (error) {

@@ -386,6 +386,14 @@ export interface CaregiverApproval {
   responded_by: string | null;
   responded_at: string | null;
   created_at: string;
+  /**
+   * Disambiguates the two uses of this table (migration 1.6):
+   * - 'add_caregiver': legacy "add a caregiver to a player" flow.
+   * - 'add_child': the add-a-junior consent record for a Club Tournament child.
+   */
+  request_kind: 'add_caregiver' | 'add_child';
+  /** Team the add-child request belongs to; null for the legacy flow. */
+  team_id: string | null;
 }
 
 // New caregiver data for approval request
