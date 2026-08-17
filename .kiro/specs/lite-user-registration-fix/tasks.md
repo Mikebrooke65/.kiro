@@ -742,7 +742,7 @@ codes, no auth users with the prefix, no memberships. Auth-user deletion is guar
 address on the auth record itself, and refuses anything else. `@mailinator.com` only — Supabase
 Auth rejects RFC-2606 domains outright, as task 1 recorded.
 
-## Task 4.3 — skipped (optional), 2026-08-17
+## Orphan sweep findings (task 4.3 — skipped as optional, 2026-08-17)
 
 `scripts/cleanup-orphan-auth-users.ts` was **not written**. The task was marked optional and
 the reason it existed has largely gone away: `redeem-invite` now **adopts** an orphaned auth
