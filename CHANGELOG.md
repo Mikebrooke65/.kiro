@@ -4,6 +4,22 @@ All notable changes to the football coaching app prototype will be documented in
 
 ## [Unreleased]
 
+### Added
+- **Welcome and confirmation onboarding emails** (`send-email` Edge Function).
+  The function now accepts two new email types alongside `team_invite`:
+  - `welcome` — sent on the matching-address registration path to greet the
+    registrant and point them at their Team page.
+  - `confirm_registration` — sent on the non-matching-address path, carrying
+    a server-generated confirmation link and one explanatory sentence noting
+    the address used differs from the invited one, that confirming completes
+    registration if intentional, and that the recipient may ignore it and
+    re-register with the invited address.
+  Both types share a single email-build/send implementation, differing only
+  in copy. Club branding still comes solely from env vars (`CLUB_NAME`,
+  `CLUB_COLOR`, `APP_URL`, `EMAIL_FROM`, `EMAIL_REPLY_TO`) and team names are
+  rendered verbatim from server-supplied `{age_group} {name}` values — the
+  client passes no branding or team-name overrides.
+
 ## [2026-08-17] - Lite User Registration From An Invite Link (Bug Fix)
 
 ### Fixed

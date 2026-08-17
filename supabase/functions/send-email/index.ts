@@ -49,11 +49,31 @@ interface TeamInviteData {
   inviteCode: string;
 }
 
-interface EmailRequest {
-  type: 'team_invite';
-  to: string;
-  data: TeamInviteData;
+// Sent on the matching-address registration path (Req 2.1). The registrant's
+// address matched the invited address, so the account is already confirmed —
+// this is a pure welcome, no action required.
+interface WelcomeData {
+  recipientName?: string;
+  teamName: string;
+  competitionName?: string;
 }
+
+// Sent on the non-matching-address path (Req 2.3). The registrant used an
+// address that differs from the invited one, so the account is gated behind
+// a confirmation link generated server-side by redeem-invite. The one
+// explanatory sentence required by Req 2.4 is built into the copy below.
+interface ConfirmRegistrationData {
+  recipientName?: string;
+  teamName: string;
+  confirmationLink: string;
+}
+
+// The union of everything this function can send. Adding a member here forces
+// a matching branch in the send switch, so no type can be sent without copy.
+type EmailRequest =
+  | { type: 'team_invite'; to: string; data: TeamInviteData }
+  | { type: 'welcome'; to: string; data: WelcomeData }
+  | { type: 'confirm_registration'; to: string; data: ConfirmRegistrationData };
 
 function escapeHtml(s: string): string {
   return s
@@ -171,6 +191,169 @@ function buildTeamInvite(
   return { subject, html, text };
 }
 
+// ---------------------------------------------------------------------------
+// Onboarding emails (welcome + confirmation) share ONE build implementation.
+//
+// Req 2.8 requires the matching-address welcome and the non-matching-address
+// confirmation email to share one link-generation and Resend-sending path,
+// differing only in copy. `buildOnboardingEmail` is that single path: it owns
+// the greeting, the branded HTML shell, the plain-text alternative, and the
+// optional call-to-action button/link. The two builders below supply nothing
+// but copy — subject line, body paragraphs, and (for confirmation) the link.
+//
+// Branding (club name, colour, app URL) comes only from `branding`, which the
+// handler populates from env vars — never from the request body (Req 2.6).
+// Team names arrive already formatted as `{age_group} {name}` from server-side
+// callers; this function renders the value verbatim and accepts no branding or
+// team-name overrides from the client (Req 2.7).
+// ---------------------------------------------------------------------------
+
+interface OnboardingCopy {
+  subject: string;
+  // Raw (unescaped) recipient name for the greeting, or null for a generic one.
+  greetingName: string | null;
+  // Raw (unescaped) body paragraphs. Rendered as-is into the text part and
+  // HTML-escaped for the HTML part.
+  paragraphs: string[];
+  // Optional call-to-action rendered as a button (HTML) and a labelled URL
+  // (text). Used by the confirmation email for the confirmation link.
+  cta?: { label: string; url: string };
+}
+
+function buildOnboardingEmail(
+  copy: OnboardingCopy,
+  branding: Branding
+): { subject: string; html: string; text: string } {
+  const clubName = escapeHtml(branding.clubName);
+  const clubColor = escapeHtml(branding.clubColor);
+  const greetingRaw = copy.greetingName;
+  const greetingHtml = greetingRaw ? escapeHtml(greetingRaw) : null;
+
+  // Plain-text alternative — raw values, no escaping (see buildTeamInvite).
+  const textLines: string[] = [greetingRaw ? `Hi ${greetingRaw},` : 'Hi,', ''];
+  for (const p of copy.paragraphs) {
+    textLines.push(p, '');
+  }
+  if (copy.cta) {
+    textLines.push(copy.cta.label + ':', copy.cta.url, '');
+  }
+  textLines.push(branding.clubName);
+  const text = textLines.join('\n');
+
+  const paragraphsHtml = copy.paragraphs
+    .map(
+      (p) =>
+        `<p style="margin:0 0 16px;font-size:15px;line-height:1.5;color:#374151;">${escapeHtml(
+          p
+        )}</p>`
+    )
+    .join('\n                ');
+
+  const ctaHtml = copy.cta
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+                  <tr>
+                    <td style="background:${clubColor};border-radius:8px;">
+                      <a href="${copy.cta.url}"
+                         style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;">
+                        ${escapeHtml(copy.cta.label)}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">
+                  Or paste this link into your browser:
+                </p>
+                <p style="margin:0 0 20px;font-size:13px;word-break:break-all;">
+                  <a href="${copy.cta.url}" style="color:${clubColor};">${escapeHtml(
+        copy.cta.url
+      )}</a>
+                </p>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background:${clubColor};padding:20px 24px;">
+                <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:700;">${clubName}</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px;">
+                <p style="margin:0 0 16px;font-size:16px;color:#111827;">
+                  ${greetingHtml ? `Hi ${greetingHtml},` : 'Hi,'}
+                </p>
+                ${paragraphsHtml}
+                ${ctaHtml}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return { subject: copy.subject, html, text };
+}
+
+// Matching-address welcome (Req 2.1). Copy only — no link/action needed.
+function buildWelcome(
+  data: WelcomeData,
+  branding: Branding
+): { subject: string; html: string; text: string } {
+  const rawTeam = data.teamName;
+  const rawCompetition = data.competitionName || null;
+
+  const subject = rawCompetition
+    ? `Welcome to ${rawTeam} for ${rawCompetition}`
+    : `Welcome to ${rawTeam}`;
+
+  const paragraphs = [
+    rawCompetition
+      ? `You're all set — your account is confirmed and you've joined ${rawTeam} for ${rawCompetition}.`
+      : `You're all set — your account is confirmed and you've joined ${rawTeam}.`,
+    "On your Team page you'll see the teams you can manage, you can add players, " +
+      'and you can promote one more player to Manager (up to two Managers per team).',
+    "If you weren't expecting this, you can safely ignore this email.",
+  ];
+
+  return buildOnboardingEmail(
+    { subject, greetingName: data.recipientName || null, paragraphs },
+    branding
+  );
+}
+
+// Non-matching-address confirmation (Req 2.3/2.4). Copy only, plus the
+// server-generated confirmation link rendered through the shared CTA path.
+function buildConfirmRegistration(
+  data: ConfirmRegistrationData,
+  branding: Branding
+): { subject: string; html: string; text: string } {
+  const rawTeam = data.teamName;
+
+  const subject = `Confirm your registration for ${rawTeam}`;
+
+  const paragraphs = [
+    `You registered to join ${rawTeam} using an email address that's different from the one your invitation was sent to — if that was intentional, tap the button below to confirm and complete your registration; if it was a mistake, you can ignore this email and register again using the invited address.`,
+    'Confirming just verifies this email address belongs to you.',
+  ];
+
+  return buildOnboardingEmail(
+    {
+      subject,
+      greetingName: data.recipientName || null,
+      paragraphs,
+      cta: { label: 'Confirm my registration', url: data.confirmationLink },
+    },
+    branding
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -221,6 +404,28 @@ Deno.serve(async (req) => {
           );
         }
         ({ subject, html, text } = buildTeamInvite(body.data, branding));
+        break;
+      }
+      case 'welcome': {
+        if (!body.data?.teamName) {
+          return new Response(
+            JSON.stringify({ error: 'welcome requires data.teamName' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        ({ subject, html, text } = buildWelcome(body.data, branding));
+        break;
+      }
+      case 'confirm_registration': {
+        if (!body.data?.teamName || !body.data?.confirmationLink) {
+          return new Response(
+            JSON.stringify({
+              error: 'confirm_registration requires data.teamName and data.confirmationLink',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        ({ subject, html, text } = buildConfirmRegistration(body.data, branding));
         break;
       }
       default:
