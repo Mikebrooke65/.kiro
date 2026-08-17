@@ -49,6 +49,7 @@ import {
   messageForInviteStatus,
   normalizeEmail,
   plannedCompensations,
+  resolveEffectiveRole,
   SAFE_ERROR_MESSAGES,
   validateRequest,
   type CreationLedger,
@@ -279,6 +280,13 @@ Deno.serve(async (req) => {
     // (2.7 / 2.8), and the only condition under which an orphan may be adopted.
     const preConfirm = emailMatchesInvite(reg.email, invite.recipient_email);
 
+    // The role granted by this redemption is decided server-side from the
+    // invite's intended role and applied identically to the profile row (6.2)
+    // and the membership row (6.3). `resolveEffectiveRole` degrades any absent,
+    // unknown, or privileged value (including 'admin') to 'player' (6.4 / 6.5),
+    // so a crafted invite can never confer an elevated role.
+    const effectiveRole = resolveEffectiveRole(invite.intended_role);
+
     // --- 3. Resolve the user --------------------------------------------
     // `public.users.id` references `auth.users(id)`, so every profile row has an
     // auth user. Looking the auth user up first therefore settles all three
@@ -364,7 +372,7 @@ Deno.serve(async (req) => {
         first_name: reg.first_name,
         last_name: reg.last_name,
         cellphone: '',
-        role: 'player',
+        role: effectiveRole,
         user_type: 'lite',
         active: true,
         privacy_consent_at: reg.privacy_consent ? nowIso : null,
@@ -426,7 +434,7 @@ Deno.serve(async (req) => {
     } else {
       const { error: memberInsertError } = await admin
         .from('team_members')
-        .insert({ team_id: invite.team_id, user_id: userId, role: 'player' });
+        .insert({ team_id: invite.team_id, user_id: userId, role: effectiveRole });
 
       if (memberInsertError) {
         throw new RedeemError(
@@ -477,6 +485,43 @@ Deno.serve(async (req) => {
       .eq('id', invite.team_id)
       .maybeSingle();
 
+    // --- 8. Non-matching path: confirmation link (2.2, 2.9) --------------
+    // On the non-matching-address path the account is held behind an email
+    // confirmation gate. The confirmation link is generated here, server-side,
+    // under `service_role` (2.2) so the caller can hand it to `send-email`
+    // (type `confirm_registration`) rather than relying on GoTrue's built-in
+    // SMTP.
+    //
+    // Generation failure is NOT a registration failure. The account is already
+    // committed and must be preserved (2.9), so this runs in its own try/catch
+    // and never reaches the outer catch that would roll the account back. On
+    // failure we log the raw detail and signal that confirmation is required
+    // but the email could not be sent, leaving the account intact for a retry.
+    let confirmationLink: string | null = null;
+    let confirmationEmailSent = true;
+
+    if (!preConfirm) {
+      try {
+        const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+          type: 'signup',
+          email: reg.email,
+          password: reg.password,
+        });
+
+        const actionLink = linkData?.properties?.action_link ?? null;
+        if (linkError || !actionLink) {
+          throw linkError ?? new Error('generateLink returned no action_link');
+        }
+
+        confirmationLink = actionLink;
+      } catch (linkError) {
+        // 2.9: log the failure, preserve the created account (no rollback),
+        // and report that confirmation is required but the email was not sent.
+        console.error('redeem-invite confirmation link generation failed:', linkError);
+        confirmationEmailSent = false;
+      }
+    }
+
     return json({
       success: true,
       user,
@@ -485,6 +530,13 @@ Deno.serve(async (req) => {
       // email" without inspecting the auth user.
       email_confirmed: preConfirm,
       email_confirmation_required: !preConfirm,
+      // Present only on the non-matching path: the server-generated link the
+      // caller sends via `send-email`, and whether that email could be sent at
+      // all. `confirmation_email_sent: false` is the "confirmation required but
+      // not sent" signal (2.9).
+      ...(preConfirm
+        ? {}
+        : { confirmation_link: confirmationLink, confirmation_email_sent: confirmationEmailSent }),
     });
   } catch (error) {
     // Anything past this point may have written something. Undo this
