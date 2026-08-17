@@ -2,6 +2,13 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { invitesApi } from '../lib/invites-api';
 import { ApiError } from '../lib/api-client';
+import { useClubBranding, type ClubBranding } from '../hooks/useClubBranding';
+import {
+  selectWelcomeVariant,
+  buildGreeting,
+  formatTeamLabel,
+  type RedeemInviteResult,
+} from '../lib/success-screen-logic';
 import type { InviteCodeValidation } from '../types/database';
 
 /**
@@ -62,9 +69,15 @@ export function LiteLandingPage() {
   const [validation, setValidation] = useState<InviteCodeValidation | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
+  // The full redemption result drives the branded, path-aware Success Screen
+  // (Req 1.1/1.6/1.8) — a plain boolean would lose the flags and team/user data.
+  const [result, setResult] = useState<RedeemInviteResult | null>(null);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState({ first_name: '', last_name: '', email: '', password: '', consent: false });
+
+  // All Success Screen branding (name, colour, logo, app link) comes from here —
+  // never a hardcoded literal (Req 1.7). Absent values are omitted downstream.
+  const { branding } = useClubBranding();
 
   useEffect(() => {
     if (code) {
@@ -94,14 +107,14 @@ export function LiteLandingPage() {
 
     setSubmitting(true);
     try {
-      await invitesApi.redeemInviteCode(code!, {
+      const res = await invitesApi.redeemInviteCode(code!, {
         first_name: form.first_name,
         last_name: form.last_name,
         email: form.email,
         password: form.password,
         privacy_consent: form.consent,
       });
-      setSuccess(true);
+      setResult(res);
     } catch (err) {
       // Never `err.message` unconditionally — that is what put raw policy text
       // in front of registrants (2.4).
@@ -148,22 +161,9 @@ export function LiteLandingPage() {
     );
   }
 
-  // Success state
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
-          <div className="text-4xl mb-4">✅</div>
-          <h1 className="text-xl font-bold mb-2">Welcome!</h1>
-          <p className="text-gray-600 mb-4">
-            You've been added to {validation.team?.age_group} {validation.team?.name}. You can now log in to the app.
-          </p>
-          <a href="/login" className="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            Go to Login
-          </a>
-        </div>
-      </div>
-    );
+  // Success state — branded, path-aware Success Screen (Req 1.1-1.11).
+  if (result) {
+    return <SuccessScreen result={result} branding={branding} />;
   }
 
   // Registration form
@@ -217,5 +217,182 @@ export function LiteLandingPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+/**
+ * Post-registration Success Screen (Requirement 1).
+ *
+ * Renders one of three variants chosen by `selectWelcomeVariant`:
+ *   - `matching`               — account is live: personalised welcome (Req 1.1-1.5)
+ *   - `confirmation_required`  — check-your-email gate (Req 1.6)
+ *   - `generic`                — registration complete, please log in (Req 1.8)
+ *
+ * CLUB-AGNOSTIC (Req 1.7): every branded element — club name, logo, primary
+ * colour, app link — is read from `branding` (i.e. `useClubBranding()` /
+ * `club_settings`). Nothing here hardcodes a club name, colour, logo, or URL.
+ * Where a branding value is absent the dependent element is omitted rather than
+ * substituting a default (Req 1.11 for the app link; logo/name likewise).
+ */
+function SuccessScreen({
+  result,
+  branding,
+}: {
+  result: RedeemInviteResult;
+  branding: ClubBranding;
+}) {
+  const variant = selectWelcomeVariant(result);
+
+  // Accent colour comes from branding only; when absent we fall back to a
+  // neutral slate rather than any club's colour (Req 1.7).
+  const accent = branding.primary_color?.trim() || null;
+  const buttonStyle = accent ? { backgroundColor: accent } : undefined;
+  const buttonClass = accent
+    ? 'inline-block px-6 py-2 text-white rounded-lg font-medium'
+    : 'inline-block px-6 py-2 bg-gray-800 text-white rounded-lg font-medium hover:bg-gray-900';
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+        {/* Logo only if branding provides one (Req 1.7) — never a hardcoded asset. */}
+        {branding.logo_url && (
+          <img
+            src={branding.logo_url}
+            alt={branding.club_name ?? ''}
+            className="h-16 mx-auto mb-4 object-contain"
+          />
+        )}
+
+        {variant === 'matching' && (
+          <MatchingWelcome
+            result={result}
+            branding={branding}
+            buttonClass={buttonClass}
+            buttonStyle={buttonStyle}
+          />
+        )}
+
+        {variant === 'confirmation_required' && (
+          <ConfirmationRequired
+            emailSent={result.confirmation_email_sent !== false}
+          />
+        )}
+
+        {variant === 'generic' && (
+          <GenericComplete buttonClass={buttonClass} buttonStyle={buttonStyle} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Matching-address welcome: live account, personalised (Req 1.1-1.5, 1.9-1.11). */
+function MatchingWelcome({
+  result,
+  branding,
+  buttonClass,
+  buttonStyle,
+}: {
+  result: RedeemInviteResult;
+  branding: ClubBranding;
+  buttonClass: string;
+  buttonStyle: React.CSSProperties | undefined;
+}) {
+  // Greeting includes the first name, or a generic greeting when absent (Req 1.9).
+  const greeting = buildGreeting(result.user?.first_name);
+  // Team name as `{age_group} {name}` (Req 1.2).
+  const teamLabel = formatTeamLabel(
+    result.team ? { age_group: result.team.age_group, name: result.team.name } : null
+  );
+  // Competition name shown only when present, otherwise omitted (Req 1.3 / 1.10).
+  const competitionName = result.competition_name?.trim() || null;
+  // App link only when branding supplies one, otherwise omitted (Req 1.4 / 1.11).
+  const appUrl = branding.app_url?.trim() || null;
+
+  return (
+    <>
+      <div className="text-4xl mb-4">🎉</div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">{greeting}</h1>
+
+      {teamLabel && (
+        <p className="text-sm text-gray-600">
+          You've been added to <span className="font-semibold text-gray-900">{teamLabel}</span>.
+        </p>
+      )}
+
+      {competitionName && (
+        <p className="text-sm text-gray-600 mt-1">
+          Competition: <span className="font-semibold text-gray-900">{competitionName}</span>
+        </p>
+      )}
+
+      {/* Guidance text — states all three points required by Req 1.5. */}
+      <div className="mt-5 text-left bg-gray-50 rounded-lg p-4 text-sm text-gray-600 space-y-2">
+        <p className="font-semibold text-gray-700">What you can do next</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>On the Team page you'll see the teams you can manage.</li>
+          <li>You can add players to your team.</li>
+          <li>
+            You can promote one additional player to Manager, up to a maximum of
+            two Managers per team.
+          </li>
+        </ul>
+      </div>
+
+      {/* App link only when branding provides a URL (Req 1.4 / 1.11). */}
+      {appUrl ? (
+        <a href={appUrl} className={`${buttonClass} mt-6`} style={buttonStyle}>
+          Open the app
+        </a>
+      ) : (
+        <a href="/login" className={`${buttonClass} mt-6`} style={buttonStyle}>
+          Go to Login
+        </a>
+      )}
+    </>
+  );
+}
+
+/** Non-matching path: instruct the registrant to confirm via email (Req 1.6). */
+function ConfirmationRequired({ emailSent }: { emailSent: boolean }) {
+  return (
+    <>
+      <div className="text-4xl mb-4">📧</div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">Almost there</h1>
+      <p className="text-sm text-gray-600">
+        Please check your email and follow the link to confirm your account and
+        complete your registration.
+      </p>
+      {!emailSent && (
+        // Req 2.9 surfaced to the user: link generation/send couldn't complete,
+        // so the email may take longer than usual to arrive.
+        <p className="text-sm text-gray-500 mt-3">
+          Your confirmation email may be delayed. If it doesn't arrive shortly,
+          please try again later.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Generic fallback: registration completed, please log in (Req 1.8). */
+function GenericComplete({
+  buttonClass,
+  buttonStyle,
+}: {
+  buttonClass: string;
+  buttonStyle: React.CSSProperties | undefined;
+}) {
+  return (
+    <>
+      <div className="text-4xl mb-4">✅</div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">Registration complete</h1>
+      <p className="text-sm text-gray-600 mb-6">
+        Your registration is complete. You can now log in to the app.
+      </p>
+      <a href="/login" className={buttonClass} style={buttonStyle}>
+        Go to Login
+      </a>
+    </>
   );
 }

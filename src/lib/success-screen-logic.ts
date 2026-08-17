@@ -28,6 +28,12 @@ export interface RedeemInviteResult {
   team?: Team | null;
   email_confirmed?: boolean;
   email_confirmation_required?: boolean;
+  /**
+   * Non-matching path only: whether the confirmation email could actually be
+   * sent. `false` is the "confirmation required but not sent" signal (Req 2.9),
+   * which the Success Screen surfaces as a "your email may be delayed" note.
+   */
+  confirmation_email_sent?: boolean;
   /** Optional competition name associated with the invite (Req 1.3 / 1.10). */
   competition_name?: string | null;
 }

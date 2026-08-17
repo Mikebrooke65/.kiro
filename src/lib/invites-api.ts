@@ -149,6 +149,7 @@ class InvitesApi extends ApiClient {
       team: result.team ?? null,
       email_confirmed: result.email_confirmed,
       email_confirmation_required: result.email_confirmation_required,
+      confirmation_email_sent: result.confirmation_email_sent,
       competition_name: result.competition_name ?? null,
     };
 
