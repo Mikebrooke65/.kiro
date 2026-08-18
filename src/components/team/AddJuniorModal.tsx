@@ -130,46 +130,53 @@ export function AddJuniorModal({ isOpen, onClose, onSuccess, teamId }: AddJunior
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4 pb-24"
+      className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-junior-title"
     >
-      <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[calc(100vh-7rem)] overflow-y-auto">
-        <h2 id="add-junior-title" className="text-xl font-bold text-gray-900 mb-1">
-          Add a Junior
-        </h2>
-        <p className="text-sm text-gray-500 mb-4">
-          We'll ask the caregiver to confirm before the child is added to the team.
-        </p>
-
-        <div className="space-y-4">
-          <fieldset className="space-y-4">
-            <legend className="text-sm font-semibold text-gray-900 mb-1">Caregiver</legend>
-            {renderField('caregiverName', 'text', 'name')}
-            {renderField('caregiverEmail', 'email', 'email')}
-            {renderField('caregiverPhone', 'tel', 'tel')}
-          </fieldset>
-
-          <fieldset className="space-y-4">
-            <legend className="text-sm font-semibold text-gray-900 mb-1">Child</legend>
-            {renderField('childFirstName', 'text')}
-            {renderField('childLastName', 'text')}
-          </fieldset>
+      <div className="bg-white rounded-lg max-w-md w-full max-h-[85vh] flex flex-col">
+        {/* Header (pinned) */}
+        <div className="p-6 pb-4 border-b border-gray-200">
+          <h2 id="add-junior-title" className="text-xl font-bold text-gray-900 mb-1">
+            Add a Junior
+          </h2>
+          <p className="text-sm text-gray-500">
+            We'll ask the caregiver to confirm before the child is added to the team.
+          </p>
         </div>
 
-        {fieldErrors.length > 0 && (
-          <p className="mt-4 text-sm text-red-600" role="alert">
-            Please correct the highlighted field{fieldErrors.length > 1 ? 's' : ''}.
-          </p>
-        )}
-        {submitError && (
-          <p className="mt-4 text-sm text-red-600" role="alert">
-            {submitError}
-          </p>
-        )}
+        {/* Scrollable body */}
+        <div className="p-6 overflow-y-auto flex-1">
+          <div className="space-y-4">
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold text-gray-900 mb-1">Caregiver</legend>
+              {renderField('caregiverName', 'text', 'name')}
+              {renderField('caregiverEmail', 'email', 'email')}
+              {renderField('caregiverPhone', 'tel', 'tel')}
+            </fieldset>
 
-        <div className="flex gap-3 mt-6">
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold text-gray-900 mb-1">Child</legend>
+              {renderField('childFirstName', 'text')}
+              {renderField('childLastName', 'text')}
+            </fieldset>
+          </div>
+
+          {fieldErrors.length > 0 && (
+            <p className="mt-4 text-sm text-red-600" role="alert">
+              Please correct the highlighted field{fieldErrors.length > 1 ? 's' : ''}.
+            </p>
+          )}
+          {submitError && (
+            <p className="mt-4 text-sm text-red-600" role="alert">
+              {submitError}
+            </p>
+          )}
+        </div>
+
+        {/* Footer (pinned) */}
+        <div className="p-6 pt-4 border-t border-gray-200 flex gap-3">
           <button
             onClick={onClose}
             disabled={isSubmitting}
