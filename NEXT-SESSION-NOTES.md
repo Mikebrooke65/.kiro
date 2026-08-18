@@ -367,7 +367,10 @@ If it cannot run shell, stop — Mike must use Kiro desktop on this machine, bec
 the build needs local `npm` / `npx cap` / `git`. Also check ≥ 20 GB free disk.
 
 **Software to install (in order):**
-1. **Node.js LTS 20.x** (includes npm) — https://nodejs.org . Verify `node -v`.
+1. **Node.js — any current LTS (20, 22 or 24 all fine)** (includes npm) —
+   https://nodejs.org . Node 24 is the newest LTS and works here; nothing in the
+   project pins a version. Verify `node -v`. (If a native dep ever fails on the
+   newest Node during `npm install`, drop to LTS 22 — not expected here.)
 2. **Git** — https://git-scm.com . Verify `git --version`.
 3. **Android Studio (latest)** — https://developer.android.com/studio . During
    setup accept the default **Android SDK**, **platform-tools**, and one recent
