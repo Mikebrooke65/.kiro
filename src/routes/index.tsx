@@ -81,9 +81,7 @@ export const router = createBrowserRouter([
       {
         path: 'coaching',
         element: (
-          <ProtectedRoute
-            allowedRoles={[UserRole.ADMIN, UserRole.MANAGER, UserRole.COACH]}
-          >
+          <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COACH]}>
             <Coaching />
           </ProtectedRoute>
         ),
@@ -129,14 +127,10 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        // Resources is accessible to every role (reached from a Home card, not
+        // a bottom tab). No role gate beyond authentication.
         path: 'resources',
-        element: (
-          <ProtectedRoute
-            allowedRoles={[UserRole.ADMIN, UserRole.MANAGER, UserRole.COACH]}
-          >
-            <Resources />
-          </ProtectedRoute>
-        ),
+        element: <Resources />,
       },
       {
         path: 'team',

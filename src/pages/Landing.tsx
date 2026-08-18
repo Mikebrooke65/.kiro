@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
-import { Bell, TrendingUp, Users, Calendar } from 'lucide-react';
+import { Bell, TrendingUp, Users, Calendar, BookOpen, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { teamsApi } from '../lib/teams-api';
 import { UserRole } from '../types/database';
@@ -223,6 +223,24 @@ export function Landing() {
           <p className="text-2xl font-bold text-gray-900 mb-0.5">?</p>
           <p className="text-xs text-gray-600">Coming Soon</p>
         </div>
+      </div>
+
+      {/* Quick links — Resources lives here (second-level off Home) rather than
+          occupying a bottom-nav tab. Available to every role. */}
+      <div className="mb-6">
+        <Link
+          to="/resources"
+          className="flex items-center gap-3 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
+        >
+          <div className="w-10 h-10 rounded-xl bg-blue-100 text-[#0091f3] flex items-center justify-center">
+            <BookOpen className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-gray-900 text-sm">Resources</p>
+            <p className="text-xs text-gray-600">Guides, documents and downloads</p>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+        </Link>
       </div>
 
       {/* Announcements */}
