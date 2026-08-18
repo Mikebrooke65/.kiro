@@ -164,23 +164,64 @@ built & deployed). Everything else is hardware, accounts, or decisions.
 **V1.7 RSVP/availability is the biggest remaining feature and top competitive
 gap.**
 
-### PLAN FOR NEXT SESSION (agreed 2026-08-18, for tomorrow)
+### PLAN FOR NEXT SESSION (updated 2026-08-19 — starts when the next ~2000 credits land)
 
-**The plan:**
-1. **Full run-through / verification of everything shipped** — confirm V1.4 +
-   V1.5 work end to end on clubfootball.app. Hard-refresh / incognito first
-   (cache trap). Checklist:
-   - Per-role nav shows the right tabs (Player/Caregiver 4, Manager 5,
-     Coach/Admin 6); Team tab present; Resources reachable from the Home card.
-   - Team page loads the roster; contact display by age band; gated actions.
-   - **Add-a-junior consent flow end-to-end** (the last unverified V1.4 path):
-     submit modal → caregiver approval email → approve → child activates on the
-     roster. Exercises the recovered `caregiver_approvals` table + RLS.
-   - Post-registration success screen (do a fresh invite redemption).
-2. **Then start V1.1a — Android device testing** — switch to the **other laptop**
-   (has the disk/RAM for Android Studio), run Kiro on the web there, and work
-   through V1.1a. This is the cheapest way to de-risk the WebView question and
-   needs no Mac. See the V1.1a section below for the detail.
+**Progress since this plan was written:** V1.4 + V1.5 smoke test is part-done.
+Confirmed working: per-role nav, Team page/roster, and the Add Junior **modal
+layout** (fixed, commit `8d699de`). The add-a-junior flow is **blocked by an RLS
+bug** — that fix is now the defined first task below.
+
+**TASK 1 (DEFINED) — Fix add-a-junior RLS failure. START HERE.**
+
+- **Symptom:** a manager submitting Add Junior gets *"new row violates row-level
+  security policy for table player_caregivers"*. The child row is created, then
+  the flow dies at the caregiver link.
+- **Root cause:** `caregiversApi.addJunior` (in `src/lib/caregivers-api.ts`)
+  inserts into `player_caregivers` **client-side as the manager**. The only
+  INSERT-capable policies on that table are admin-only (migrations 002 and 036);
+  no policy lets a manager insert. Same class of defect as the V1.3 registration
+  RLS failure — a client write RLS does not actually permit.
+- **Chosen approach (decided 2026-08-19): move the write server-side.** Put the
+  `player_caregivers` link insert into a service-role Edge Function, consistent
+  with how the child `auth.users` row is already created (`create-auth-user`) and
+  with the `redeem-invite` pattern. Preferred over adding an RLS policy because at
+  link time the child has no `team_members` row to key "manager of this team" on.
+- **Scope / definition of done:**
+  1. Move the `player_caregivers` link insert (step 4 of `addJunior`) into a
+     service-role Edge Function. Simplest: extend `create-auth-user` to also
+     create the link when it creates the child (it already has both ids under
+     service role), or add a small dedicated endpoint.
+  2. **Check step 5** — the `caregiver_approvals` insert immediately after almost
+     certainly hits the same manager-can't-write wall. Verify; move it server-side
+     too if so. Treat these two as one fix.
+  3. Keep the invite-code / authorization model intact — the manager is
+     authenticated and is acting on their own team; the function must not become a
+     way to link arbitrary users. Gate on the caller being an authenticated
+     manager/coach of `team_id`.
+  4. Redeploy the affected Edge Function(s) (`supabase functions deploy ...`) —
+     **remember Edge Functions do NOT ship with `git push`**.
+  5. Re-run the add-a-junior flow end to end as a manager: submit → caregiver
+     approval email arrives → approve → child activates on the roster. This also
+     closes the last unverified V1.4 path (the recovered `caregiver_approvals`
+     table + RLS).
+- **Size:** small-to-moderate; same pattern used twice already. Keep it lean —
+  do not gold-plate. Full detail in "Known issues found in V1.4 smoke test" near
+  the end of this file.
+
+**TASK 2 — Finish the V1.4/V1.5 run-through** (blocked behind Task 1 for the
+add-junior part). Remaining checklist items, hard-refresh / incognito first:
+- Post-registration success screen (do a fresh invite redemption).
+- Contact display by age band on the Team page; gated actions per role.
+
+**TASK 3 — Cheap modal sweep.** Align other mobile modals to the Schedule
+pattern (`z-[60]`, `max-h-[85vh]`, `flex flex-col`) so they don't sit behind the
+bottom nav. Known candidate: `src/components/SessionFeedbackModal.tsx`. Grep for
+`max-h-[90vh]` / `z-50` overlays on mobile routes. Low credit, do when convenient.
+
+**THEN — start V1.1a — Android device testing** — switch to the **other laptop**
+(has the disk/RAM for Android Studio), run Kiro on the web there, and work
+through V1.1a. Cheapest way to de-risk the WebView question and needs no Mac. See
+the V1.1a section below for the detail.
 
 **After that (not tomorrow, but the queue):**
 - **V1.7 RSVP / availability** — biggest remaining V1 feature / top Heja gap.

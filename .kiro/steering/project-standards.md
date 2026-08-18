@@ -7,6 +7,26 @@ description: Core project standards, git/deployment workflow, and coding convent
 
 This document defines the core standards, conventions, and critical information for the West Coast Rangers Football Coaching App project. It should be referenced for all development work.
 
+## Session Start — READ FIRST (mandatory)
+
+**At the start of every session, before answering "what's next" or touching any
+code, READ `NEXT-SESSION-NOTES.md` (repo root) in full.** It is the single source
+of truth for current V1 status, what is done, what is in progress, and the agreed
+next task. Do **not** rely on memory of previous sessions — status changes between
+sessions and memory goes stale.
+
+Specifically, before proposing or starting work:
+1. Read `NEXT-SESSION-NOTES.md` — check the "V1 — Where Things Stand" table and the
+   "PLAN FOR NEXT SESSION" section.
+2. State back to the user which item you believe is current, and confirm before
+   diving in.
+3. If anything you did changes status, update `NEXT-SESSION-NOTES.md` in the same
+   session so the next one starts from the truth.
+
+This rule exists because on 2026-08-19 the assistant answered from stale memory
+(thought the project was still on V1.3 when V1.4 and V1.5 were already built and
+deployed) instead of reading this doc first. Reading it first prevents that.
+
 ## Repository and Deployment
 
 ### Git Repository Configuration
