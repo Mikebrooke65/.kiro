@@ -130,12 +130,12 @@ export function AddJuniorModal({ isOpen, onClose, onSuccess, teamId }: AddJunior
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4 pb-24"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-junior-title"
     >
-      <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[calc(100vh-7rem)] overflow-y-auto">
         <h2 id="add-junior-title" className="text-xl font-bold text-gray-900 mb-1">
           Add a Junior
         </h2>
