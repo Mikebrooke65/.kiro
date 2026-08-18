@@ -20,63 +20,54 @@ image). This is cosmetic, not blocking.
 
 ---
 
-## ⏸️ IN PROGRESS — V1.4 smoke test & Team nav tab (paused 2026-08-18)
+## ✅ V1.4 + V1.5 — built & deployed (2026-08-18)
 
-**V1.4 (post-registration-welcome-and-team-page) is built, deployed, and mostly
-working.** Deployment done end-to-end: migrations 046–051 (+ the 045b
-`caregiver_approvals` backfill — see below), Edge Functions `redeem-invite`,
-`send-email`, `create-auth-user`, and the frontend (`prototype@bcc63ce`, live on
-clubfootball.app).
+**V1.4 (post-registration-welcome-and-team-page) and V1.5 (role-aware nav) are
+both built and live on clubfootball.app.** Frontend deployed at
+`prototype@01d41fd`; migrations 046–051 (+ the 045b `caregiver_approvals`
+backfill) applied; Edge Functions `redeem-invite`, `send-email`,
+`create-auth-user` deployed.
 
-### What we verified working during the smoke test
-- **Home "Teams" count fix (Finding A)** — a player/manager now sees their own
-  team count (showed `1`), not the club-wide count. ✅
-- **Team page (`/team`)** — loads the team ("Open riverhead tests"), shows the
-  roster (one member, "mikey Brooo — Manager"), and the **Add Junior** button
-  opens the modal. ✅
-- **Manager role on redemption (Finding B)** — go-forward behaviour is live:
-  the "Add Tournament Team" manager invite sets `intended_role = 'manager'` and
-  redemption writes the person in as Manager. ✅
-- **club_settings** seeded and confirmed (name/colour/app_url; logo_url null).
+### Verified working in the smoke test
+- **Home "Teams" count fix (Finding A)** — player/manager sees their own team
+  count, not the club-wide count. ✅
+- **Team page (`/team`)** — loads the team, shows the roster, Add Junior modal
+  opens. ✅
+- **Manager on redemption (Finding B)** — the "Add Tournament Team" manager
+  invite sets `intended_role = 'manager'` and redemption grants Manager. ✅
+- **club_settings** seeded (name/colour/app_url; logo_url still null).
 
-### ⚠️ Gotcha that cost time: stale bundle / service worker cache
-`/team` first showed "you are not a member of any team yet" even though the data
-was correct. It was a **stale cached bundle** — a fresh/incognito session showed
-the team correctly. RLS was NOT the problem: the `teams` table already has a
-`Members can read their teams` SELECT policy for authenticated users. **After any
-deploy, use a hard refresh / incognito before believing something is broken.**
+### V1.5 role-aware nav — DONE this session
+Replaced the old crude `hasFullVersion`/`hasLiteVersion` (3-vs-6) split in
+`src/layouts/MainLayout.tsx` with a **per-role tab list driven by App_Role**
+(user_type is irrelevant — a lite manager sees the Manager nav). Max 6 tabs:
+- Player / Caregiver: Home · Team · Schedule · Messages (4)
+- Manager: Home · Team · Games · Schedule · Messages (5)
+- Coach / Admin: Home · Team · Coaching · Games · Schedule · Messages (6)
 
-### 🔧 THE ONE THING LEFT TO BUILD: Team nav tab (needs a small design decision)
-The `/team` route works but there is **no Team button in the mobile bottom nav**
-(`src/layouts/MainLayout.tsx`) — task 12.1 added the route but not the nav entry.
-You reach it only by typing `/team`. Decision to make before coding:
-- The nav has two sets driven by `usePermissions()`:
-  - `hasFullVersion` = role in (admin, manager, coach) → **6 tabs**
-    (Home, Coaching, Games, Resources, Schedule, Messages).
-  - `hasLiteVersion` = role in (player, caregiver) → **3 tabs**
-    (Home, Schedule, Messages).
-  - NOTE: this keys off **role**, not `user_type`. Mikey's profile role is
-    `manager`, so he gets the 6-tab full nav. (The earlier "3 tabs" sighting was
-    the stale cache.)
-- Req 4.11 says **every role** can view the roster, so Team should appear in
-  **both** nav sets.
-- Layout tension: standards call the **six-button nav a fixed product-design
-  pattern**. Adding Team makes the full set 7 and the lite set 4. Decide:
-  where does Team sit, and do we rework the grid (`grid-cols-3 sm:grid-cols-6`)
-  to fit 7 cleanly, or drop/relocate a button? **This is the bit to think about.**
+Decisions locked: Coaching = Coach/Admin only; Games = Manager/Coach/Admin (its
+coach-only feedback section gated inside the page); **Resources moved off the
+bottom bar to a card on Home** (route opened to all roles); the **Team tab uses
+the freed Resources purple `#8b5cf6`**, sitting 2nd after Home. This resolves
+**Open Decision 4** (the two undecided nav slots).
 
-### Still open on the V1.4 checklist
-1. **Team nav tab** (above) — the active task.
-2. **Finish the smoke test** — the one flow not yet fully exercised end-to-end is
-   **add-a-junior consent**: submit the modal → caregiver gets the approval email
-   → approve → child activates and appears on the roster. This exercises the
-   freshly-recovered `caregiver_approvals` table + its RLS, so it's the
-   highest-value remaining check.
-3. **Logo** — `club_settings.logo_url` is null; host the WCR logo (Supabase
-   Storage public bucket) and `UPDATE` it (see the logo TODO above).
+### ⚠️ Gotcha that cost time: stale bundle / cache
+`/team` first showed "not a member of any team" though the data was correct — it
+was a **stale cached bundle**; incognito showed it fine. RLS was NOT the problem
+(a `Members can read their teams` SELECT policy already exists on `teams`).
+**After any deploy, hard-refresh / use incognito before assuming a bug.**
+
+### Still open to fully close V1.4
+1. **Finish the smoke test** — the one flow not yet exercised end-to-end is
+   **add-a-junior consent**: submit modal → caregiver approval email → approve →
+   child activates on the roster. Highest-value remaining check (hits the
+   recovered `caregiver_approvals` table + RLS).
+2. **Verify the new nav on device** — confirm each role sees the right tabs and
+   the Resources-on-Home card works (hard-refresh first).
+3. **Logo** — set `club_settings.logo_url` once the WCR logo is hosted (see the
+   logo TODO above).
 4. **32 optional tests** — property/unit/integration; prioritise task **10.6**
-   integration tests (manager-cap trigger, RLS, add-junior writes) given the 036
-   finding.
+   integration tests (manager-cap trigger, RLS, add-junior writes).
 
 ### Reference IDs / accounts (test data)
 - **mikey Brooo** (mobile test login, `mandcbrooke1@gmail.com`):
@@ -97,9 +88,9 @@ migrations *could* also be partially applied — verify with `pg_policies` /
 `information_schema` before assuming.
 
 ### Git state
-Three doc commits sit on local `prototype`, **not yet pushed**: `45f9946`,
-`94373a1`, and this notes update. No code change in them, so no rush — they'll go
-up with the next push (which will include the Team nav tab).
+All work pushed to `kiro prototype` and deployed (`prototype@01d41fd`, 2026-08-18):
+the V1.4 feature, the migration recovery, the V1.5 nav rework, and the doc
+updates. Working tree clean.
 
 ---
 
@@ -148,7 +139,7 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Where Things Stand (updated 2026-08-17)
+## V1 — Where Things Stand (updated 2026-08-18)
 
 One-line status per item. Detail is in the sections further down.
 
@@ -160,43 +151,46 @@ One-line status per item. Detail is in the sections further down.
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed (2026-08-18) | 3 small follow-ups. 2 new findings (A, B) — see V1.3 |
-| V1.4 Welcome + Team page | ⬜ **Next in the chain** | Whole thing. Now unblocked |
-| V1.5 Role-aware nav | ⬜ Not started | Needs V1.4 first. Decision 4 open |
+| V1.4 Welcome + Team page | 🟢 Built & deployed (2026-08-18) | Add-junior e2e smoke test, logo, 32 optional tests |
+| V1.5 Role-aware nav | ✅ DONE & deployed (2026-08-18) | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Partly improved already — the team name now renders |
 | V1.7 RSVP / availability | ⬜ Not started | **Biggest competitive gap.** Schema exists, UI/flow to build. Decision 5 open |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
 | V1.9 Store + privacy policy | ⬜ Not started | Needs V1.1a/b. **Privacy policy has the longest lead time — start the club conversation now** |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on an export sample (Decision 6) |
 
-**Substantive build work left for V1**: V1.4, V1.5, V1.6, V1.7, V1.8, plus
-the V1.3 follow-ups. Everything else is hardware, accounts, or decisions.
+**Substantive build work left for V1**: V1.6, V1.7, V1.8 (V1.4 and V1.5 are now
+built & deployed). Everything else is hardware, accounts, or decisions.
+**V1.7 RSVP/availability is the biggest remaining feature and top competitive
+gap.**
 
-### Next session — agreed order (2026-08-17)
+### PLAN FOR NEXT SESSION (agreed 2026-08-18, for tomorrow)
 
-1. **✅ DONE (2026-08-18): browser run-through of the registration flow.**
-   Ran on clubfootball.app in an incognito window with the console open,
-   using a fresh tournament-team invite ("Open riverhead tests", code
-   SPEC67RG). All checks passed: invite page showed the correct team name
-   (not "undefined undefined"), registration succeeded, the `team_members`
-   row was created (confirmed in the admin Teams view), and immediate login
-   on the invited address worked with no confirmation gate. **V1.3 is now
-   fully confirmed.**
-   - Two findings surfaced during the run, neither blocking V1.3 — see
-     **Findings A and B** in the V1.3 section below.
-   - Also verified the Supabase Auth URL config beforehand (Site URL +
-     redirect list both correct) — see the V1.0 immediate-follow-up.
-2. **Then start V1.4** — next in the chain, now unblocked, and it's what a
-   newly-registered manager actually hits next. The success screen is
-   small; the Team page is the real work. Fold V1.3 follow-up 2
-   (confirmation email for non-matching addresses) into it.
-3. **Privacy policy — user-owned, running in parallel.** The club does
-   **not** have an existing one to extend (confirmed 2026-08-17), so it has
-   to be written from scratch. Templates and starting points are in V1.9
-   below. Not a coding task, but the longest lead time in V1.
+**The plan:**
+1. **Full run-through / verification of everything shipped** — confirm V1.4 +
+   V1.5 work end to end on clubfootball.app. Hard-refresh / incognito first
+   (cache trap). Checklist:
+   - Per-role nav shows the right tabs (Player/Caregiver 4, Manager 5,
+     Coach/Admin 6); Team tab present; Resources reachable from the Home card.
+   - Team page loads the roster; contact display by age band; gated actions.
+   - **Add-a-junior consent flow end-to-end** (the last unverified V1.4 path):
+     submit modal → caregiver approval email → approve → child activates on the
+     roster. Exercises the recovered `caregiver_approvals` table + RLS.
+   - Post-registration success screen (do a fresh invite redemption).
+2. **Then start V1.1a — Android device testing** — switch to the **other laptop**
+   (has the disk/RAM for Android Studio), run Kiro on the web there, and work
+   through V1.1a. This is the cheapest way to de-risk the WebView question and
+   needs no Mac. See the V1.1a section below for the detail.
 
-If you'd rather not start something big: V1.3 follow-up 1 (the expired-code
-notification) and follow-up 3 (the 23505 branch) are both small and
-self-contained.
+**After that (not tomorrow, but the queue):**
+- **V1.7 RSVP / availability** — biggest remaining V1 feature / top Heja gap.
+  Resolve Decision 5 first.
+- **V1.6** invite landing-page branding — now easy wiring since `club_settings` +
+  `useClubBranding` exist.
+- **Privacy policy** (V1.9) — user-owned, longest lead time, start the club
+  conversation in parallel. Ties to Decisions 3/3b/3c.
+- Loose ends: V1.4 optional tests (task 10.6 first), set `club_settings.logo_url`
+  once the logo is hosted, V1.3 follow-ups.
 
 ---
 

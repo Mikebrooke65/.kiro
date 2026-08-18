@@ -2,6 +2,32 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-18] - V1.5 Role-Aware Navigation
+
+### Changed
+- **Bottom navigation is now per-role, driven by App_Role** (`users.role`),
+  replacing the old `hasFullVersion`/`hasLiteVersion` (3-vs-6) split in
+  `src/layouts/MainLayout.tsx`. `user_type` (lite/full) no longer affects the
+  nav — a lite manager sees the same tabs as a full manager. Max 6 tabs per role:
+  - Player / Caregiver: Home · Team · Schedule · Messages (4)
+  - Manager: Home · Team · Games · Schedule · Messages (5)
+  - Coach / Admin: Home · Team · Coaching · Games · Schedule · Messages (6)
+- **Coaching** tab is now Coach/Admin only; **Games** is Manager/Coach/Admin (its
+  coach-only feedback section is gated inside the page).
+- **Resources** moved off the bottom bar to a card on the Home dashboard, and its
+  route (`/resources`) is now open to every authenticated role (was
+  admin/manager/coach only).
+
+### Added
+- **Team** tab in the mobile bottom nav (route `/team` existed since V1.4 but had
+  no nav entry). Positioned 2nd, after Home, using the freed Resources purple
+  (`#8b5cf6`).
+- **Resources quick-link card** on the Home dashboard (`src/pages/Landing.tsx`).
+
+### Technical Notes
+- Deployed 2026-08-18 as `prototype@01d41fd`. Resolves Open Decision 4 (the two
+  undecided player/caregiver nav slots).
+
 ## [2026-08-18] - V1.4 Post-Registration Welcome, Team Page & Fixes
 
 Spec: `.kiro/specs/post-registration-welcome-and-team-page/`. Bundles the
