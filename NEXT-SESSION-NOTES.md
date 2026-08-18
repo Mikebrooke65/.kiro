@@ -1,5 +1,22 @@
 # Next Session Notes
-## Current State — 17 August 2026
+## Current State — 18 August 2026
+
+---
+
+## TODO — Club logo in club_settings (V1.4 follow-up)
+
+`club_settings` was seeded on 2026-08-18 with club name (`West Coast Rangers
+FC`), primary colour (`#0091f3`), and app URL (`https://clubfootball.app`), but
+**`logo_url` is NULL**. The app logo is currently a *bundled asset* (hashed
+filename that changes each build), so there's no stable URL to point at.
+
+To light up the logo on the post-registration Success Screen (and any future
+`useClubBranding()` consumer):
+1. Upload the WCR logo to a **public Supabase Storage bucket** (stable URL).
+2. `UPDATE public.club_settings SET logo_url = '<public-url>', updated_at = now() WHERE id = true;`
+
+Until then the Success Screen omits the logo cleanly (by design — no broken
+image). This is cosmetic, not blocking.
 
 ---
 
