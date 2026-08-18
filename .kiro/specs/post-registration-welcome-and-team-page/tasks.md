@@ -163,16 +163,16 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - Cover caregiver/child auth-account creation and sign-in capability, approval-request notification, the manager-cap trigger, and External League read-only RLS (Supabase/Resend stubbed)
     - _Requirements: 5.4, 5.6, 5.9, 4.10, 5.17_
 
-- [ ] 11. Success Screen UI (`src/pages/LiteLandingPage.tsx`)
-  - [-] 11.1 Replace the success branch with a branded, path-aware screen
+- [x] 11. Success Screen UI (`src/pages/LiteLandingPage.tsx`)
+  - [x] 11.1 Replace the success branch with a branded, path-aware screen
     - Render matching / confirmation-required / generic variants using `success-screen-logic`, `useClubBranding`, and the `invites-api` result; include guidance text and conditional competition/app-link; preserve the safe-error render guard
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.10, 1.11_
   - [ ]* 11.2 Write unit tests for success-screen content
     - Cover guidance text, competition/app-link presence and omission
     - _Requirements: 1.3, 1.4, 1.5, 1.10, 1.11_
 
-- [ ] 12. Team Page UI (`src/pages/TeamPage.tsx`)
-  - [-] 12.1 Create the Team Page and route it in `MainLayout`
+- [x] 12. Team Page UI (`src/pages/TeamPage.tsx`)
+  - [x] 12.1 Create the Team Page and route it in `MainLayout`
     - Render the selector, grouped roster, contact display, action controls (gated via `permissions-logic`), loading/empty/multi-team/error states with retry, and `pb-20`; route at `/team` in the authenticated layout
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.11, 3.12, 3.13, 3.14, 4.2, 4.6, 4.7, 4.9, 4.11, 5.10_
   - [ ]* 12.2 Write unit tests for Team Page states
@@ -182,16 +182,16 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - Cover the 10-second timeout error state and retry preserving the selection
     - _Requirements: 3.15_
 
-- [ ] 13. Add-a-Junior modal UI (`src/components/team/AddJuniorModal.tsx`)
-  - [-] 13.1 Create the Add-a-Junior modal wired to `caregivers-api`
+- [x] 13. Add-a-Junior modal UI (`src/components/team/AddJuniorModal.tsx`)
+  - [x] 13.1 Create the Add-a-Junior modal wired to `caregivers-api`
     - Present the caregiver + child fields only, surface per-field validation errors while retaining values, and submit via `addJunior`; shown only to permitted users on Club Tournament teams
     - _Requirements: 5.1, 5.2, 5.3_
   - [ ]* 13.2 Write unit tests for form field composition
     - Assert only the permitted fields are captured (no child contact/DOB/photo)
     - _Requirements: 5.1, 5.2_
 
-- [ ] 14. Home dashboard and page team-query fix
-  - [-] 14.1 Update `Landing` stats and Games/Coaching team reads
+- [x] 14. Home dashboard and page team-query fix
+  - [x] 14.1 Update `Landing` stats and Games/Coaching team reads
     - Use `getMyTeamCount` for the player "Teams" stat with a per-stat error indicator; route Games/Coaching team reads through the `team_members → teams` join
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7_
   - [ ]* 14.2 Write unit tests for the Teams stat
@@ -206,7 +206,7 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - Assert a manager invite records `intended_role = 'manager'`
     - _Requirements: 6.7_
 
-- [~] 16. Final checkpoint - Ensure all tests pass
+- [x] 16. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
