@@ -3,6 +3,53 @@
 
 ---
 
+## 🟡 V1.1a Progress — Android Device Testing (updated 2026-08-18, Kiro Web session)
+
+**Working on the Snapdragon laptop (the "other laptop") via Kiro Web.**
+
+### ✅ Completed
+- Node.js v24 LTS (ARM64 Windows installer) — installed, awaiting reboot for PATH
+- Git for Windows (64-bit) — installed, awaiting reboot for PATH
+- Android Studio Quail 3 (2026.1.3 Patch 1) — installed
+- Android SDK Platform-Tools — installed
+- Android 15.0 (API 35 "VanillaIceCream") SDK Platform — installed
+- Pixel 9 virtual device selected (1080x2424, API 35, Google Play)
+- Oppo phone plugged in via USB (charging)
+
+### ⚠️ Emulator won't work on this machine
+- The Android Emulator hypervisor driver failed to install (expected — it's
+  Intel-only, this is an ARM/Snapdragon chip)
+- x86_64 system images need translation on ARM = slow and unreliable
+- **Decision: skip the emulator, use the real Oppo phone via USB debugging**
+  (this is actually better for V1.1a anyway — tests push notifications for real)
+
+### 🔲 Next steps after reboot
+1. Open PowerShell, verify: `node -v` and `git --version`
+2. Enable Developer Mode on the Oppo:
+   - Settings → About Phone → tap "Build Number" 7 times
+   - Settings → Additional Settings → Developer Options → enable "USB Debugging"
+   - Accept the "Allow USB debugging from this computer?" prompt on the phone
+3. Clone repo: `git clone https://github.com/Mikebrooke65/WCR-Football-App.git`
+4. `cd WCR-Football-App && npm install`
+5. Copy `.env.development` from OneDrive backup:
+   `C:\Users\miker\OneDrive\Project Secrets\WCR-Football.env.development`
+   → rename to `.env.development` in the repo root
+6. `npm run build`
+7. `npx cap sync android`
+8. `npx cap open android` (opens project in Android Studio)
+9. In Android Studio, select the Oppo phone (should appear in device list) → Run
+10. Verify: app loads, login works, push permission prompt appears, device_tokens
+    row lands in Supabase, send a test message → push arrives
+
+### Known traps
+- If `npm install` throws `TAR_ENTRY_ERROR` = low disk. Check disk space first.
+- If the phone doesn't appear in Android Studio, check USB cable supports data
+  (not charge-only) and that USB Debugging is enabled.
+- After build+sync, if behaviour looks wrong in the app, re-run steps 6–7 before
+  assuming a bug (stale bundle).
+
+---
+
 ## TODO — Club logo in club_settings (V1.4 follow-up)
 
 `club_settings` was seeded on 2026-08-18 with club name (`West Coast Rangers
