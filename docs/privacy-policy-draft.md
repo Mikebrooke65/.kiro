@@ -34,14 +34,15 @@ We collect personal information from you, including:
 - Phone number — optional, see below
 - Team/club affiliation and role — player, parent, coach, manager
 
-> ⚠️ REVIEW (over-claiming): the original draft also listed "Device
-> information collected automatically, e.g. via app analytics or crash
-> reporting". Checked 2026-08-17 — the app ships **no** analytics or
-> crash-reporting SDK (no Firebase Analytics, Crashlytics, Sentry, etc.).
-> That line has been removed. If such a tool is added later (Firebase makes
-> Crashlytics easy), add it back here AND in the store questionnaires at the
-> same time. Consider adding a positive statement: "We do not collect
-> analytics or crash-reporting data."
+We do not collect analytics or crash-reporting data, and the app contains no
+third-party advertising or tracking software.
+
+> ✅ RESOLVED 2026-08-19: the "device information via analytics/crash reporting"
+> line was removed and replaced with the positive statement above. Checked — the
+> app ships no analytics or crash-reporting SDK (no Firebase Analytics,
+> Crashlytics, Sentry, etc.). If such a tool is added later (Firebase makes
+> Crashlytics easy), update BOTH this statement AND the store questionnaires at
+> the same time.
 
 ## Why we collect it
 
@@ -59,11 +60,14 @@ record their relationship to a team, as one of the following:
   "under 16" is determined by the player's age as at 1 January of the year
   being managed
 
-> ⚠️ REVIEW (feature completeness): the original draft had a placeholder to
-> "add other specific features data is used for, e.g. match stats,
-> availability, fixtures, communication between players/parents and coaches".
-> Team Messaging exists and RSVP/availability (V1.7) is planned — list the
-> features that are actually live at publish time.
+Your information is also used to run the app's core features: team messaging
+between members, the schedule of games and events, and coaching resources.
+
+> ⚠️ REVIEW (feature completeness — confirm at publish time): the line above
+> lists the features live as of 2026-08-19 (Team Messaging, Schedule/events,
+> Coaching resources). **RSVP/availability (V1.7) is NOT yet live** — add it
+> here the moment it ships, and reflect it in the store questionnaires at the
+> same time. Re-check this list against the app on the day you publish.
 
 ## Optional information
 
@@ -183,21 +187,20 @@ of team and player development, scored against a defined list of phases of
 play in football (e.g. attacking, defending, transition) and rated
 accordingly.
 
-This summary is anonymised — it is associated only with an age group and team,
-and cannot be linked back to any individual. Because it does not identify any
-person, it is not treated as personal information and is not subject to the
-12-month deletion rule above; it may be retained for longer.
+This summary is aggregated — it is associated only with an age group and team,
+and is not intended to identify any individual. It is used only to understand
+overall team progress through the grades, coaching effectiveness, and typical
+player development within a year group, never to identify or profile a person.
+Because it is aggregated in this way, it may be retained for longer than the
+12-month period described above.
 
-This anonymised summary is used only to understand overall team progress
-through the grades, coaching effectiveness, and typical player development
-within a year group — never to identify or profile an individual.
-
-> ⚠️ REVIEW (de-identification claim): "cannot be linked back to any
-> individual" is a strong claim. With small squads, a summary tied to a
-> specific age group + team can sometimes re-identify a player (e.g. the only
-> goalkeeper in a team of 9). Worth softening to "is not intended to identify
-> any individual and is aggregated so as not to single out a person", and
-> confirming the data model genuinely strips the link before publishing.
+> ⚠️ REVIEW (de-identification — confirm before publishing): the claim was
+> softened from "cannot be linked back to any individual" to "aggregated … not
+> intended to identify". With small squads a team+age-group summary can
+> sometimes single out a player (e.g. the only goalkeeper in a team of 9).
+> Before publishing, confirm the data model genuinely aggregates rather than
+> storing per-player rows tagged with a team — if it stores per-player detail,
+> this is personal information and the 12-month deletion rule applies to it too.
 
 ## Purpose limitation
 
@@ -208,18 +211,31 @@ what is needed to run the app.
 
 ## Overseas disclosure
 
-> ⚠️ REVIEW (MUST FIX — incomplete): the original draft asked whether
-> Supabase is the only place data goes. It is not. As of 2026-08-17, personal
-> data is also handled by these overseas third parties, and each needs its
-> own line here with what it receives and roughly where:
->   - **Supabase** — database and hosting of all personal data (Singapore).
->   - **Firebase Cloud Messaging (Google)** — device push tokens, to deliver
->     notifications.
->   - **Resend** — email addresses, to send invites and notifications
->     (sending region Tokyo).
->   - **Netlify / Cloudflare** — app hosting and DNS; process technical
->     connection data (e.g. IP addresses).
-> Confirm this list is complete at publish time and describe each honestly.
+To run the app we use a small number of trusted service providers, some of
+which store or process your information outside New Zealand. We share only the
+information each provider needs to do its job, and only for that purpose:
+
+- **Supabase** — our database and hosting provider. Stores all of the personal
+  information described above. Servers are in Singapore.
+- **Google (Firebase Cloud Messaging)** — delivers push notifications to your
+  device. Receives a device notification token, not your profile information.
+- **Resend** — sends invitation and notification emails on our behalf.
+  Receives the recipient's email address and the content of the email. Email is
+  sent from a server in Japan.
+- **Netlify and Cloudflare** — host the app and manage its web address. These
+  process technical connection information such as IP addresses in the normal
+  course of serving the app.
+
+We do not sell your information, and we do not share it with any provider for
+advertising.
+
+> ⚠️ REVIEW (confirm at publish time): this list is complete as of 2026-08-19.
+> Re-check it against the app before publishing — if any new third-party
+> service is added (analytics, payments, SMS, etc.) it must be added here and
+> in the store questionnaires. Country statements: Supabase Singapore and
+> Resend Japan are confirmed; Netlify/Cloudflare are global CDNs (data may be
+> processed in multiple regions) — the wording above is deliberately general
+> for that reason.
 
 ## Children's information
 
@@ -276,38 +292,45 @@ contact us at [privacy@clubfootball.app].
 
 Raised 2026-08-17 during review of the first draft.
 
-**Must fix before publishing:**
+**Must fix before publishing — NEED A DECISION FROM MIKE:**
 
 1. **Deletion mechanism doesn't exist.** The retention section promises
    automatic deletion after 12 months; the app only has "mark inactive".
-   Build the deletion job or reword to match reality. (Roadmap decision 3c.)
-2. **Overseas disclosure is incomplete.** Only Supabase is listed; must also
-   cover Firebase Cloud Messaging, Resend, and Netlify/Cloudflare.
-3. **Privacy contact mailbox may not receive mail.** clubfootball.app is
-   send-only; privacy@ must land somewhere monitored. (Ties to the open
-   EMAIL_REPLY_TO decision.)
-4. **Children's information section unwritten** — the consent chain for
-   under-16s is the key missing piece, and it's the most scrutinised part
-   for a club/team app. Plus the Play Console target-audience call
-   (decision 3b).
+   Decision needed: (a) build the scheduled deletion job, or (b) reword to
+   describe current behaviour and add the promise later. (Roadmap decision 3c.)
+   — Option (a) is code work; option (b) is a wording change I can do in minutes.
+2. **Privacy contact mailbox may not receive mail.** clubfootball.app is
+   send-only; privacy@ must land somewhere monitored. Decision needed: which
+   real, monitored email address should access/correction requests go to?
+   (Ties to the open EMAIL_REPLY_TO decision.)
+3. **Children's information section — needs facts + a decision.** The consent
+   chain for under-16s is the key missing piece and the most scrutinised part.
+   Need from Mike: who provides consent for an under-16 (the caregiver, at what
+   point?), and the Play Console target-audience call (decision 3b — app *about*
+   children used by *adults*). Once confirmed I can write the section.
+
+**Should review — NEED A DECISION FROM MIKE:**
+
+- **Naming:** publish under the product name (Club Football / clubfootball.app)
+  or the club name (West Coast Rangers FC)? Sets who "we" is and fills [App Name].
+- **v2 coach-feedback section:** keep it in, clearly marked [PLANNED], or remove
+  it until the feature ships? Either way the store questionnaires must describe
+  only live behaviour.
 
 **Confirmed / resolved:**
 
 - ✅ Supabase region is Singapore (from the Supabase project settings).
-- ✅ No analytics or crash-reporting SDK ships today — the "device
-  information" collection line was removed.
+- ✅ No analytics or crash-reporting SDK ships today — the collection line was
+  removed and a positive "we do not collect" statement added.
 - ✅ Push notifications are the only device permission currently requested.
-
-**Should review:**
-
-- Naming: publish under product name or club name? Sets who "we" is.
-- v2 coach-feedback section describes an unreleased feature — keep clearly
-  marked as future, and make sure the store questionnaires describe only
-  live behaviour.
-- "Anonymised summary … cannot be linked back to any individual" is a strong
-  claim for small squads — soften and confirm the data model.
-- List the features data is actually used for at publish time (Team
-  Messaging is live; RSVP is V1.7).
+- ✅ **Overseas disclosure section written** (2026-08-19) — Supabase, Firebase
+  Cloud Messaging, Resend, Netlify/Cloudflare, each with what it receives.
+  Re-confirm the list is complete at publish time.
+- ✅ **Live features listed** under "Why we collect it" (Team Messaging,
+  Schedule, Coaching resources). Add RSVP when V1.7 ships.
+- ✅ **Anonymised-summary claim softened** from "cannot be linked back" to
+  "aggregated / not intended to identify". Still confirm the data model before
+  publishing.
 
 **Not legal advice.** Have the children's-data and retention sections
 reviewed by someone qualified before publishing.
