@@ -354,14 +354,60 @@ update issues. This is plausibly behind the `npm install` /
 2026-08-13. Worth addressing regardless of Android Studio, since active
 development is happening on this machine.
 
-**Then:**
-1. Install Android Studio + Android SDK
-2. `npm run build && npx cap sync && npx cap open android`
-3. Run in an emulator (or a real Android phone via USB)
-4. Confirm the app loads, login works, navigation behaves in the WebView
-5. Confirm push permission prompt appears and a row lands in
-   `device_tokens`
-6. Send a real message, confirm `devicesFound` > 0 and a push arrives
+---
+
+### ▶ START HERE ON THE OTHER LAPTOP — V1.1a run sheet (self-contained)
+
+*Written 2026-08-19 so a fresh session can execute this cold. If Mike opens Kiro
+here and says "let's do 1.1a", follow this top to bottom.*
+
+**Pre-flight (assistant, first):** confirm this environment can (a) read/write the
+local project files and (b) run local shell (`node -v`, `npm -v`, `git --version`).
+If it cannot run shell, stop — Mike must use Kiro desktop on this machine, because
+the build needs local `npm` / `npx cap` / `git`. Also check ≥ 20 GB free disk.
+
+**Software to install (in order):**
+1. **Node.js LTS 20.x** (includes npm) — https://nodejs.org . Verify `node -v`.
+2. **Git** — https://git-scm.com . Verify `git --version`.
+3. **Android Studio (latest)** — https://developer.android.com/studio . During
+   setup accept the default **Android SDK**, **platform-tools**, and one recent
+   **system image** (e.g. API 34/35, Google Play image so FCM works). Studio
+   bundles its own JDK — no separate JDK needed for the emulator path.
+   This is the ~15–20 GB item; it's why this laptop was chosen.
+
+**Project setup:**
+4. Clone: `git clone https://github.com/Mikebrooke65/WCR-Football-App.git`
+5. `cd WCR-Football-App` then `npm install`.
+6. Copy **`.env.development`** into the repo root — it is git-ignored, so it did
+   NOT come with the clone. Source: OneDrive backup
+   `C:\Users\miker\OneDrive\Project Secrets\WCR-Football.env.development`
+   (rename to `.env.development`). Without it the app can't reach Supabase.
+
+Note: the Android platform is already committed (`android/` folder) and
+`android/app/google-services.json` (Firebase config) is already in the repo — do
+NOT re-init Capacitor or re-add the platform.
+
+**Build & run:**
+7. `npm run build`
+8. `npx cap sync android`
+9. `npx cap open android` (opens Android Studio) — OR from a real Android phone
+   with Developer Mode + USB debugging on, plug in and run to the device.
+10. In Android Studio, start an emulator (Play-enabled image) or select the phone,
+    then Run.
+
+**Verify (the point of V1.1a — does the app work in a native WebView + does push
+register?):**
+11. App loads; login works; the six-button nav and pages behave in the WebView.
+12. The push-permission prompt appears; accept it.
+13. Confirm a row lands in **`device_tokens`** (Supabase table editor, filter by
+    the logged-in user).
+14. Send a real Team Message to that user; confirm the `send-message-push` path
+    returns `devicesFound` > 0 (was 0 with no device) and a push actually arrives.
+15. Record the outcome back in this doc and update the V1.1 status in the table.
+
+**Known traps:** hard-refresh isn't a thing on native, but a stale JS bundle is —
+if behaviour looks wrong, re-run steps 7–8 (`build` + `sync`) before assuming a
+bug. If `npm install` throws `TAR_ENTRY_ERROR`, it's almost always low disk.
 
 #### V1.1b — iOS track (needs a Mac)
 
