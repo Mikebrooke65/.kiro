@@ -134,12 +134,15 @@ You have the right to ask for a copy of any personal information we hold about
 you, and to ask for it to be corrected if you think it is wrong. To do this,
 contact us at [privacy@clubfootball.app].
 
-> ⚠️ REVIEW (MUST FIX — contact must be monitored): the clubfootball.app
-> domain is currently **send-only** in Resend ("Enable Receiving" off, no
-> mailbox), so privacy@clubfootball.app may not receive anything. The Privacy
-> Act requires a working channel to exercise access/correction rights, so
-> this address must land somewhere a person actually monitors. Same
-> underlying gap as the open EMAIL_REPLY_TO decision.
+> ⚠️ OPEN ACTION (MUST FIX before publishing — Mike deciding): this policy
+> needs a **live, monitored inbox** for privacy requests. `privacy@clubfootball.app`
+> does NOT currently receive mail — the clubfootball.app domain is send-only in
+> Resend ("Enable Receiving" off, no mailbox). The Privacy Act requires a working
+> channel to exercise access/correction rights, so before publishing this
+> address must either be made to receive mail, or be replaced with a real
+> monitored address. **A published policy pointing at a dead inbox is a
+> compliance failure.** Mike is deciding which address to use (ties to the open
+> EMAIL_REPLY_TO decision). Do not publish until this resolves.
 
 ## Coach feedback on player performance
 
@@ -239,23 +242,47 @@ advertising.
 
 ## Children's information
 
-> ⚠️ REVIEW (MUST FIX — highest store scrutiny; section still to write):
-> Apple and Google both examine this closely for club/team apps. The body of
-> this policy already describes the caregiver model; the piece still missing
-> is **consent**: for an under-16, who agrees to the data being held? In the
-> current flow a manager adds players and caregiver contact details — the
-> caregiver isn't necessarily the person who ticked the in-app consent box.
-> State the consent chain plainly:
->   - Is data collected directly from minors, or only via an adult
->     (manager/caregiver) account?
->   - Who provides consent for an under-16's data, and how is it recorded?
->     (The app records consent in users.privacy_consent_at.)
->   - How can a caregiver review or request correction/removal of their
->     child's data?
-> Also decide the Play Console target-audience declaration (roadmap decision
-> 3b): this looks like an app *about* children used by *adults*, which likely
-> keeps it out of Google's Families programme — but that must be a deliberate
-> call, not a default.
+Players under 16 are added to the app by an adult, never by the child, and
+their information is limited to their first and last name and the team they play
+for. We do not collect a child's own email address, phone number, date of birth
+or photo. For a player under 16, all contact is through their caregiver.
+
+A child comes to the app in one of two ways, and consent for the child's
+information is handled differently in each:
+
+- **Teams entered through the club's competitions (External League teams).**
+  The club builds and manages these rosters in its own team-management system
+  (Friendly Manager). Consent for a child's participation and information is
+  obtained and held by the club through that system, and the app receives the
+  resulting team and roster information from the club.
+
+- **Teams a manager sets up directly in the app (Club Tournament teams).** A
+  team manager starts the process by entering the child's name and the
+  caregiver's contact details. Before the child is added, we email the caregiver
+  to ask them to confirm. The child's record becomes active only once the
+  caregiver approves; if the caregiver declines or does not respond, the child
+  is not added. The caregiver's consent decision is recorded.
+
+A caregiver can ask to see, correct, or request removal of their child's
+information at any time by contacting us (see "Your rights" and "Contact us").
+
+> ⚠️ REVIEW (before publishing — a few things to close):
+>   1. **Friendly Manager privacy wording (Mike to obtain).** The External
+>      League path relies on the club's Friendly Manager system to obtain and
+>      hold caregiver consent for children. Get Friendly Manager's own privacy
+>      statement / description of how they handle children's consent, and either
+>      reference or link it here so the chain is complete and accurate.
+>   2. **Confirm the in-app consent record.** The Club Tournament path describes
+>      caregiver approval activating the child — confirm this matches the shipped
+>      add-a-junior flow and note where the decision is recorded
+>      (`caregiver_approvals` status / `users.active`, and
+>      `users.privacy_consent_at` where relevant). NB: the add-a-junior flow is
+>      currently blocked by an RLS bug (see NEXT-SESSION-NOTES Task 1) — this
+>      wording assumes it works once that is fixed.
+>   3. **Play Console target-audience declaration (decision 3b).** This is an app
+>      *about* children used by *adults* (managers/coaches/caregivers), which
+>      likely keeps it out of Google's Families programme. Make this a deliberate
+>      call before submission, not a default.
 
 ## Device permissions
 
@@ -284,7 +311,8 @@ always be available in the app and at [website/URL].
 If you have any questions about this policy or how we handle your information,
 contact us at [privacy@clubfootball.app].
 
-> ⚠️ REVIEW: same monitored-mailbox issue as "Your rights" above.
+> ⚠️ OPEN ACTION: same live-monitored-inbox requirement as "Your rights" above —
+> must be a working address before publishing.
 
 ---
 
@@ -292,22 +320,25 @@ contact us at [privacy@clubfootball.app].
 
 Raised 2026-08-17 during review of the first draft.
 
-**Must fix before publishing — NEED A DECISION FROM MIKE:**
+**Must fix before publishing:**
 
-1. **Deletion mechanism doesn't exist.** The retention section promises
-   automatic deletion after 12 months; the app only has "mark inactive".
-   Decision needed: (a) build the scheduled deletion job, or (b) reword to
+1. **Deletion mechanism doesn't exist.** ⏳ MIKE WORKING ON IT. The retention
+   section promises automatic deletion after 12 months; the app only has "mark
+   inactive". Options: (a) build the scheduled deletion job, or (b) reword to
    describe current behaviour and add the promise later. (Roadmap decision 3c.)
-   — Option (a) is code work; option (b) is a wording change I can do in minutes.
-2. **Privacy contact mailbox may not receive mail.** clubfootball.app is
-   send-only; privacy@ must land somewhere monitored. Decision needed: which
-   real, monitored email address should access/correction requests go to?
+2. **Privacy contact mailbox may not receive mail.** ⏳ MIKE DECIDING.
+   clubfootball.app is send-only; `privacy@` must land somewhere monitored, or be
+   replaced with a real monitored address, before publishing. Flagged as an OPEN
+   ACTION in both "Your rights" and "Contact us". A dead inbox = compliance fail.
    (Ties to the open EMAIL_REPLY_TO decision.)
-3. **Children's information section — needs facts + a decision.** The consent
-   chain for under-16s is the key missing piece and the most scrutinised part.
-   Need from Mike: who provides consent for an under-16 (the caregiver, at what
-   point?), and the Play Console target-audience call (decision 3b — app *about*
-   children used by *adults*). Once confirmed I can write the section.
+3. **Children's information section — DRAFTED 2026-08-19, 3 things to close.**
+   Both consent paths are now written: External League teams (consent held by
+   the club via Friendly Manager) and Club Tournament teams (in-app add-a-junior,
+   caregiver approves). Remaining before publish: (i) obtain Friendly Manager's
+   own privacy wording and reference it — MIKE TO GET; (ii) confirm the in-app
+   consent record matches the shipped flow (and note the add-junior RLS bug,
+   NEXT-SESSION Task 1, must be fixed first); (iii) the Play Console
+   target-audience call (decision 3b).
 
 **Should review — NEED A DECISION FROM MIKE:**
 
