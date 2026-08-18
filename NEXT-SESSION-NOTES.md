@@ -20,6 +20,89 @@ image). This is cosmetic, not blocking.
 
 ---
 
+## ⏸️ IN PROGRESS — V1.4 smoke test & Team nav tab (paused 2026-08-18)
+
+**V1.4 (post-registration-welcome-and-team-page) is built, deployed, and mostly
+working.** Deployment done end-to-end: migrations 046–051 (+ the 045b
+`caregiver_approvals` backfill — see below), Edge Functions `redeem-invite`,
+`send-email`, `create-auth-user`, and the frontend (`prototype@bcc63ce`, live on
+clubfootball.app).
+
+### What we verified working during the smoke test
+- **Home "Teams" count fix (Finding A)** — a player/manager now sees their own
+  team count (showed `1`), not the club-wide count. ✅
+- **Team page (`/team`)** — loads the team ("Open riverhead tests"), shows the
+  roster (one member, "mikey Brooo — Manager"), and the **Add Junior** button
+  opens the modal. ✅
+- **Manager role on redemption (Finding B)** — go-forward behaviour is live:
+  the "Add Tournament Team" manager invite sets `intended_role = 'manager'` and
+  redemption writes the person in as Manager. ✅
+- **club_settings** seeded and confirmed (name/colour/app_url; logo_url null).
+
+### ⚠️ Gotcha that cost time: stale bundle / service worker cache
+`/team` first showed "you are not a member of any team yet" even though the data
+was correct. It was a **stale cached bundle** — a fresh/incognito session showed
+the team correctly. RLS was NOT the problem: the `teams` table already has a
+`Members can read their teams` SELECT policy for authenticated users. **After any
+deploy, use a hard refresh / incognito before believing something is broken.**
+
+### 🔧 THE ONE THING LEFT TO BUILD: Team nav tab (needs a small design decision)
+The `/team` route works but there is **no Team button in the mobile bottom nav**
+(`src/layouts/MainLayout.tsx`) — task 12.1 added the route but not the nav entry.
+You reach it only by typing `/team`. Decision to make before coding:
+- The nav has two sets driven by `usePermissions()`:
+  - `hasFullVersion` = role in (admin, manager, coach) → **6 tabs**
+    (Home, Coaching, Games, Resources, Schedule, Messages).
+  - `hasLiteVersion` = role in (player, caregiver) → **3 tabs**
+    (Home, Schedule, Messages).
+  - NOTE: this keys off **role**, not `user_type`. Mikey's profile role is
+    `manager`, so he gets the 6-tab full nav. (The earlier "3 tabs" sighting was
+    the stale cache.)
+- Req 4.11 says **every role** can view the roster, so Team should appear in
+  **both** nav sets.
+- Layout tension: standards call the **six-button nav a fixed product-design
+  pattern**. Adding Team makes the full set 7 and the lite set 4. Decide:
+  where does Team sit, and do we rework the grid (`grid-cols-3 sm:grid-cols-6`)
+  to fit 7 cleanly, or drop/relocate a button? **This is the bit to think about.**
+
+### Still open on the V1.4 checklist
+1. **Team nav tab** (above) — the active task.
+2. **Finish the smoke test** — the one flow not yet fully exercised end-to-end is
+   **add-a-junior consent**: submit the modal → caregiver gets the approval email
+   → approve → child activates and appears on the roster. This exercises the
+   freshly-recovered `caregiver_approvals` table + its RLS, so it's the
+   highest-value remaining check.
+3. **Logo** — `club_settings.logo_url` is null; host the WCR logo (Supabase
+   Storage public bucket) and `UPDATE` it (see the logo TODO above).
+4. **32 optional tests** — property/unit/integration; prioritise task **10.6**
+   integration tests (manager-cap trigger, RLS, add-junior writes) given the 036
+   finding.
+
+### Reference IDs / accounts (test data)
+- **mikey Brooo** (mobile test login, `mandcbrooke1@gmail.com`):
+  user_id `72d19061-63fd-4c6d-8770-a8c8393cd693`, profile role `manager`.
+  Member of **riverhead tests** (Open), team_id
+  `d7b3943a-1f5a-4088-97f0-198353edf56d`, team role now `manager` (corrected via
+  a manual UPDATE this session).
+- **Mike Brooke** (`mikerbrooke@outlook.com`) = the admin account
+  (`ad7b7dfa-…`), coach of U9 Lithium.
+
+### Migration 036 recovery (important context)
+Applying migration 051 failed with `caregiver_approvals does not exist`.
+Migration 036 had only been **partially applied** in production long ago — its
+`caregiver_approvals` table (036 §6) was never created. We re-created it via
+`supabase/migrations/045b_caregiver_approvals_backfill.sql` (idempotent) ahead of
+051, then applied 046–051. All good now, but be aware other bits of very old
+migrations *could* also be partially applied — verify with `pg_policies` /
+`information_schema` before assuming.
+
+### Git state
+Three doc commits sit on local `prototype`, **not yet pushed**: `45f9946`,
+`94373a1`, and this notes update. No code change in them, so no rush — they'll go
+up with the next push (which will include the Team nav tab).
+
+---
+
 ## Quick Reference
 
 **App URL**: https://clubfootball.app  *(live 2026-08-14 — the old
