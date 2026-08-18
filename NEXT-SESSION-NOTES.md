@@ -1417,3 +1417,59 @@ docs/
     image-prompts/  ← U9 image prompt files
   archive/        ← old/superseded docs
 ```
+
+
+---
+
+## Known issues found in V1.4 smoke test (2026-08-18/19)
+
+Two issues surfaced while verifying the add-a-junior flow. Recorded here as V1
+scope items.
+
+### 1. RLS blocks add-a-junior — BUG, blocks the flow
+
+**Symptom:** as a **manager** (not admin), submitting Add Junior returns the red
+error *"new row violates row-level security policy for table player_caregivers"*.
+The child row is created server-side, but the flow then dies at the caregiver link.
+
+**Root cause:** `caregiversApi.addJunior` step 4 does a **client-side INSERT into
+`player_caregivers`** as the logged-in user. The only INSERT-capable policies on
+that table are admin-only ("Admins can manage player-caregiver links", migration
+002; "Allow admins to manage player_caregivers", migration 036) — every other
+policy is SELECT. A manager therefore has no INSERT path. This is the same class
+of defect as the V1.3 registration RLS failure: the design assumed an "ordinary
+RLS-governed client write" that RLS does not actually permit.
+
+**Fix options:**
+- **(recommended) Move the `player_caregivers` link insert server-side** into a
+  service-role Edge Function, consistent with how the child `auth.users` row is
+  already created (`create-auth-user`) and with the V1.3 `redeem-invite` pattern.
+  Preferred because at link time the child has no `team_members` row yet, so a
+  client RLS policy has nothing to key "manager of this child's team" on. The
+  cleanest shape is to have the child-creation step (or a small dedicated
+  endpoint) also create the link, since it already has both ids under service
+  role. **Likely also affects step 5** (`caregiver_approvals` insert) — check the
+  same manager can insert there, or move it server-side too.
+- (alternative) Add a scoped INSERT policy letting a manager/coach create the
+  link, keyed off `caregiver_approvals` (team_id + `requested_by = auth.uid()`).
+  More convoluted and easier to get subtly wrong; the server-side move is safer.
+
+**Estimated size:** small-to-moderate. Same pattern we already used twice, but it
+is real build work (Edge Function change + redeploy + a verification pass), not a
+one-line patch. **Deferred pending a credit decision** (see session note below).
+
+### 2. Modal layout — Add Junior FIXED, others may share the bug
+
+**Fixed (`8d699de`):** the Add Junior modal's buttons were hidden behind the
+bottom nav (equal `z-50`, nav painted on top) and the form couldn't scroll to
+them. Now uses the proven mobile modal pattern from `src/pages/Schedule.tsx`:
+`z-[60]`, `max-h-[85vh]`, `flex flex-col` with a pinned header, a
+`flex-1 overflow-y-auto` body, and a pinned footer. Confirmed working.
+
+**Still to check — other mobile modals may have the same overlap.** Several still
+use the older centered `p-6 max-h-[90vh] overflow-y-auto` style at `z-50`, which
+can sit behind the bottom nav on a tall form. Known candidates:
+`src/components/SessionFeedbackModal.tsx`, and any mobile-route modal not already
+on the Schedule pattern. **Do a cheap sweep** — grep for `max-h-[90vh]` /
+`z-50` modal overlays on mobile routes and align them to the Schedule pattern —
+rather than fixing reactively one bug report at a time.
