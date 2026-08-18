@@ -139,7 +139,7 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Where Things Stand (updated 2026-08-18)
+## V1 — Where Things Stand (updated 2026-08-19)
 
 One-line status per item. Detail is in the sections further down.
 
@@ -147,22 +147,23 @@ One-line status per item. Detail is in the sections further down.
 |------|--------|-------------|
 | V1.0 Product domain | ✅ DONE | — |
 | V1.1 Capacitor + push | 🟡 Hardware-gated | Pipeline proven to `devicesFound: 0`. Needs a real device to finish |
-| V1.1a Android testing | ⬜ Not started | Android Studio on the other laptop. **No Mac needed — the cheapest way to de-risk the WebView question** |
+| V1.1a Android testing | ⬜ Not started | Android Studio on the other laptop. **No Mac needed — cheapest way to de-risk the WebView question** |
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
-| V1.3 Self-registration fix | ✅ DONE & browser-confirmed (2026-08-18) | 3 small follow-ups. 2 new findings (A, B) — see V1.3 |
-| V1.4 Welcome + Team page | 🟢 Built & deployed (2026-08-18) | Add-junior e2e smoke test, logo, 32 optional tests |
-| V1.5 Role-aware nav | ✅ DONE & deployed (2026-08-18) | Per-role tabs + Team tab; Decision 4 resolved |
-| V1.6 Invite page branding | ⬜ Not started | Independent. Partly improved already — the team name now renders |
+| V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
+| V1.4 Welcome + Team page | 🟠 Built, **1 blocker** | **Add-junior RLS bug = next-session Task 1**; then e2e smoke test; logo; 32 optional tests. Modal layout fixed 2026-08-19 |
+| V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
+| V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | ⬜ Not started | **Biggest competitive gap.** Schema exists, UI/flow to build. Decision 5 open |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
-| V1.9 Store + privacy policy | ⬜ Not started | Needs V1.1a/b. **Privacy policy has the longest lead time — start the club conversation now** |
-| V1.T Friendly Manager import | ⬜ Blocked | Waiting on an export sample (Decision 6) |
+| V1.9 Store + privacy policy | 🟡 Privacy draft in progress | Store accounts + assets need V1.1a/b. Privacy policy drafted (`docs/privacy-policy-draft.md`) — open flags to close |
+| V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
+| V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample (Decision 6) |
 
-**Substantive build work left for V1**: V1.6, V1.7, V1.8 (V1.4 and V1.5 are now
-built & deployed). Everything else is hardware, accounts, or decisions.
-**V1.7 RSVP/availability is the biggest remaining feature and top competitive
-gap.**
+**Substantive build work left for V1**: the V1.4 add-junior RLS fix (Task 1),
+V1.6, V1.7, V1.8, and the V1.R retention build. Everything else is hardware,
+accounts, or decisions. **V1.7 RSVP/availability is the biggest remaining feature
+and top competitive gap.**
 
 ### PLAN FOR NEXT SESSION (updated 2026-08-19 — starts when the next ~2000 credits land)
 
