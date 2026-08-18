@@ -247,7 +247,7 @@ These block or shape work below. Listed here so they don't stay buried.
 | 2 | **Which events trigger a push in V1?** Candidates: new message (built), new schedule event, event change/cancellation, RSVP reminder | V1.1 completion | Start with new message (done) + event change/cancellation. RSVP reminders once V1.7 exists |
 | 3 | **Privacy policy** — club has none to extend (confirmed 2026-08-17), so writing from scratch | V1.9 store submission | **User-owned, in progress.** Start from the Privacy Commissioner's Priv-o-matic generator — templates and the store questionnaires are listed in V1.9 |
 | 3b | **Play Console target-audience declaration** — is this an app for children, or an app about children used by adults? | V1.9, and whether Google's Families policy applies | Almost certainly adults-only audience (coaches/managers/caregivers are the users), which keeps it out of Families policy. Confirm deliberately — see V1.9 |
-| 3c | **Data retention** — how long is a child's data kept after they leave a team, and what triggers removal? | The privacy statement can't be finished without it | The app has no delete, only "mark inactive". Either justify indefinite retention or add a deletion path |
+| 3c | **Data retention & cleanup** — how long data is kept after a role/team ends, and what triggers removal | The privacy statement can't be finished without it; also a **future build** | ⏳ Mike scoping. Detailed thinking captured in **`docs/data-retention-scoping.md`** (3 data layers, per-competition clocks, open questions). Becomes its own build/spec once decisions lock — see "V1.R" below |
 | 4 | **Player/Caregiver nav — 2 undecided slots** | V1.5 | Options: Announcements, or fold Announcements into Home and leave 5 buttons |
 | 5 | **Does RSVP apply to Club Tournament teams, or only club teams?** | V1.7 scope | Probably club teams only for V1 — social/summer teams may just turn up |
 | 6 | **Friendly Manager export format** — waiting on sample | V1.T | User to obtain export sample or screenshot |
@@ -1105,6 +1105,50 @@ React route — store reviewers must be able to reach it even if the app
 bundle fails to load. Already noted in the V1.0 DNS table.
 
 *Sources above were summarised and rephrased rather than reproduced.*
+
+---
+
+### V1.R Data Retention & Cleanup — SCOPING (future build, gates the privacy policy)
+
+Not started as a build; **scoping in progress** in
+`docs/data-retention-scoping.md`. This is the work behind open decision **3c**,
+and the privacy policy's retention section can't be finalised until its key
+decisions lock.
+
+The shape: three data layers with different lifespans — competition-instance data
+(disposable when a competition closes), player/role identity data (kept a grace
+window to ease rejoining), and de-identified performance data (kept indefinitely
+*if* genuinely non-personal). A scheduled job closes competitions on their clock,
+dissociates roles and flags users inactive, then after a grace window deletes or
+de-identifies, with advance notice first.
+
+**Decisions that gate the build** (detail + Kiro's read in the scoping doc):
+- **Soft-delete vs hard-delete (finding 2026-08-19: smaller than it looked).**
+  `deleted_at` is implemented on only ONE table — `delivery_records` (coach
+  lesson-delivery audit history) — not on any personal data this build touches.
+  The steering "soft delete" rule is therefore largely aspirational; genuine hard
+  delete for privacy cleanup conflicts with almost no real code. Direction: adopt
+  best-practice privacy deletion and document the exception to the steering rule.
+- **CSV, not API (correction 2026-08-19).** League rosters import via CSV from
+  Friendly Manager — there is no API (roadmap decision 6 / V1.T).
+- **Club close-delay + new edge cases (added 2026-08-19).** When does a Club
+  competition close after its last event (2wk/4wk/?), and confirm no auto-close
+  exists yet (Q1b); plus lite-users-with-no-team, orphaned pending children,
+  backup-retention window, and data export on request (Q8–Q11). All in the
+  scoping doc.
+- **Anonymised vs pseudonymised performance data** — decides whether "kept
+  indefinitely" is a legal claim. Store no FK back to a person for it to be
+  genuinely non-personal.
+- **Role/status model** (null the team ref + inactive, don't delete the user row).
+- **Caregiver link handling** — partly answered by the existing
+  `player_caregivers … ON DELETE CASCADE`; confirm the intent.
+- **Club retention clock** — recommend a rolling 12-month window (one simple rule
+  for the policy), not a fixed 31 Dec.
+- **Notice before deletion** — warning + export window; ties to the monitored
+  privacy-inbox decision.
+
+**Best sized as its own spec once those decisions are locked.** Not small, but each
+stage is independent and testable.
 
 ---
 
