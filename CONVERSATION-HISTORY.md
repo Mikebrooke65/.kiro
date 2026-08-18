@@ -1,5 +1,94 @@
 # Conversation History
 
+## Session: August 18, 2026 - V1.4 Post-Registration Welcome, Team Page & Fixes (Build + Deploy)
+
+### Context
+Executed the full `post-registration-welcome-and-team-page` spec (V1.4): the
+post-invite onboarding experience, the first mobile **Team** page, the
+foundational **add-a-junior** consent flow (Model A), and two defect fixes —
+Finding A (player home "Teams" count read a club-wide `teams` count that RLS
+zeroes for players) and Finding B (`redeem-invite` hardcoded `role: 'player'`,
+so Manager invitees landed as players). Run as an orchestrated spec execution:
+24 required tasks dispatched to sub-agents in dependency waves, then deployed.
+
+### The Journey
+
+**Build.** Landed schema first (migrations 046–051), then the pure-logic helpers
+(`success-screen-logic`, `roster-logic`, `permissions-logic`, `add-junior-logic`,
+plus `resolveEffectiveRole` in the redeem-invite function), then the Edge
+Function and API-wrapper behaviour, then the UI that wires it together. Pure
+logic was kept free of React/Supabase so it is testable in isolation. Two
+checkpoints (tasks 6 and 16) confirmed `npm run build` green and all 101 existing
+tests passing. The 32 optional property/unit/integration tests were intentionally
+skipped for the MVP.
+
+**A migration-number collision, caught at dispatch.** Two parallel sub-agents
+both numbered their new migration `046`. Renumbered the users-child-provenance
+migration to `050` before it could confuse the sequence.
+
+**Deployment order mattered.** Migrations had to land before the Edge Functions
+and frontend, or production code would reference columns/tables that did not yet
+exist. Migrations were run manually in the Supabase SQL Editor (project standard),
+then the three functions were deployed, then the frontend pushed.
+
+**Migration 036 was only partially applied in production — found the hard way.**
+The combined migration script failed on 051 with `relation
+"public.caregiver_approvals" does not exist`. Because the Supabase SQL Editor runs
+the batch in a transaction, everything rolled back. A read-only
+`information_schema.tables` query confirmed the picture: competitions,
+competition_teams, invite_codes and player_caregivers existed, but
+`caregiver_approvals` (migration 036 §6) never had been created. Recovery was to
+re-create that table exactly as 036 defined it — captured as
+`045b_caregiver_approvals_backfill.sql` (idempotent, `CREATE TABLE IF NOT EXISTS`
++ `DROP POLICY IF EXISTS` guards) — prepended ahead of 051. The corrected script
+then applied cleanly. Also verified the `users.role` enum already includes
+`caregiver`, so the add-a-junior caregiver creation won't hit a constraint.
+
+### Tasks Completed
+1. All 24 required spec tasks (migrations, pure logic, Edge Function changes,
+   API wrappers, UI) — build green, 101 tests passing.
+2. Applied migrations 046–051 + the 045b backfill to production.
+3. Deployed Edge Functions `create-auth-user`, `send-email`, `redeem-invite`.
+4. Committed and pushed the frontend; Netlify published `prototype@bcc63ce` to
+   clubfootball.app.
+5. Updated `CHANGELOG.md` and this file.
+
+### Files Created/Modified
+- Migrations: `046_create_club_settings`, `047_teams_add_team_type`,
+  `048_team_members_manager_role_and_cap`, `049_add_intended_role_to_invite_codes`,
+  `050_users_child_provenance`, `051_caregiver_approvals_add_child`, and the
+  recovery `045b_caregiver_approvals_backfill`.
+- Edge Functions: `redeem-invite/` (logic.ts + index.ts), `send-email/index.ts`,
+  new `create-auth-user/index.ts`.
+- Client: `src/lib/success-screen-logic.ts`, `roster-logic.ts`,
+  `permissions-logic.ts`, `add-junior-logic.ts`, `invites-api.ts`, `teams-api.ts`,
+  `caregivers-api.ts`, `email-api.ts`, `src/hooks/useClubBranding.ts`,
+  `src/pages/TeamPage.tsx`, `src/pages/LiteLandingPage.tsx`, `src/pages/Landing.tsx`,
+  `src/pages/Games.tsx`, `src/pages/Coaching.tsx`,
+  `src/components/team/AddJuniorModal.tsx`, `src/routes/index.tsx`,
+  `src/pages/desktop/CompetitionsPage.tsx`, `src/types/database.ts`.
+
+### Technical Decisions
+- **Model A children**: a child gets a real `users` row with a server-generated
+  synthetic `.invalid` email and never authenticates; a linked caregiver
+  (real email) is the active account. Auth-user creation is delegated to the
+  service-role `create-auth-user` Edge Function because the browser cannot mint
+  `auth.users` rows.
+- **Manager cap enforced at the data layer** (trigger), not just the UI, so a
+  promotion that bypasses the client is still rejected.
+- **Club-agnostic throughout**: client branding from `club_settings` via
+  `useClubBranding()`; Edge Function branding from env vars. No club name,
+  colour, logo, or URL hardcoded.
+- **Recovery over guesswork**: confirmed the production schema gap with a
+  read-only query before writing any corrective DDL, and made the fix idempotent.
+
+### Open Follow-ups
+- Seed the `club_settings` row (branding omitted until it exists).
+- Production smoke test, especially the end-to-end add-a-junior consent flow
+  (exercises the newly created `caregiver_approvals` table and its RLS).
+- The 32 optional tests remain unwritten; task 10.6 integration tests are the
+  priority given the 036 partial-application finding.
+
 ## Session: August 17, 2026 - Lite User Registration Fix (Invite Redemption)
 
 ### Context

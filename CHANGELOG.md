@@ -2,9 +2,24 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
-## [Unreleased]
+## [2026-08-18] - V1.4 Post-Registration Welcome, Team Page & Fixes
+
+Spec: `.kiro/specs/post-registration-welcome-and-team-page/`. Bundles the
+post-invite onboarding experience, the first mobile **Team** page, the
+foundational **add-a-junior** consent flow, and two defect fixes (Finding A:
+player home teams count; Finding B: manager invitees landing as players).
+Deployed to production on 2026-08-18 (migrations, three Edge Functions, and the
+frontend via `prototype@bcc63ce`).
 
 ### Fixed
+- **Manager role on invite redemption (Finding B)** — `redeem-invite` hardcoded
+  `role: 'player'`, so Manager invitees landed as players. Redemption now
+  resolves the effective role from the invite's `intended_role` via
+  `resolveEffectiveRole` and applies it identically to both the `users` profile
+  row and the `team_members` row. Null/absent or any invalid value (including
+  `admin`) safely defaults to `player`; the server continues to ignore any
+  client-supplied `role`/`user_type`/`team_id`/`active`. The Add Tournament Team
+  manager-invite flow now sets `intended_role = 'manager'`.
 - **Player home dashboard "Teams" count (Finding A)** — the home dashboard
   "Teams" stat counted all `teams` rows, which RLS reduces to zero for
   player-role users. Player-role users now see their personal count derived
@@ -18,6 +33,38 @@ All notable changes to the football coaching app prototype will be documented in
   read `teams` filtered by `coach_id`, which returned nothing for players.
 
 ### Added
+- **Database schema (migrations 046–051)**:
+  - `046` — single-row `club_settings` branding table (RLS: authenticated read,
+    admin manage).
+  - `047` — `teams.team_type` (`club_tournament` | `external_league`) driving
+    editability and the consent path.
+  - `048` — allow `manager` on `team_members.role` and enforce a max-two-Managers
+    cap at the data layer via the `enforce_manager_cap()` trigger.
+  - `049` — `invite_codes.intended_role` (`player`/`coach`/`manager`; `admin`
+    excluded by design).
+  - `050` — `users.is_child` + `users.child_provenance` for Model-A children.
+  - `051` — `caregiver_approvals.request_kind` (`add_caregiver`/`add_child`) and
+    `team_id` so the table also serves as the add-a-child consent record.
+- **Mobile Team page** (`src/pages/TeamPage.tsx`, routed at `/team`) — team
+  selector (auto-select single team, prompt on multiple, empty state on none),
+  roster grouped Coach → Manager → Player with inactive members greyed and sorted
+  last, contact display by age band (own cellphone for U17/Open; caregiver for
+  U16-and-below; missing indicator when unlinked), role/team-type-gated actions
+  (edit, change role, deactivate/reactivate, promote-to-Manager disabled at cap),
+  a 10-second roster-load timeout with retry, and `pb-20` mobile clearance.
+- **Add-a-Junior modal** (`src/components/team/AddJuniorModal.tsx`) — captures
+  caregiver name/email/phone and child first/last name only (no child contact,
+  DOB, or photo), surfaces per-field validation errors while retaining values.
+- **Branded, path-aware post-registration Success Screen**
+  (`src/pages/LiteLandingPage.tsx`) — matching / confirmation-required / generic
+  variants driven by the `redeem-invite` result, with guidance text and
+  conditional competition name and app link. All branding via `useClubBranding()`.
+- **`useClubBranding()` hook** (`src/hooks/useClubBranding.ts`) — reads the
+  single-row `club_settings` table; every field nullable so absent values are
+  omitted rather than defaulted (club-agnostic rule).
+- **API wrappers** — `invites-api` returns a typed `RedeemInviteResult` and
+  fire-and-forget-triggers the `welcome` email on the matching path;
+  `teams-api.getMyTeamCount` / `getMyTeams` (team_members → teams join).
 - **Add-a-Junior consent flow — API layer** (`caregivers-api.addJunior` + consent
   handlers). Orchestrates the double opt-in for adding a child to a Club
   Tournament team: validates the form, resolves or creates the caregiver
@@ -55,6 +102,27 @@ All notable changes to the football coaching app prototype will be documented in
   `CLUB_COLOR`, `APP_URL`, `EMAIL_FROM`, `EMAIL_REPLY_TO`) and team names are
   rendered verbatim from server-supplied `{age_group} {name}` values — the
   client passes no branding or team-name overrides.
+
+### Technical Notes
+- **Deployment (2026-08-18)**: migrations 046–051 applied to production; Edge
+  Functions `redeem-invite`, `send-email`, and `create-auth-user` deployed;
+  frontend pushed to `kiro prototype` and published by Netlify as
+  `prototype@bcc63ce`.
+- **Migration 036 recovery**: applying 051 failed with `relation
+  "public.caregiver_approvals" does not exist`. Investigation showed migration
+  036 had only been *partially* applied in production — its earlier objects
+  (competitions, competition_teams, invite_codes, player_caregivers) existed but
+  the `caregiver_approvals` table (036 §6) had never been created. A recovery
+  migration `045b_caregiver_approvals_backfill.sql` re-creates that table
+  (idempotent) and must run before 051; it is now committed so fresh setups get
+  it too. All six V1.4 migrations plus the backfill were applied together.
+- **Post-deploy follow-ups**: seed the `club_settings` row (branding is omitted
+  until it exists); production smoke test (Team page, success screen, teams
+  count, end-to-end add-a-junior consent); the spec's 32 optional
+  property/unit/integration tests remain unwritten (task 10.6 integration tests
+  prioritised given the 036 partial-application finding).
+- **Verification**: `npm run build` green and full test suite (101 tests)
+  passing at time of ship.
 
 ## [2026-08-17] - Lite User Registration From An Invite Link (Bug Fix)
 
