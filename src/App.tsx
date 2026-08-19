@@ -1,4 +1,5 @@
 import { RouterProvider, useNavigate } from 'react-router';
+import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { router } from './routes';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -26,7 +27,15 @@ function AppInitializer() {
     );
   }
 
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      {/* Renders in-app toasts for pushNotificationReceived (foreground
+          pushes) — see hooks/usePushNotifications.ts. Not tied to a route so
+          it survives navigation. */}
+      <Toaster position="top-center" richColors closeButton />
+    </>
+  );
 }
 
 export default function App() {
