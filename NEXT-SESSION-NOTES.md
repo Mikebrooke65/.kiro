@@ -58,7 +58,7 @@ Mikey → Mike to test push delivery to the Oppo.
 Option B — Log in as another user who is already in U9 Lithium on the other
 phone. Check `team_members` for other users in that team.
 
-**After push is confirmed working, the V1.1a verification checklist is:**
+**V1.1a verification checklist:**
 1. ✅ App installs on device
 2. ✅ WebView renders correctly
 3. ✅ Login works
@@ -66,9 +66,53 @@ phone. Check `team_members` for other users in that team.
 5. ✅ Push permission granted
 6. ✅ FCM token received and stored
 7. ✅ Data loads (teams, games, messaging)
-8. ⬜ **Push notification actually arrives on device** ← THIS IS NEXT
+8. ⚠️ **Push notification arrives — but silently.** Root-caused and fixed
+   (see below), **pending rebuild + reinstall verification on the Oppo.**
 9. ⬜ Check safe-area / notch behaviour (cosmetic)
 10. ⬜ Check touch targets feel right (cosmetic)
+
+### RESOLVED (2026-08-19, later session) — Push arrives but silent (no sound/vibrate)
+
+Confirmed end-to-end via Logcat with the Oppo's screen **locked** — the correct
+real-world test. (Earlier attempts in this same session were inconclusive
+because the app was still foregrounded or only backgrounded-with-screen-on;
+Android suppresses system-level notification display for a foregrounded app
+by design, regardless of app code, so that never tested the real pipeline.)
+
+What Logcat showed with the phone actually locked:
+- `FirebaseInstanceIdReceiver` fired and `FirebaseMessaging` processed the
+  message — **delivery itself is working.**
+- Immediately alongside it: `FirebaseMessaging: Missing Default Notification
+  Channel metadata in AndroidManifest. Default value will be used.`
+- A notification **did** appear on the lock screen, but with no sound or
+  vibration — exactly Firebase's documented fallback behaviour: without a
+  declared default channel, it posts to its own auto-created "Miscellaneous"
+  channel at `IMPORTANCE_LOW`, which is silent by design.
+
+**Fix applied this session (not yet rebuilt/reinstalled on device):**
+- `android/app/src/main/java/com/clubfootball/app/MainActivity.java` — now
+  creates a `"messages"` notification channel at `IMPORTANCE_HIGH` (vibration
+  + lights on) in `onCreate()`, before any push can arrive.
+- `android/app/src/main/AndroidManifest.xml` — now declares
+  `com.google.firebase.messaging.default_notification_channel_id` = `"messages"`
+  so FCM uses that channel by default instead of its silent fallback.
+
+**Next step:** `npx cap sync android`, rebuild, reinstall on the Oppo, retest
+with the phone **locked** (locked, not just backgrounded — that's the test
+that actually exercises system-level display) to confirm sound + vibration
+now happen.
+
+**Separate, still-open gap (not touched this session):**
+`usePushNotifications.ts` only registers `registration`/`registrationError`
+listeners. There's no `pushNotificationReceived` or
+`pushNotificationActionPerformed` listener. So even after the fix above:
+- A push arriving while the app is in the foreground still shows nothing
+  in-app (would need an explicit in-app toast/local notification — Android
+  won't show a system banner for a foregrounded app either way).
+- Tapping a delivered notification won't deep-link to the relevant message
+  thread yet.
+
+Worth a follow-up item before calling messaging notifications fully "done".
 
 ### Known issue discovered: Messaging not admin-aware
 
