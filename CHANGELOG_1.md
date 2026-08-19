@@ -1,0 +1,1936 @@
+# Changelog
+
+All notable changes to the football coaching app prototype will be documented in this file.
+
+## [2026-08-19] - V1.1a Closeout — Vibration Fix, Foreground/Tap Push Handling, Safe-Area & Touch Targets
+
+Closes out V1.1a. Continuation of the same-day push-notification work below:
+the sound fix landed first, this entry covers the vibration follow-up plus
+the three remaining checklist items (foreground/tap push handling, safe-area,
+touch targets).
+
+### Fixed
+- **Vibration still silent after the sound fix.** Root cause: the
+  `"messages"` channel only called `enableVibration(true)` with no explicit
+  pattern, relying on Android's implicit default — unreliable on this device
+  (ColorOS 12.1, Oppo A17/CPH2477). Notification channels are **immutable
+  once created**, so this couldn't be patched in place.
+  - `MainActivity.java` / `AndroidManifest.xml`: bumped the channel id to
+    `"messages_v2"` and added an explicit
+    `channel.setVibrationPattern(new long[]{0, 250, 250, 250})`.
+  - **Verified live, phone locked:** both sound and vibration now fire
+    correctly.
+
+### Added
+- **Foreground push handling** (`src/hooks/usePushNotifications.ts`): added
+  the missing `pushNotificationReceived` listener. A push arriving while the
+  app is open now surfaces as an in-app toast (via `sonner`, mounted in
+  `src/App.tsx`) with a "View" action, since Android suppresses its own
+  system banner for a foregrounded app by design and previously this case
+  produced nothing visible at all.
+- **Tap-to-open handling**: added the missing `pushNotificationActionPerformed`
+  listener. Tapping a delivered notification now navigates straight to
+  Messaging (via `router.navigate()` on the app's `createBrowserRouter`
+  instance, so it works from outside React's render tree). No per-thread deep
+  link yet — the app has a single Messaging screen, so every push routes
+  there regardless of content.
+- **Safe-area (notch/gesture-bar) handling**: `index.html`'s viewport meta
+  now includes `viewport-fit=cover` (required for `env(safe-area-inset-*)` to
+  report real values instead of 0), and `src/styles/theme.css` gained
+  `.safe-area-top` / `.safe-area-bottom` utility classes applied to the fixed
+  header and bottom nav in `src/layouts/MainLayout.tsx`. Previously **no
+  safe-area handling existed anywhere in the active layout** — the only trace
+  of it was in an unused legacy `src/app/components/MainLayout.tsx` that
+  referenced classes that were never defined in CSS.
+- **Bottom nav touch targets**: each tab now has a `min-h-[48px]` target
+  (Material Design's recommended minimum) instead of shrink-wrapping to a
+  16px icon + 9px label — icons bumped to 20px, labels to 10px, tab padding
+  increased. Main content's bottom padding adjusted to match the taller nav
+  plus its safe-area inset so page content is never hidden behind it.
+
+### Verified
+- `npm run build` (`vite build`) completes clean with the above changes —
+  no new TypeScript/build errors.
+- Not yet re-verified live on the Oppo after this round — needs
+  `npx cap sync android`, rebuild in Android Studio, and reinstall before
+  the foreground toast, tap-to-open, safe-area and touch-target changes are
+  confirmed on-device (same as any native/JS change, a hot reload alone
+  won't pick these up).
+
+### Not yet done
+- No per-thread deep link — tapping any message notification opens Messaging
+  generally, not the specific thread. Would need the `send-message-push` Edge
+  Function to attach a `data` payload (currently sends `notification` only)
+  and a per-thread route in the app, neither of which exist today. Not
+  blocking V1.1a; noted as a future enhancement.
+
+## [2026-08-19] - V1.1a Android Push Notifications — Silent Notification Root-Caused & Fixed
+
+Continuation of on-device Android testing (Snapdragon laptop + Oppo CPH2477,
+via Android Studio). Push delivery itself was already working — the missing
+piece turned out to be sound/vibration, not delivery.
+
+### Fixed
+- **Push notifications arrived silently — no sound, no vibration, no heads-up
+  banner.** Root cause confirmed via Logcat: `AndroidManifest.xml` had no
+  `com.google.firebase.messaging.default_notification_channel_id` meta-data,
+  so FCM fell back to its own auto-created "Miscellaneous" channel at
+  `IMPORTANCE_LOW`, which delivers quietly into the notification shade with no
+  sound/vibration/heads-up. Confirmed live: Logcat showed `FirebaseMessaging:
+  Missing Default Notification Channel metadata in AndroidManifest. Default
+  value will be used.` at the exact moment a locked-screen test push arrived,
+  and the phone showed a silent lock-screen popup with no sound — matching the
+  fallback-channel theory exactly.
+- **`android/app/src/main/java/com/clubfootball/app/MainActivity.java`**: now
+  creates a `"messages"` notification channel at `IMPORTANCE_HIGH` (vibration +
+  lights enabled) in `onCreate()`, before any push can arrive.
+- **`android/app/src/main/AndroidManifest.xml`**: added the
+  `com.google.firebase.messaging.default_notification_channel_id` meta-data
+  tag, pointing FCM at the `"messages"` channel above.
+
+### Verified
+- Delivery itself (separate from the sound/vibration bug above) was confirmed
+  live via Logcat with the phone **locked** (the correct test — app
+  foregrounded or even just backgrounded-but-visible doesn't exercise real
+  system-level display): `FirebaseInstanceIdReceiver` fired and
+  `FirebaseMessaging` processed the message, and a silent notification did
+  appear on the lock screen.
+
+### Not yet done
+- **Rebuild + reinstall not yet verified on device** — this fix needs
+  `npx cap sync android` and a fresh install on the Oppo before it's confirmed
+  end-to-end. Native manifest/Java changes aren't picked up by a JS-only reload.
+- **Foreground/tap handling still missing** — `usePushNotifications.ts` only
+  listens for `registration`/`registrationError`. There's no
+  `pushNotificationReceived` listener (so a push arriving while the app is open
+  does nothing visible) and no `pushNotificationActionPerformed` listener (so
+  tapping a notification doesn't deep-link to the relevant thread). Separate
+  from the silent-notification fix above; not yet scheduled.
+
+## [2026-08-18] - V1.5 Role-Aware Navigation
+
+### Changed
+- **Bottom navigation is now per-role, driven by App_Role** (`users.role`),
+  replacing the old `hasFullVersion`/`hasLiteVersion` (3-vs-6) split in
+  `src/layouts/MainLayout.tsx`. `user_type` (lite/full) no longer affects the
+  nav — a lite manager sees the same tabs as a full manager. Max 6 tabs per role:
+  - Player / Caregiver: Home · Team · Schedule · Messages (4)
+  - Manager: Home · Team · Games · Schedule · Messages (5)
+  - Coach / Admin: Home · Team · Coaching · Games · Schedule · Messages (6)
+- **Coaching** tab is now Coach/Admin only; **Games** is Manager/Coach/Admin (its
+  coach-only feedback section is gated inside the page).
+- **Resources** moved off the bottom bar to a card on the Home dashboard, and its
+  route (`/resources`) is now open to every authenticated role (was
+  admin/manager/coach only).
+
+### Added
+- **Team** tab in the mobile bottom nav (route `/team` existed since V1.4 but had
+  no nav entry). Positioned 2nd, after Home, using the freed Resources purple
+  (`#8b5cf6`).
+- **Resources quick-link card** on the Home dashboard (`src/pages/Landing.tsx`).
+
+### Technical Notes
+- Deployed 2026-08-18 as `prototype@01d41fd`. Resolves Open Decision 4 (the two
+  undecided player/caregiver nav slots).
+
+## [2026-08-18] - V1.4 Post-Registration Welcome, Team Page & Fixes
+
+Spec: `.kiro/specs/post-registration-welcome-and-team-page/`. Bundles the
+post-invite onboarding experience, the first mobile **Team** page, the
+foundational **add-a-junior** consent flow, and two defect fixes (Finding A:
+player home teams count; Finding B: manager invitees landing as players).
+Deployed to production on 2026-08-18 (migrations, three Edge Functions, and the
+frontend via `prototype@bcc63ce`).
+
+### Fixed
+- **Manager role on invite redemption (Finding B)** — `redeem-invite` hardcoded
+  `role: 'player'`, so Manager invitees landed as players. Redemption now
+  resolves the effective role from the invite's `intended_role` via
+  `resolveEffectiveRole` and applies it identically to both the `users` profile
+  row and the `team_members` row. Null/absent or any invalid value (including
+  `admin`) safely defaults to `player`; the server continues to ignore any
+  client-supplied `role`/`user_type`/`team_id`/`active`. The Add Tournament Team
+  manager-invite flow now sets `intended_role = 'manager'`.
+- **Player home dashboard "Teams" count (Finding A)** — the home dashboard
+  "Teams" stat counted all `teams` rows, which RLS reduces to zero for
+  player-role users. Player-role users now see their personal count derived
+  from `team_members` via `teamsApi.getMyTeamCount`; admins still see the
+  club-wide count. A failed team-membership query now shows an error
+  indicator for the "Teams" stat only, leaving the other stats unaffected.
+- **Games and Coaching team reads** — both pages now read team data through
+  the `team_members → teams` join keyed on the current user
+  (`teamsApi.getMyTeams`) so the result equals the user's membership rather
+  than being reduced to zero by the `teams` SELECT policy. Coaching previously
+  read `teams` filtered by `coach_id`, which returned nothing for players.
+
+### Added
+- **Database schema (migrations 046–051)**:
+  - `046` — single-row `club_settings` branding table (RLS: authenticated read,
+    admin manage).
+  - `047` — `teams.team_type` (`club_tournament` | `external_league`) driving
+    editability and the consent path.
+  - `048` — allow `manager` on `team_members.role` and enforce a max-two-Managers
+    cap at the data layer via the `enforce_manager_cap()` trigger.
+  - `049` — `invite_codes.intended_role` (`player`/`coach`/`manager`; `admin`
+    excluded by design).
+  - `050` — `users.is_child` + `users.child_provenance` for Model-A children.
+  - `051` — `caregiver_approvals.request_kind` (`add_caregiver`/`add_child`) and
+    `team_id` so the table also serves as the add-a-child consent record.
+- **Mobile Team page** (`src/pages/TeamPage.tsx`, routed at `/team`) — team
+  selector (auto-select single team, prompt on multiple, empty state on none),
+  roster grouped Coach → Manager → Player with inactive members greyed and sorted
+  last, contact display by age band (own cellphone for U17/Open; caregiver for
+  U16-and-below; missing indicator when unlinked), role/team-type-gated actions
+  (edit, change role, deactivate/reactivate, promote-to-Manager disabled at cap),
+  a 10-second roster-load timeout with retry, and `pb-20` mobile clearance.
+- **Add-a-Junior modal** (`src/components/team/AddJuniorModal.tsx`) — captures
+  caregiver name/email/phone and child first/last name only (no child contact,
+  DOB, or photo), surfaces per-field validation errors while retaining values.
+- **Branded, path-aware post-registration Success Screen**
+  (`src/pages/LiteLandingPage.tsx`) — matching / confirmation-required / generic
+  variants driven by the `redeem-invite` result, with guidance text and
+  conditional competition name and app link. All branding via `useClubBranding()`.
+- **`useClubBranding()` hook** (`src/hooks/useClubBranding.ts`) — reads the
+  single-row `club_settings` table; every field nullable so absent values are
+  omitted rather than defaulted (club-agnostic rule).
+- **API wrappers** — `invites-api` returns a typed `RedeemInviteResult` and
+  fire-and-forget-triggers the `welcome` email on the matching path;
+  `teams-api.getMyTeamCount` / `getMyTeams` (team_members → teams join).
+- **Add-a-Junior consent flow — API layer** (`caregivers-api.addJunior` + consent
+  handlers). Orchestrates the double opt-in for adding a child to a Club
+  Tournament team: validates the form, resolves or creates the caregiver
+  (reusing an existing `users` row where the email matches, otherwise creating
+  a sign-in-capable account), creates an inactive child `users` row with a
+  synthetic non-sign-in email and recorded provenance, links child↔caregiver
+  in `player_caregivers` (no duplicates), inserts a pending `caregiver_approvals`
+  record (`request_kind = 'add_child'`), and emails the caregiver an
+  approval request. Consent handlers (`approveJunior` / `denyJunior` /
+  `escalateJunior`) set the approval status + `responded_at` and activate or
+  keep the child inactive accordingly. All decision logic reuses the pure
+  helpers in `add-junior-logic.ts`.
+- **`create-auth-user` Edge Function** — service-role primitive that creates a
+  single `auth.users` + `public.users` row and returns the id. Needed because
+  the browser cannot mint auth users. Creates sign-in-capable caregivers (real
+  email) or no-sign-in children (server-generated synthetic `.invalid` email,
+  unconfirmed). Gated to admin or coach/manager callers. Requires
+  `supabase functions deploy create-auth-user`.
+- **`caregiver_approval_request` email type** (`send-email` Edge Function) — the
+  add-a-junior approval-request notification to caregivers, sharing the existing
+  onboarding email build/send path; copy only, club branding still from env vars.
+
+
+- **Welcome and confirmation onboarding emails** (`send-email` Edge Function).
+  The function now accepts two new email types alongside `team_invite`:
+  - `welcome` — sent on the matching-address registration path to greet the
+    registrant and point them at their Team page.
+  - `confirm_registration` — sent on the non-matching-address path, carrying
+    a server-generated confirmation link and one explanatory sentence noting
+    the address used differs from the invited one, that confirming completes
+    registration if intentional, and that the recipient may ignore it and
+    re-register with the invited address.
+  Both types share a single email-build/send implementation, differing only
+  in copy. Club branding still comes solely from env vars (`CLUB_NAME`,
+  `CLUB_COLOR`, `APP_URL`, `EMAIL_FROM`, `EMAIL_REPLY_TO`) and team names are
+  rendered verbatim from server-supplied `{age_group} {name}` values — the
+  client passes no branding or team-name overrides.
+
+### Technical Notes
+- **Deployment (2026-08-18)**: migrations 046–051 applied to production; Edge
+  Functions `redeem-invite`, `send-email`, and `create-auth-user` deployed;
+  frontend pushed to `kiro prototype` and published by Netlify as
+  `prototype@bcc63ce`.
+- **Migration 036 recovery**: applying 051 failed with `relation
+  "public.caregiver_approvals" does not exist`. Investigation showed migration
+  036 had only been *partially* applied in production — its earlier objects
+  (competitions, competition_teams, invite_codes, player_caregivers) existed but
+  the `caregiver_approvals` table (036 §6) had never been created. A recovery
+  migration `045b_caregiver_approvals_backfill.sql` re-creates that table
+  (idempotent) and must run before 051; it is now committed so fresh setups get
+  it too. All six V1.4 migrations plus the backfill were applied together.
+- **Post-deploy follow-ups**: seed the `club_settings` row (branding is omitted
+  until it exists); production smoke test (Team page, success screen, teams
+  count, end-to-end add-a-junior consent); the spec's 32 optional
+  property/unit/integration tests remain unwritten (task 10.6 integration tests
+  prioritised given the 036 partial-application finding).
+- **Verification**: `npm run build` green and full test suite (101 tests)
+  passing at time of ship.
+
+## [2026-08-17] - Lite User Registration From An Invite Link (Bug Fix)
+
+### Fixed
+- **Self-registration from an invite link now works.** It previously failed
+  with *"new row violates row-level security policy for table users"* and
+  no account was created. Cause: with email confirmation enabled,
+  `supabase.auth.signUp()` returns **no session**, so the browser was still
+  the anonymous role when it tried to insert the profile row, and the
+  `id = auth.uid()` policy could never pass.
+- **The whole redemption is now one server-side transaction** in a new
+  `redeem-invite` Edge Function running as `service_role`: create or resolve
+  the account, insert the `users` row, add the `team_members` row, then mark
+  the code redeemed last, so a failure never burns the invite code.
+- **No half-finished accounts.** If any step fails, the function undoes, in
+  reverse, only what that attempt created — membership, then profile row,
+  then auth user — and never touches records that already existed. A retry
+  with the same email and the same code then succeeds.
+- **Registrants who use the address the invite was sent to are confirmed
+  immediately** and can log straight in with no confirmation email. Someone
+  registering with a *different* address still gets the account and the team
+  membership, but stays behind Supabase's email-confirmation gate.
+- **Accounts orphaned by the old bug are adopted, not blocked.** Where the
+  old flow created a login but never got as far as the profile row, the
+  invited address now takes that account over and sets the submitted
+  password. A login that exists for an address the invite was *not* sent to
+  is refused with "an account already exists for this email — try logging in
+  instead" rather than being taken over.
+- **Registration errors are now plain language.** Nothing on the page can
+  show a policy name, constraint name or raw database text; the raw detail is
+  logged server-side only.
+- **Invite pages no longer show "undefined undefined" as the team.** New
+  migration `045_anon_select_teams_for_invites.sql` grants the anonymous role
+  a **scoped** read on `teams` — only teams reachable through a valid,
+  unexpired, unredeemed invite code. A team whose only invite has expired
+  stays invisible, and anonymous visitors still cannot write to `teams`. The
+  invite heading and success screen now read "U9 Hydrogen".
+
+### Technical Notes
+- **This fix needs `supabase functions deploy redeem-invite`.** Already run —
+  the function is ACTIVE at version 1 on `pikrxkxpizdezazlwxhb`, deployed
+  with default JWT verification (`--no-verify-jwt` was not needed; the anon
+  key supabase-js sends satisfies it).
+- **`git push kiro prototype` does NOT deploy Edge Functions.** Pushing app
+  code alone would leave the client calling a function that does not exist.
+  Migration `045` must be run in the Supabase SQL Editor the same way — it
+  has been applied.
+- The client wrapper `invitesApi.redeemInviteCode()` keeps its signature and
+  is now a single `functions.invoke('redeem-invite', …)` plus an error-body
+  read, so `functions.invoke` cannot collapse every failure into
+  "Edge Function returned a non-2xx status code".
+- `validateInviteCode()` deliberately stays client-side and anonymous, so the
+  three invite states (Invalid Code / Already Used / Code Expired) and their
+  copy are unchanged.
+- The function is club-agnostic: it returns data only, no club name, colour,
+  logo or URL. `LiteLandingPage` still formats the team as
+  `{age_group} {name}`.
+- Test tooling added: `vitest` + `fast-check` as devDependencies with
+  `npm test` (`vitest --run`, never watch mode), plus `tsx` verification
+  scripts under `scripts/` for the paths that need real RLS and real GoTrue
+  behaviour.
+
+### Security
+- `redeem-invite` is an **unauthenticated** endpoint that can create auth
+  users; the invite code is the authorization, and any client-supplied
+  `role`, `user_type`, `team_id` or `active` is ignored and set server-side.
+  **Rate limiting is out of scope for this fix** and remains an open item.
+
+### Outstanding
+- A registrant who signs up with an address the invite was *not* sent to is
+  left unconfirmed, and GoTrue does not send a confirmation email for an
+  admin-created account — so they need a resend/confirmation trigger before
+  they can get past the login gate.
+- The expired-code notification to the inviter still emits nothing:
+  `validateInviteCode()` stays anonymous and cannot read the inviter from
+  `public.users`. It is also still a `console.log` TODO with no in-app
+  message wired.
+- The duplicate-key branch on the profile insert treats **any** 23505 as the
+  migration-006 trigger case, so a genuine `users_email_key` collision on a
+  different id would surface the wrong message. Unreachable in normal use on
+  this project (that trigger is not live); needs the check narrowed to the id
+  conflict or an affected-row count.
+
+## [2026-08-14 - Part 4] - Transactional Email Live (V1.2 Complete)
+
+### Added
+- **Resend sending domain `send.clubfootball.app`**, verified, Tokyo
+  region. DKIM, SPF, MX and DMARC records added in Cloudflare and all
+  confirmed resolving.
+- Supabase secrets: `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`,
+  `CLUB_NAME`, `CLUB_COLOR`.
+- `send-email` Edge Function deployed. **Test send succeeded** —
+  Resend returned a message ID.
+
+### Technical Notes
+- **Separate Resend account, not the existing one.** The free plan allows
+  one domain per team; the existing team's slot was used by another
+  project, and creating a second team is a paid Pro feature ($20/mo).
+- **Manual DNS entry chosen over Resend's "Auto configure"** — the latter
+  grants an OAuth token with ongoing DNS write access to the same zone
+  that points the app at Netlify. Four one-time records, verified by DNS
+  lookup, is the better trade.
+- **Resend shows record names relative to the zone root**, which is what
+  Cloudflare expects. Enter them verbatim; appending the domain yourself
+  yields `send.send.clubfootball.app.clubfootball.app`.
+- "Enable Receiving" left off — send-only by design.
+- Sending from the `send.` subdomain rather than the root isolates email
+  reputation from the domain serving the app.
+
+### Security
+- The first Resend API key was pasted into chat and so was **revoked and
+  replaced immediately**. The replacement is scoped to **Sending access
+  only** and was transferred via a file outside the repo, deleted after
+  use. Recorded as a standing rule in the steering file.
+
+### Fixed
+- **Invite emails now include a plain-text alternative.** HTML-only mail
+  is a recognised spam signal, and the first test email landed in
+  Outlook's Junk folder.
+- **Subject line was using HTML-escaped values.** A team named
+  "Mike's Team" would have arrived as "Mike&#39;s Team". Subject lines and
+  the plain-text part now use raw values; only the HTML body is escaped.
+
+### Outstanding
+- `EMAIL_REPLY_TO` unset, so replies to invites bounce. Needs a decision
+  on whether invites should be repliable and to which monitored address.
+- **Deliverability needs reputation, not configuration.** New sending
+  domain with no history; Outlook filed the first message as junk despite
+  correct SPF/DKIM/DMARC. Marking messages "Not junk" and real recipient
+  engagement are the fixes. Revisit tightening DMARC from `p=none` to
+  `p=quarantine` after a couple of weeks of clean sending.
+
+## [2026-08-14 - Part 3] - Product Domain Live: clubfootball.app
+
+### Added
+- **`clubfootball.app`** registered at Cloudflare Registrar (~$14.20/yr)
+  and now serving the app over HTTPS. `www.clubfootball.app` 301-redirects
+  to the apex; the Let's Encrypt certificate covers both hostnames.
+- DNS: apex CNAME → `apex-loadbalancer.netlify.com`, `www` CNAME →
+  `wcrfootball.netlify.app`, **both with the Cloudflare proxy disabled
+  (DNS only)**.
+
+### Changed
+- Active docs and scripts now reference `https://clubfootball.app` as the
+  production URL: steering standards, `DEPLOYMENT.md`,
+  `DEPLOYMENT-GUIDE.md`, `DEPLOY-EDGE-FUNCTIONS.md`, `TROUBLESHOOTING.md`,
+  `UPTIME-MONITORING.md`, `scripts/bulk-import-users.js`. The old
+  `wcrfootball.netlify.app` still resolves and remains the Netlify build
+  target.
+- `send-email` Edge Function `DEFAULT_APP_URL` → `https://clubfootball.app`.
+  Still overridable via the `APP_URL` secret, and still club-agnostic —
+  this is the *product* domain, which is the right default for any club
+  deploying unchanged.
+
+### Fixed
+- `docs/deployment/TROUBLESHOOTING.md` named the archived
+  `coaching-app-prototype` repo and a `main` branch. Corrected to
+  `WCR-Football-App` / `prototype`.
+
+### Technical Notes
+- **Netlify's DNS verification is unreliable — don't trust it over
+  evidence.** It reported success, then "clubfootball.app doesn't appear
+  to be served by Netlify", then success again. At the point it claimed
+  failure, the apex already resolved to exactly the same IPs as
+  `apex-loadbalancer.netlify.com` from both Cloudflare and Google
+  resolvers, and plain HTTP returned `200` with `Server: Netlify` serving
+  the real app. Their check appears to depend on HTTPS being live, which
+  is the very thing the certificate provides. Retry rather than changing
+  DNS records.
+- **Cloudflare proxy must stay off.** On Cloudflare's default "Flexible"
+  SSL mode a proxied record produces a redirect loop and blocks Netlify's
+  certificate. Cloudflare's dashboard actively nags to enable proxying —
+  ignore it.
+- Cloudflare flattens CNAMEs at the apex automatically, which satisfies
+  Netlify's *recommended* apex configuration. The `75.2.60.5` A-record
+  fallback isn't needed, and avoiding a hardcoded IP is what protects
+  against repeats of Netlify's 2025 load-balancer IP retirement.
+- **Declined**: "Use Netlify DNS" (impossible — Cloudflare Registrar
+  requires Cloudflare nameservers) and "make `www` primary" (marginal CDN
+  gain, but this URL goes into invite emails, texts and future app deep
+  links, where the short form wins).
+- **Outstanding**: Supabase Auth URL Configuration still points at the old
+  domain. `resetPassword()` derives its redirect from
+  `window.location.origin`, and Supabase silently falls back to the Site
+  URL for non-allowlisted redirects — so resets would bounce to the old
+  domain rather than error visibly. See NEXT-SESSION-NOTES V1.0.
+
+## [2026-08-14 - Part 2] - "Send Link" — Invites Emailed Directly from the App
+
+### Added
+- **`src/lib/email-api.ts`**: client wrapper for the `send-email` Edge
+  Function. Sends only data (recipient, team name, competition name,
+  invite code) — deliberately **no branding from the browser**, so club
+  name/colour/app URL have exactly one source (the function's env vars).
+  Also unwraps `functions.invoke` errors, which otherwise surface as an
+  unhelpful "Edge Function returned a non-2xx status code".
+- **"Send Link" buttons on the Competitions page**, in three places:
+  1. Add Tournament Team modal, once the team and manager invite exist
+  2. Per-team Invite modal, once the code is generated
+  3. Each pending row in the Invites panel — so an invite can be resent
+     later without regenerating the code
+
+### Changed
+- Invite emails send the team name in the project's standard display
+  format, `"{age_group} {name}"` (e.g. "Open Bozos"), not the bare name.
+- Modal helper text now mentions emailing rather than only sharing.
+- `.kiro/steering/project-standards.md`: recorded which values are club
+  branding (configurable — including "Urrah") versus product design
+  (fixed — the six page colours, typography, layout). Only the
+  primary/header colour is club branding.
+
+### Technical Notes
+- **"Copy Link" is retained everywhere as a fallback.** It's not legacy —
+  it stays useful, and it carries a different security model: a pasted
+  link proves nothing about who clicked it, whereas an emailed link
+  proves the recipient owns the address (this is what unblocks V1.3).
+  If a send fails, the error message tells the admin to use Copy Link, so
+  an email outage never blocks onboarding.
+- Send state is tracked per invite code, so each row shows its own
+  Sending/Sent state. The button becomes "Resend Link" after a send.
+- **Not yet functional end-to-end**: needs `RESEND_API_KEY` set and
+  `send-email` deployed. `npm run build` passes; no Deno runtime locally
+  to execute the function.
+
+## [2026-08-13 - Part 3] - Push Notification Pipeline Confirmed Working End-to-End
+
+### Added
+- **`supabase/migrations/042_message_push_trigger.sql`**: database trigger
+  on `message_recipients` INSERT that calls the `send-message-push` Edge
+  Function via `pg_net` directly. Built as a workaround after discovering
+  Supabase's dashboard "Database Webhooks" feature is broken on this
+  project (see Fixed section below).
+- Service role key stored in Supabase Vault, read by the trigger function
+  at runtime rather than hardcoded.
+
+### Fixed
+- **Dashboard Database Webhooks feature is broken on this Supabase
+  project**: creating a webhook via the dashboard UI consistently failed
+  with `schema "supabase_functions" does not exist` / `function
+  supabase_functions.http_request() does not exist`. This is an internal
+  Supabase-managed function that should be pre-provisioned automatically
+  on every project but is missing here. Two attempts to fix it directly
+  (creating the schema, enabling the `http` extension) did not resolve
+  it — concluded this isn't fixable via ordinary SQL and worked around it
+  entirely by calling the lower-level `pg_net` extension directly instead
+  (confirmed already properly installed on this project).
+- **Edge Function rejecting requests with `401 UNAUTHORIZED_INVALID_JWT_FORMAT`**:
+  root cause was a copy-paste error — the Vault secret had literally been
+  set to the placeholder text from setup instructions
+  (`YOUR_ACTUAL_SERVICE_ROLE_KEY_HERE`) rather than the real key. Fixed via
+  `vault.update_secret()`, re-verified by checking key length/prefix
+  directly in SQL before re-testing.
+
+### Verified
+- **Confirmed end-to-end, live, in production**: sent a real message
+  through the deployed web app, confirmed via `net._http_response` that
+  the trigger fired, called the Edge Function, and got back HTTP 200 with
+  `{"success":true,"devicesFound":0,"sent":0}`. Zero devices found is
+  correct and expected — no device tokens exist yet since no native app
+  has run on real hardware. This confirms the entire pipeline (trigger →
+  Edge Function → FCM readiness) works correctly up to the point where a
+  real device token would exist.
+
+## [2026-08-13 - Part 2] - Capacitor Setup & Push Notifications Infrastructure
+
+### Added
+- **Capacitor initialized**: App ID `com.clubfootball.app` (deliberately
+  generic, not tied to WCR specifically, in case other clubs adopt this
+  app in future). Android and iOS native platform projects added
+  (`android/`, `ios/`). Plugins installed: `@capacitor/app`,
+  `@capacitor/push-notifications`, `@capacitor/status-bar`,
+  `@capacitor/splash-screen`. Confirmed: `npm run build` succeeds,
+  `cap sync` recognizes all 4 plugins on both platforms.
+- **Firebase project created**: `club-football-app` (Spark/free plan).
+  Android and iOS apps registered under `com.clubfootball.app`.
+  `google-services.json` and `GoogleService-Info.plist` downloaded and
+  placed (safe to commit — scoped to package name/bundle ID, not a
+  general secret).
+- **`device_tokens` schema alignment** (migration 041): the table already
+  existed from migration 033 (Team Messaging), unused until now — added
+  the missing `updated_at` column/trigger rather than duplicating the
+  table.
+- **`src/lib/device-tokens-api.ts`**: register/remove a device's push
+  token, matching the real `device_tokens` schema (`device_token` column,
+  not `token` — see Fixed section below).
+- **`src/hooks/usePushNotifications.ts`**: requests push permission,
+  registers with FCM, stores/removes the token in Supabase on
+  sign-in/sign-out. Wired into `App.tsx`. No-ops entirely on web
+  (`Capacitor.isNativePlatform()` check) — zero impact on the existing
+  Netlify-deployed web app.
+- **Realtime reconnect on app resume**: mobile OSes suspend WebSocket
+  connections while an app is backgrounded; without this, Team Messaging
+  would appear frozen until a manual refresh. Bundled into the same hook.
+- **`supabase/functions/send-message-push`**: Edge Function that sends a
+  push notification (via FCM HTTP v1 API, OAuth through a service
+  account) when a new team message is inserted. Uses
+  `message_recipients.notification_pending`, a column that existed
+  unused since migration 033. Includes a README with the manual setup
+  steps (Firebase service account key, `supabase secrets set`, webhook
+  configuration) — none of which can be automated, all require dashboard
+  access.
+- **`docs/project/CAPACITOR-SCOPING.md`** (see previous entry) is now
+  partially implemented — Steps 1, 4, and 5 of its build order are code-
+  complete; Steps 2, 3, 6, 7 remain.
+
+### Fixed
+- **`device_tokens` migration mismatch**: the first version of migration
+  041 assumed the table didn't exist and tried to create it fresh with
+  different column names (`token` vs the real `device_token`). Since it
+  used `CREATE TABLE IF NOT EXISTS`, it silently no-op'd against the
+  table already created in migration 033 — no error, just quietly did
+  nothing. Caught by querying the live schema directly rather than
+  trusting the "success" result. Replaced with a corrected migration
+  that only adds what was missing, and fixed the API layer to use the
+  real column names.
+
+### Technical Notes
+- **Not yet verified on a real device.** No Mac/Xcode or Android Studio
+  available on this machine. All code is written against Capacitor and
+  Firebase's documented APIs and follows this repo's existing
+  conventions, but "compiles and matches the docs" is not the same as
+  "confirmed working." Real device testing is the next milestone once
+  a Mac is available.
+- **Edge Function is genuinely untested** — no Deno runtime available
+  locally to execute or type-check it. Requires manual deployment and a
+  Firebase service account key (a sensitive credential) that only the
+  user can generate and store via Supabase secrets — cannot be automated
+  by an assistant.
+- Installed Firebase CLI and GitHub CLI on this machine during setup;
+  both required troubleshooting corrupted/interrupted installs before
+  working correctly (documented inline in the session, not repeated
+  here for brevity).
+
+## [2026-08-13 - Part 1] - GitHub Structure Cleanup, Repo Recovery & Capacitor Scoping
+
+### Fixed
+- **Recovered `src/` and `supabase/migrations/`**: both were missing from disk
+  (245 files) following a laptop folder consolidation earlier the same day.
+  Nothing was actually lost — restored cleanly from the last commit on the
+  `kiro/prototype` branch (April 7). Confirmed complete: 186 files in `src/`,
+  43 migrations restored.
+- **Fixed Supabase keep-alive workflow returning HTTP 401**: the anon key
+  cannot query the bare REST root (`/rest/v1/`) on current Supabase projects —
+  that endpoint now requires the `service_role` key. Switched the ping to
+  query the `teams` table instead (confirmed HTTP 200), and added a failure
+  check so the job goes red in GitHub Actions if it breaks again instead of
+  passing silently.
+- **Fixed GitHub Actions not recognizing the keep-alive workflow**
+  (`workflow_dispatch` returned 404): the workflow was only pushed to
+  `prototype`, but GitHub only recognizes scheduled/manually-triggered
+  workflows from the repository's *default* branch, which was still `main`
+  (months stale). Fixed by making `prototype` the default branch.
+
+### Changed
+- **Consolidated GitHub structure from two repositories to one.** The
+  previous setup (`Mikebrooke65/.kiro` + `Mikebrooke65/coaching-app-prototype`)
+  was legacy clutter from initial project setup, not a deliberate backup
+  strategy, and the two repos had silently drifted out of sync more than
+  once — `coaching-app-prototype` was missing entire features (Tournament
+  Management, Admin Reporting, Team Messaging, Game Day Subs, User Role
+  Management) that had been on `.kiro` for months.
+  - Renamed `Mikebrooke65/.kiro` → `Mikebrooke65/WCR-Football-App`
+  - Renamed `Mikebrooke65/coaching-app-prototype` → `Mikebrooke65/football-app-old`
+    and archived it (read-only)
+  - Removed the local `origin` git remote entirely — `kiro` is now the only
+    remote
+  - Updated all active documentation (steering file, both deployment guides,
+    `NEXT-SESSION-NOTES.md`) to reflect the single-remote workflow
+- **Reorganized root-level documentation into `docs/`** subfolders
+  (`docs/project`, `docs/deployment`, `docs/lessons`, `docs/archive`) — this
+  reorg had been done on disk previously but never committed to git; it's
+  now properly recorded as file renames/moves.
+- **Excluded local `_archive/` folder from git** via `.gitignore`. This
+  folder (kept on disk intentionally as a safety net during the laptop
+  folder consolidation) contains nested repositories from other projects
+  (`coaching-app-prototype`, `family-resource-project`, `Urrah-coaching-app`)
+  and specs belonging to a different project ("The Landing") — none of it
+  belongs in this project's git history.
+
+### Added
+- **Supabase keep-alive GitHub Action** (`.github/workflows/supabase-keepalive.yml`):
+  pings the Supabase project every 3 days to prevent the free tier's
+  7-day auto-pause. Confirmed working (HTTP 200).
+- **`docs/project/CAPACITOR-SCOPING.md`**: scoping document for wrapping the
+  app with Capacitor for App Store / Google Play distribution. Reviews an
+  external technical brief against the actual codebase — confirms auth is
+  email/password only (the complex magic-link deep-linking pattern in most
+  generic guides doesn't apply), flags the password reset redirect and
+  invite-code deep links as real gaps needing a decision, and sequences the
+  work against the three V1 priorities identified versus Heja: RSVP, push
+  notifications, and app store distribution.
+
+### Technical Notes
+- GitHub CLI (`gh`) installed and authenticated on this machine, enabling
+  direct repo administration (secrets, renames, archiving, default branch)
+  going forward without manual dashboard steps.
+- Root-level test credentials in `docs/deployment/DEPLOYMENT.md` were
+  reviewed and intentionally kept as-is (plaintext, git-tracked) — flagged
+  as a minor security tradeoff, kept for practical convenience on a
+  test-only account.
+
+## [2026-04-07] - Tournament Management Phase 1 MVP
+
+### Added
+- **Tournament Management**: Complete Phase 1 MVP implementation
+  - Round-robin fixture generator (circle method algorithm, single/double format)
+  - Standings engine with configurable scoring rules and tiebreakers
+  - Tournament API layer (config, fixtures, standings, generation, recalculation)
+  - Desktop Tournament Page (admin: config, generate fixtures, view standings/fixtures)
+  - Mobile Tournament Page (user: standings/fixtures tabs, team highlighting)
+  - StandingsTable, FixtureList, TournamentConfig reusable components
+  - Database migration 040 (competitions extensions, events extensions, competition_standings table)
+  - Routes: `/tournaments` (mobile), `/desktop/tournaments` (desktop)
+  - "Tournaments" link in desktop sidebar navigation
+  - events-api: `getEventsByCompetition()` method
+- **Add Tournament Team**: Quick-create for external teams on CompetitionsPage
+  - One-step flow: enter team name, age group, manager email → creates team, links to competition, generates invite code
+  - Manager receives shareable link to register and onboard their players
+  - Only visible for active Club Tournament competitions
+- **Missing Tables Fix**: Created `competition_teams` and `invite_codes` tables (migration 036 had not been fully applied)
+  - Round-robin fixture generator (circle method algorithm, single/double format)
+  - Standings engine with configurable scoring rules and tiebreakers
+  - Tournament API layer (config, fixtures, standings, generation, recalculation)
+  - Desktop Tournament Page (admin: config, generate fixtures, view standings/fixtures)
+  - Mobile Tournament Page (user: standings/fixtures tabs, team highlighting)
+  - StandingsTable, FixtureList, TournamentConfig reusable components
+  - Database migration 040 (competitions extensions, events extensions, competition_standings table)
+  - Routes: `/tournaments` (mobile), `/desktop/tournaments` (desktop)
+  - events-api: `getEventsByCompetition()` method
+
+### Technical Notes
+- Fixtures stored as events (automatic Schedule/Games integration)
+- Standings materialized in competition_standings table (fast reads)
+- Pure logic modules (round-robin.ts, standings-engine.ts) have no DB dependencies
+- RLS: all authenticated read standings, admin-only write
+- Schema supports Phase 2/3 extensibility (knockout, groups, referees, public views)
+
+## [2026-04-07] - Lite User UI & Competition Type Rename
+
+### Added
+- **Lite User Invite UI**: Complete invite workflow on CompetitionsPage
+  - "Invite" button on each team in Club Tournaments
+  - Modal to enter email/phone and generate invite code
+  - Shareable link with copy-to-clipboard
+  - Invites panel showing all invites with status (Pending/Redeemed/Expired)
+- **invites-api methods**: `getPendingInvitesForCompetition()`, `getAllInvitesForCompetition()`
+
+### Changed
+- **Competition types renamed**: `wcr` → `external_league`, `other` → `club_tournament`
+- **CompetitionsPage**: Updated labels and conditional logic for new types
+- **competitions-api**: Updated cleanup to check for `club_tournament`
+
+### Technical Notes
+- Migration 039 renames competition types in database
+- Invite features only visible for Club Tournament competitions
+- Lite users register via `/invite/:code` route (LiteLandingPage)
+
+## [2026-04-07] - Admin Reporting Dashboard Phase 2
+
+### Added
+- **Phase 2 Feedback Analysis Reports**: Complete implementation
+  - Lesson Effectiveness Report: View lesson quality based on coach feedback ratings
+  - Session Ratings Report: Identify which sessions work well and need improvement
+  - Game Feedback Report: View post-match analysis using 4 Moments framework
+- **DrillDownModal Component**: Click-through to view detailed feedback comments
+  - Star rating display
+  - Coach name, team, and date for each feedback entry
+  - Loading and empty states
+- **Extended Reporting API**: New methods in `reporting-api.ts`
+  - `getLessonEffectiveness()`: Aggregates lesson ratings and delivery counts
+  - `getSessionRatings()`: Aggregates session ratings and usage counts
+  - `getGameFeedback()`: Fetches 4 Moments game feedback with filters
+  - `getLessonFeedbackDetails()`: Drill-down for individual lesson feedback
+  - `getSessionFeedbackDetails()`: Drill-down for individual session feedback
+- **New TypeScript Interfaces**: 
+  - `LessonEffectivenessRow`, `SessionRatingsRow`, `GameFeedbackRow`, `FeedbackDetail`
+
+### Technical Notes
+- All 6 Phase 1+2 reports now complete and routed
+- Phase 1: Lesson Delivery, Coach Activity, Team Training
+- Phase 2: Lesson Effectiveness, Session Ratings, Game Feedback
+- Routes added at `/desktop/reporting/*`
+- Game Feedback uses card-based layout with 4 Moments color coding
+- Drill-down modal reusable for both lesson and session feedback
+
+## [2026-03-23] - Lesson Builder Enhancements & Allocation System
+
+### Added
+- **Lesson Allocation System**: Complete feature for controlling lesson availability
+  - New `lesson_allocations` table tracking which lessons are allocated to which age groups
+  - Allocation UI in Desktop Lesson Builder with U4-U17 toggle buttons
+  - Green checkmark badges on allocated age groups
+  - Allocation count display on lesson cards (e.g., "✓ 3")
+  - Mobile coaching page now filters by allocation status
+  - Only shows lessons allocated to team's age group
+  - Bulk allocation SQL for initial setup
+- **Save as New Button**: Desktop Lesson Builder
+  - Green "Save as New" button next to "Save Changes"
+  - Modal prompts for new lesson name
+  - Creates copy of lesson with modifications
+  - Button visibility based on create vs edit mode
+
+### Changed
+- **Desktop Lesson Builder UI**: Compact lesson cards
+  - Reduced from 3 lines to 2 lines maximum
+  - Smaller padding (p-3 → p-2)
+  - Smaller fonts (text-sm → text-xs, text-xs → text-[10px])
+  - All badges on single line
+  - More lessons visible in left panel
+- **Mobile Coaching Filtering**: Enhanced lesson filtering
+  - Added division field to team query
+  - Filters by age_group (from allocations), division, and delivery status
+  - Removes lesson's own age_group constraint (allows cross-age allocation)
+  - Shows "No available lessons" when none allocated
+
+### Fixed
+- **Division Filtering**: Mobile coaching page now correctly filters by team division
+  - Added `division` to team SELECT query in Coaching.tsx
+  - Teams now properly load with division field
+  - Lessons filter by both age_group AND division
+
+### Technical Notes
+- Migration 037 creates lesson_allocations table with unique constraint
+- RLS policies: all users view, admins manage allocations
+- Allocation toggle updates database and refreshes UI optimistically
+- Graceful fallback if allocations table doesn't exist
+- Community pattern: allocate all lessons to age group
+- Academy pattern: selectively allocate 2-3 lessons per week
+
+---
+
+## [2026-03-20] - Desktop UI Enhancements
+
+### Added
+- **Desktop Games Page**: Complete real data integration replacing mock data
+  - Age group filtering for admin users (U4-U17 dropdown)
+  - Team selection filtered by selected age group
+  - Past games list with navigation arrows
+  - Score recording and updating functionality
+  - Game analysis with team and player feedback
+  - Previous feedback display with timestamps
+  - Manage Subs button linking to substitution management
+- **Desktop Landing Dashboard**: Real statistics display
+  - Total users count from database
+  - Total teams count from database
+  - Lessons and sessions counts
+  - Deliveries this week (from lesson_deliveries table)
+  - Feedback received this month (from game_feedback table)
+
+### Changed
+- **Desktop Schedule**: Redesigned layout for better space utilization
+  - Changed from modal-based to inline event creation form
+  - Left column narrowed to w-1/3 with compact event cards
+  - Right column expanded to w-2/3 for event form
+  - Event cards made more compact with smaller text and tighter spacing
+- **Desktop Resources**: Fixed rules display
+  - Removed duplicate unformatted rules list from left panel
+  - Left panel now shows only age group selector
+  - All formatted rules display exclusively in right panel
+
+### Technical Notes
+- Desktop Games uses gamesApi and eventsApi for real data
+- Age group filter shows all U4-U17 groups with team counts
+- Admin users can access all teams across all age groups
+- Non-admin users see only their assigned teams
+- Dashboard stats fetch on component mount with loading states
+- Week calculation starts from Sunday for deliveries count
+- Month calculation starts from 1st of month for feedback count
+
+---
+
+## [2026-03-13] - Desktop Schedule and Messaging Integration
+
+### Added
+- Created reusable TargetingSelector component for admin targeting across multiple pages
+- Integrated real events API into desktop Schedule page (replaced mock data)
+- Added event creation/editing functionality to desktop Schedule
+- Enhanced targeting system with individual player selection capability
+
+### Changed
+- Desktop Schedule now uses real Event data structure from events API
+- Updated Announcements page to use new TargetingSelector component
+- Desktop Schedule filters now match mobile (Training/Games/General)
+- Event cards show real attendance counts and team information
+- Send Reminder functionality uses real event data and team targeting
+
+### Technical Notes
+- TargetingSelector supports hierarchical selection: Roles → Team Types → Divisions → Age Groups → Teams → Individual Players
+- Desktop Schedule maintains two-panel layout with enhanced functionality
+- Event creation modal matches mobile Schedule functionality
+- Real-time attendance tracking integrated into desktop view
+
+---
+
+## [2026-03-13] - Schedule Page Improvements
+
+### Added
+- **Event editing**: Coaches/managers/admins can now edit existing events via Edit button on event cards
+- **Simplified time picker**: Dropdown with common times (8:00 AM - 7:30 PM, 30-min intervals) instead of free-form time input
+- **Venue dropdown**: Common venues (Fred Taylor Park, Huapai Domain, etc.) with Custom option for free text
+- **Field number for games**: Optional field number input for game events (e.g., "Huapai Domain No 5")
+- **Auto-hide title for games**: Title field hidden for game events, auto-populated as "Game"
+- **Automatic team notifications**: When event details change, whole team receives message listing all changes (date/time, location, opponent, title)
+- **Color-coded event cards**: Training (blue), Games (green), General (purple) backgrounds at 20% opacity for easy visual distinction
+- **Enhanced reminder system**: Larger modal, 6-row textarea, includes current RSVP count in message, pre-configured for whole team (no targeting options)
+
+### Changed
+- **Create Event modal**: Improved scrolling with pinned footer buttons, increased z-index to appear above mobile nav, team selection moved to top
+- **Modal height**: Reduced from 90vh to 85vh for better mobile spacing
+
+### Technical Notes
+- Event edit uses existing `updateEvent` method in events-api
+- Change notification compares old/new event data and generates change summary using `messagingApi.createMessage`
+- Venue list currently hardcoded (admin configuration pending)
+- ComposeForm enhanced with `hideTargetingOptions` and `prefillTargeting` props for streamlined reminders
+- Event card colors match badge colors: blue (training), green (games), purple (general) at standard 20% opacity
+
+## [2026-03-13] - Typography Standardization
+
+### Changed
+- **Removed inline font-family styles**: Removed all inline `style={{ fontFamily: ... }}` declarations — now rely on theme.css defaults (Inter for headings/body, Exo 2 for subtitles)
+- **Standardized heading sizes**: Changed MainLayout header from `text-xl` to `text-2xl`, Landing announcement from `text-[30px]` to `text-2xl`
+- **Consistent typography**: All page headings now use standard Tailwind classes without custom overrides
+
+### Technical Notes
+- theme.css defines default typography: Inter for headings (h1, h3), Exo 2 for subtitles (h2)
+- Removed unnecessary font-family overrides from MainLayout, Landing, CompetitionsPage, LiteLandingPage, CaregiverApprovalPage
+- Created TYPOGRAPHY-AUDIT.md documenting remaining inconsistencies and recommendations
+
+## [2026-03-13] - User Role Management Feature
+
+### Added
+- **Dual role system**: Independent App_Role (users.role) and Team_Role (team_members.role) — a user can be coach app-wide but player on a specific team
+- **Manager role**: Added 'manager' to team_members.role check constraint
+- **User type tracking**: `user_type` column on users table ('full' or 'lite') for distinguishing temporary access
+- **Competitions framework**: New `competitions` and `competition_teams` tables with WCR/Other types, date-based status, and "Close Now" admin action
+- **Invite codes system**: New `invite_codes` table with 21-day expiry, team-scoped codes, expired code notification to inviter
+- **Caregiver approval workflow**: New `caregiver_approvals` table with pending/approved/denied/escalated status and 7-day timeout escalation
+- **Player-caregiver relationships**: New `player_caregivers` table linking caregivers to players
+- **Privacy consent**: `privacy_consent_at` timestamp on users, consent checkbox on Lite Landing Page
+- **Competitions Management page** (desktop): Create/edit/delete competitions, link teams, "Close Now", lite user cleanup
+- **Lite Landing Page**: Public registration page for invite code redemption with privacy notice
+- **Caregiver Approval Page**: In-app page for caregivers to approve/deny new caregiver requests
+- **4 new API services**: roles-api.ts, competitions-api.ts, invites-api.ts, caregivers-api.ts (all extend ApiClient)
+- **Team-level permissions**: `getTeamRole()`, `canManageTeamRoster()`, `canCreateTeamEvents()`, `canSendTeamMessages()` in usePermissions hook
+- **Desktop Users page enhancements**: Multi-team assignment management, user_type filter, "Promote to Full" for lite users, inline team role editing
+
+### Changed
+- **AuthContext**: Now loads team data from `team_members` instead of empty `user_teams` table — fixes bug where users saw no teams
+- **usePermissions**: Extended with team-level permission functions (independent of app-level)
+- **Desktop navigation**: Added "Competitions" link in admin sidebar
+
+### Technical Notes
+- Migration 036 creates 5 new tables + modifies 2 existing tables
+- RLS policies on all new tables (authenticated read, admin/coach/manager write)
+- Invite code generation uses ambiguity-free alphanumeric charset (no I/O/0/1)
+- Existing user collision check on invite redemption (skip account creation, just add to team)
+- Lite-to-full promotion preserves all team memberships
+
+## [2026-03-13] - Team Messaging Bug Fixes & UI Polish
+
+### Fixed
+- **RLS infinite recursion**: Migration 035 fixes all messaging table policies to use `team_members` instead of cross-referencing `messages ↔ message_recipients` (which caused infinite recursion)
+- **Infinite spinner on Messages page**: MessagingContext now fetches team IDs from `team_members` (source of truth) instead of empty `user_teams` table
+- **PostgREST self-join error**: Removed `messages!messages_parent_message_id_fkey` self-referential joins from `getThreads`, `getArchivedThreads`, `searchMessages` — reply counts now fetched in separate queries
+- **ComposeForm teams**: Loaded from `team_members` instead of `user_teams`
+- **Orange card bleed-through**: Added `bg-white` to swipeable card inner container so archive background only shows during swipe gesture
+- **Compose form send button hidden**: Moved send/cancel buttons to pinned footer outside scroll area; adjusted compose view height to `calc(100vh - 5rem)` for proper nav clearance
+
+### Changed
+- **Compact message cards**: Tighter padding, single-line body preview, smaller icons, sender/reactions/read-count on one row
+- **Slimmer bottom nav bar**: Reduced icon size (w-5→w-4), label size (10px→9px), padding (py-3→py-1.5), gap and rounding — applies to all mobile pages
+- **Compose form**: More compact targeting buttons (icon + label only, no descriptions), reduced spacing, textarea rows 3→2
+- **Compose FAB**: Repositioned from bottom-40 to bottom-32 to match slimmer nav
+
+### Technical Notes
+- Migration 035 must be run in Supabase SQL Editor (already done)
+- Leftover RLS policies from intermediate 035 versions were manually dropped in Supabase
+
+## [2026-03-13] - Team Messaging Feature
+
+### Added
+- **Team Messaging (Complete)**
+  - Database migrations `033_team_messaging.sql` and `034_auto_unarchive_on_reply.sql`
+  - Tables: `messages`, `message_recipients`, `message_read_receipts`, `message_reactions`, `message_archives`, `device_tokens`
+  - RLS policies for all messaging tables
+  - Auto-read receipt trigger for message senders
+  - Auto-unarchive trigger when replies are added to archived threads
+  - TypeScript interfaces for all messaging types in `database.ts`
+  - `messaging-api.ts` API service extending ApiClient with full CRUD, reactions, archiving, search, and Realtime subscriptions
+  - `MessagingContext.tsx` with Realtime subscriptions, polling fallback, and optimistic updates
+  - UI components: MessageCard, ComposeForm, ThreadView, ReplyForm, ReadDetailModal, ReactionPicker, SearchBar, UnreadBadge
+  - Mobile `Messaging.tsx` with thread list, search, compose, archive/unarchive, pull-to-refresh
+  - Desktop `DesktopMessaging.tsx` with two-panel layout (thread list + thread detail)
+  - "Send Reminder" button on Schedule event cards (mobile and desktop) pre-filling compose form with event details
+  - Targeting types: individual, whole_team, management_team, club_admin
+  - Read receipt tracking with X/Y read count indicators
+  - Emoji reactions with toggle behaviour
+  - Thread archiving with swipe gesture (mobile) and context menu (desktop)
+  - Debounced search across message titles, bodies, and sender names
+
+## [2026-03-12] - Game Day Subs Feature & Bug Fixes
+
+### Added
+- **Game Day Subs Feature (Complete)**
+  - Database migration `031_game_day_subs.sql`: `event_attendance`, `game_times`, `substitution_events` tables
+  - Added `game_players` and `half_duration` columns to `teams` table with age-group defaults
+  - RLS policies for all new tables (admin full access, coach/manager read/write, player read own)
+  - TypeScript types: `EventAttendance`, `GameTime`, `SubstitutionEvent`, `SquadMember`
+  - Pure logic modules: `rotation-engine.ts`, `attendance-utils.ts`, `game-time-utils.ts`, `lineup-utils.ts`, `substitution-state.ts`
+  - API services: `attendance-api.ts`, `subs-api.ts`, `teams-api.ts`
+  - UI Components: `AttendanceView`, `LineupSelector`, `SubstitutionManager`, `RandomStrategy`, `CoachStrategy`, `PlayingTimeBar`
+  - `SubsPage.tsx` with full integration at `/games/:eventId/subs`
+  - "Subs" button on game cards in `Games.tsx`
+  - Team config fields (game_players, half_duration) in `TeamsManagement.tsx`
+  - Route registered in `src/routes/index.tsx`
+  - Live count-up timer on Substitutions section (MM:SS, ticks every second, shows 1st/2nd Half label)
+  - Recorded kick-off and 2nd half start times shown in small grey text below buttons
+  - Substitution alert system: orange flashing "⚽ SUBSTITUTION TIME ⚽" banner + three-beep audio alert via Web Audio API when rotation window minute is reached
+  - Rotation window cards pulse with stronger orange highlight when due
+
+### Fixed
+- **Schedule X/Y attendee count**: Shows "X/Y attending" where Y = total team members (coaches + managers + players, not caregivers)
+- **Subs attendance showing all team members**: Changed from only RSVP'd users to ALL team members with RSVP status merged (default `no_response`)
+- **Coaches excluded from game day squad**: Added `.eq('role', 'player')` filter so only players appear in attendance/squad on Subs page
+- **Attendance upsert failing**: Migration `032_fix_attendance_unique_constraint.sql` adds proper UNIQUE constraint on `(event_id, user_id)` — partial unique index didn't work with PostgREST upsert `onConflict`
+
+### Technical Notes
+- `users.role` = app-level permission (admin, coach, manager, player, caregiver)
+- `team_members.role` = team-level role (coach, manager, player) — independent of app role
+- Attendance on Subs page is players-only; coaches/managers don't appear
+- Game Day Squad = players marked present + guest players
+- Discovered: when adding users to teams, `team_members.role` must be set correctly (currently defaults to 'player' regardless of `users.role`)
+
+### Known Issue — User Role Management
+- `team_members.role` is set independently from `users.role`
+- No UI currently exists to manage team-level roles
+- Users page only manages app-level role
+- Teams Management page doesn't expose team_members.role for editing
+- **Needs scoping**: Add team-level role management to admin UI
+
+### Files Created
+- `supabase/migrations/031_game_day_subs.sql`
+- `supabase/migrations/032_fix_attendance_unique_constraint.sql`
+- `src/lib/rotation-engine.ts`, `src/lib/attendance-utils.ts`, `src/lib/game-time-utils.ts`
+- `src/lib/lineup-utils.ts`, `src/lib/substitution-state.ts`
+- `src/lib/attendance-api.ts`, `src/lib/subs-api.ts`, `src/lib/teams-api.ts`
+- `src/components/subs/AttendanceView.tsx`, `src/components/subs/LineupSelector.tsx`
+- `src/components/subs/SubstitutionManager.tsx`, `src/components/subs/RandomStrategy.tsx`
+- `src/components/subs/CoachStrategy.tsx`, `src/components/subs/PlayingTimeBar.tsx`
+- `src/pages/SubsPage.tsx`
+
+### Files Modified
+- `src/pages/Games.tsx` — Added Subs button to game cards
+- `src/pages/Schedule.tsx` — X/Y attendee count display
+- `src/pages/desktop/TeamsManagement.tsx` — Team config fields
+- `src/routes/index.tsx` — Subs route
+- `src/types/database.ts` — New types + Team extension
+- `src/lib/events-api.ts` — `getTotalMemberCounts()` method
+
+## [2026-03-11] - Bailey Academy Lesson Import: Analysis, Schema & Image Mapping
+
+### Added
+- **Bailey Lesson Analysis Documents**
+  - `BAILEY-LESSON-ANALYSIS.md` — Full deduplication, field mapping, gap analysis, schema changes, decisions
+  - `BAILEY-HEADER-TO-SCRAPE-MAPPING.md` — Maps 61 slide headers to scraped content, identifies 13 missing slides
+  - `BAILEY-LESSON-MAPPING-TASK.md` — Original task description and field mapping table
+  - `bailey-slide-headers.md` — Raw slide headers with metadata (team type, date, player count)
+
+- **Schema Migration 027: Division and Team Type**
+  - Added `division` column to lessons table (`Community` / `Academy`)
+  - Added `team_type` column (`First Kicks`, `Fun Football`, `Junior Football`, `Youth Football`, `Senior`)
+  - Updated existing 16 U9 lessons to `Community` / `Junior Football`
+  - Indexes for filtering
+
+- **First Academy Lesson (Migration 028: Shielding)**
+  - Converted Bailey's Slide 1 to full framework format
+  - 4 sessions: Ball Mastery & Juggling (15min), Shark Attack (10min), 1v1 Shielding (15min), Game (20min)
+  - Bailey's coaching points, objectives, focus, durations preserved exactly
+  - Generated missing fields: organisation, equipment, steps, pitch layout
+
+- **Image-to-Session Mapping from .pptx Export**
+  - Parsed all 61 slide XML files to map `imageN.png` to session positions (1-4)
+  - `BAILEY-IMAGE-MAPPING.md` — Complete mapping table for all 47 unique slides
+  - `scripts/parse-slide-images.cjs` — Extracts image references from slide rels files
+  - `scripts/map-images-to-sessions.cjs` — Maps images to session columns by x-coordinate
+  - Identified 82 unique content images, 1 template logo (excluded)
+  - Discovered heavy image reuse: `image5.png` (warmup) on 28 slides, `image43.png` (game) on 22 slides
+
+### Decisions Made
+- **Option C chosen**: Focus on Junior Academy lessons first, park general/U11-U12/Summer for later
+- **Bailey's content is ground truth**: His coaching points, objectives, focus, durations preserved exactly
+- **Existing 16 U9 lessons = Community programme; Bailey's = Academy programme**
+- **Skill categorisation TBD**: Wait for Bailey to review before assigning categories
+- **Bailey's durations preserved**: Not standardised to 20/15/15/15
+
+### Files Created
+- `supabase/migrations/027_add_division_and_team_type.sql`
+- `supabase/migrations/028_academy-shielding-lesson-01.sql`
+- `scripts/parse-slide-images.cjs`
+- `scripts/map-images-to-sessions.cjs`
+- `BAILEY-IMAGE-MAPPING.md`
+- `BAILEY-HEADER-TO-SCRAPE-MAPPING.md`
+- `BAILEY-LESSON-MAPPING-TASK.md`
+
+## [2026-03-11] - Mobile UI Polish and RSVP System
+
+### Added
+- **RSVP Decline Reasons and Response Tracking**
+  - Migration 026: Added `responded_at` timestamp and `decline_reason` to `event_rsvps` table
+  - Decline reason options: Late, Sick, Injured, Holiday, Other
+  - Modal popup when selecting "Can't Go" to capture reason
+  - `responded_at` recorded on first response for time-to-respond reporting
+  - Decline reason cleared when changing to Going/Maybe
+
+- **Attendee Count on Schedule Cards**
+  - Added `getAttendeeCounts` method to events-api (bulk query for "going" RSVPs)
+  - Users icon + "X attendees" line on each event card
+  - Count updates locally on RSVP for instant feedback
+
+- **Schedule Page Improvements**
+  - Added "Team Events" subtitle under Schedule heading
+  - Light cyan background on event cards: `rgba(6, 182, 212, 0.2)`
+  - Fixed modal scrolling: full overlay now scrollable so form is accessible
+
+- **Coaching Page Lesson List Redesign**
+  - 20% green background shading on "Past Lessons" and "Next Lesson" section headers
+  - Two-line lesson rows: title on line 1, date/checkbox + skill badge on line 2
+  - Consistent skill badge sizing (`text-[10px]` rounded pill)
+  - Reduced row padding for compact display
+
+- **Lesson Detail Page Improvements**
+  - Removed "Session Plan" heading
+  - Restructured session block headers: grey subtitle + bold black session title
+  - Green glow border on session blocks: `rgba(34, 197, 94, 0.2)` bg + `rgba(34, 197, 94, 0.4)` border
+  - Reduced lesson title from `text-2xl` to `text-lg`
+  - Removed non-functional favourite/star icon
+
+### Changed
+- **Resources Page Navigation**
+  - Nav labels changed: "Rules, Field Setup, Coach Support, General" → "Rules, Pitch, Guides, General"
+  - Nav layout changed from `flex overflow-x-auto` to `grid grid-cols-4` for even mobile fit
+  - Added `categoryMapping` to translate display names back to DB values
+  - Subtitle changed to "Guides for Coaches and Managers"
+  - Rule section header background fixed: inline `rgba(139, 92, 246, 0.2)` instead of Tailwind `bg-opacity`
+
+- **RSVP Button Styling**
+  - Going: bright green with white text + tick icon
+  - Can't Go: bright red with cross icon
+  - Maybe: grey with question mark icon
+
+- **Games Page Card Styling**
+  - Added 20% orange background: `rgba(234, 120, 0, 0.2)`
+  - Compact card design: title + badges on one line, date/time/location on single row
+  - Score displays prominently on card when recorded
+  - Score recording reduced to slim single-line row
+
+- **Schedule Event Title Format**
+  - Fixed `getEventTitle` to use `${team.age_group} ${team.name}` (e.g., "U9 Lithium")
+
+- **Steering Document Updated**
+  - Added complete colour reference table with hex + rgba values
+  - Added font families (Inter/Aktiv Grotesk Corp for headings, Exo 2 for body)
+  - Added card/section shading standard: always use 20% opacity via inline `rgba()`
+  - Strengthened team name display rule
+
+### Removed
+- **Sync Status Indicator** removed from both mobile and desktop headers (was placeholder for unimplemented offline sync)
+
+### Fixed
+- Resources page loads at top on mount (`window.scrollTo(0, 0)`)
+- Schedule page missing `</div>` causing build failure (commit ba8747b)
+
+### Files Created
+- `supabase/migrations/026_add_rsvp_response_tracking.sql`
+
+### Files Modified
+- `src/pages/Resources.tsx` - Nav labels, layout, section headers, subtitle
+- `src/pages/Schedule.tsx` - RSVP system, decline modal, attendee counts, event cards
+- `src/pages/Games.tsx` - Compact card, orange shading, score display
+- `src/pages/Coaching.tsx` - Compact lesson lists, green section headers
+- `src/pages/LessonDetail.tsx` - Session block redesign, green glow borders
+- `src/layouts/MainLayout.tsx` - Removed sync status indicator
+- `src/layouts/DesktopLayout.tsx` - Removed sync status indicator
+- `src/lib/events-api.ts` - Attendee counts, RSVP decline reasons
+- `src/types/database.ts` - EventRsvp type with responded_at and decline_reason
+- `.kiro/steering/project-standards.md` - Colours, fonts, shading standards
+
+## [2026-03-10] - Games Page Integration with Events System
+
+### Added
+- **Games Page Connected to Events System**
+  - Games page now queries `events` table instead of `games` table
+  - Filters for `event_type = 'game'` and past dates only
+  - Displays games with navigation arrows (left = older, right = newer)
+  - Shows "Game X of Y" counter when multiple games exist
+  - Team names display as "Age Group + Name" format (e.g., "U9 Lithium")
+
+- **Score Recording to Events**
+  - Migration 024: Added `team_score` and `opponent_score` fields to events table
+  - Created `updateEventScore` method in events API
+  - Score validation allows empty fields (defaults to 0)
+  - Scores persist and display when navigating between games
+
+- **Enhanced Feedback System**
+  - Feedback form clears after saving, ready for next entry
+  - Resets to "Team" selection after save
+  - Loads existing feedback when selecting same team/player
+  - Shows "Update Feedback" button when editing existing feedback
+  - Allows appending to or editing existing feedback
+  - Player dropdown filters out coaches (players only)
+
+- **Database Fixes**
+  - Migration 025: Updated `game_feedback` foreign key to reference `events` table
+  - Fixed constraint to allow feedback on game events
+
+### Changed
+- **Games Page UI Improvements**
+  - Removed dropdown game selector
+  - Added left/right navigation arrows on game card
+  - Cleaner, more intuitive navigation between past games
+  - Arrow buttons disabled at first/last game
+
+- **Events API Extended**
+  - Added `updateEventScore` method for saving game scores
+  - Event type now includes optional score fields
+
+### Fixed
+- **Score Saving Issues**
+  - Fixed "Cannot coerce to single JSON object" error
+  - Fixed validation to handle empty score inputs
+  - Scores now save correctly to events table
+
+- **Player Selection**
+  - Fixed player dropdown to exclude coaches
+  - Added double filter (team_members.role and users.role)
+  - Only actual players appear in feedback dropdown
+
+### Technical Notes
+- Games are events with `event_type = 'game'`
+- Scores stored directly in events table (team_score, opponent_score)
+- Feedback references event IDs via game_id field
+- Navigation uses array index for efficient game switching
+
+### Files Created
+- `supabase/migrations/024_add_scores_to_events.sql`
+- `supabase/migrations/025_fix_game_feedback_for_events.sql`
+
+### Files Modified
+- `src/pages/Games.tsx` - Complete rebuild with events integration and navigation
+- `src/lib/events-api.ts` - Added updateEventScore method
+- `src/lib/games-api.ts` - Fixed getTeamPlayers to filter coaches
+- `src/types/database.ts` - Added score fields to Event type
+
+### Next Steps
+1. Test full workflow with multiple games
+2. Add ability to delete feedback
+3. Consider adding game notes/summary field
+4. Build Schedule page event creation UI (already has basic version)
+
+### Deployment Issue Resolved
+- **Problem**: Code pushed but Netlify not deploying
+- **Root Cause**: Pushing to wrong repository (`coaching-app-prototype` instead of `.kiro`)
+- **Solution**: 
+  - Added `kiro` remote: `git remote add kiro https://github.com/Mikebrooke65/.kiro.git`
+  - Set as default push remote: `git config --local remote.pushDefault kiro`
+  - Created `DEPLOYMENT-GUIDE.md` with full deployment workflow
+  - Created `.kiro/steering/project-standards.md` for automatic context inclusion
+- **Standard Practice**: Always push to BOTH remotes: `git push kiro prototype && git push origin prototype`
+
+## [2026-03-10] - Games and Schedule System Foundation
+
+### Added
+- **Games Feedback System (Migration 022)**
+  - Created `games` table for match details (opponent, venue, home/away, scores)
+  - Created `game_feedback` table for team and player-specific feedback
+  - RLS policies for role-based access (Admin/Coach/Manager)
+  - Game API service with CRUD operations
+  - Score recording functionality
+  - Team and player feedback with text input
+  - Feedback history display
+
+- **Events/Schedule System (Migration 023)**
+  - Created `events` table for schedule management
+  - Event types: game, training, general
+  - Game events include opponent and home/away fields
+  - Flexible targeting system (teams, roles, divisions, age groups)
+  - Created `event_rsvps` table for attendance tracking
+  - RLS policies for event visibility and management
+  - Coaches/Managers can only create events for their teams
+  - Admins have full targeting capabilities
+
+- **Games Page UI**
+  - Team selection (loads from team_members table)
+  - Game list display (ready for data)
+  - Score recording section
+  - Team/Player feedback toggle
+  - Player roster dropdown
+  - Feedback textarea and save functionality
+  - Previous feedback display
+
+### Changed
+- **Database Types Updated**
+  - Added `TeamMember`, `Game`, `GameFeedbackRecord` types
+  - Added `Event`, `EventRsvp` types
+  - Updated to use `team_members` table consistently
+
+### Fixed
+- **Games Page Team Loading**
+  - Fixed to use `team_members` table (same as Teams Management)
+  - Was incorrectly using `user_teams` initially
+  - Team now displays correctly when assigned
+  - Added debug logging for troubleshooting
+
+- **Events Migration Type Casting**
+  - Fixed `user_role` enum comparison with text arrays
+  - Added `::text` casts to all role comparisons in RLS policies
+
+### Technical Notes
+- Games table stores match-specific data (opponent, scores, home/away)
+- Events table is base for all schedule items
+- Game events can be linked to games table for extended functionality
+- RLS policies enforce that coaches/managers can only manage their team's events
+- Event targeting uses array fields for flexible filtering
+
+### Known Limitations
+- Games page UI sections only show when a game is selected
+- Need to populate events/games data to test full workflow
+- Schedule page still uses mock data (needs connection to events table)
+
+### Files Created
+- `supabase/migrations/022_create_games_and_feedback.sql`
+- `supabase/migrations/023_create_events.sql`
+- `src/lib/games-api.ts`
+- `GAMES-FEATURE-SUMMARY.md`
+- `SESSION-SUMMARY-2026-03-10.md`
+- `supabase/seed_games.sql`
+- `supabase/seed_games_test.sql`
+
+### Files Modified
+- `src/pages/Games.tsx` - Complete rebuild with real data integration
+- `src/types/database.ts` - Added Game, Event, and RSVP types
+
+### Next Steps
+1. Build Schedule page with event creation UI
+2. Connect Games page to events (type='game')
+3. Add "New Event" button to Schedule
+4. Implement event creation modal with targeting
+5. Test full workflow: Create game event → View in Games → Record score → Add feedback
+
+## [2026-03-10] - User Management Automation Complete
+
+### Added
+- **Automated User Creation via Netlify Functions**
+  - Created Netlify Function `create-user` for single user creation
+  - Handles Supabase Auth + users table creation atomically
+  - Admin permission verification
+  - Random password generation if not provided
+  - Team assignment support
+  - Automatic rollback on failures
+
+- **Frontend Integration**
+  - Updated UserManagement.tsx to call Netlify Function
+  - Password field added to user creation form (optional)
+  - Better error handling and user feedback
+  - CSV bulk import ready (function created but not yet integrated)
+
+### Changed
+- **Switched from Supabase Edge Functions to Netlify Functions**
+  - Edge Functions had persistent JWT validation issues at infrastructure level
+  - Netlify Functions more reliable for this use case
+  - Service role key properly secured in Netlify environment variables
+
+### Fixed
+- **Environment Variable Configuration**
+  - Added SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY to Netlify
+  - Fixed typo in variable name (ROLY → ROLE)
+  - Functions now properly access all required credentials
+
+### Technical Notes
+- Netlify Functions use TypeScript with @netlify/functions
+- Authentication flow: User JWT → Verify with anon key client → Check admin role → Use service key for creation
+- Service role key never exposed to client
+- Atomic operations with rollback on failure
+- Ready to scale to 200+ users
+
+### Deployment
+- Function deployed to: `/.netlify/functions/create-user`
+- Environment variables configured in Netlify dashboard
+- Successfully tested user creation in production
+
+### Next Steps
+1. Integrate bulk CSV import with Netlify Function
+2. Test with larger user batches
+3. Document user import process for admins
+
+## [2026-03-10] - User Management Edge Functions Deployment and Debugging
+
+### Added
+- **Edge Function Deployment Process**
+  - Successfully deployed both edge functions to Supabase
+  - Used `npx supabase` commands (no global installation needed)
+  - Deployment process: login → link project → deploy functions
+  - Both functions deployed successfully to production
+
+### Changed
+- **Edge Function Authentication Fix**
+  - Fixed 401 Unauthorized errors in edge functions
+  - Changed from using admin client to verify tokens to using regular client
+  - Now creates two Supabase clients:
+    - Regular client with user's token for authentication verification
+    - Admin client for privileged operations (creating users)
+  - Added better error handling and logging in UserManagement component
+  - Added session validation before calling edge functions
+
+### Fixed
+- **Token Verification Issue**
+  - Edge functions were trying to verify user tokens with admin client (incorrect)
+  - Now use anon key client with user's authorization header
+  - Properly extracts and validates access token from session
+  - Added console logging to debug token issues
+
+### In Progress
+- **Testing Edge Functions**
+  - Functions deployed successfully
+  - Authentication fix implemented
+  - Waiting for Netlify to redeploy with latest code
+  - Need to test user creation after deployment completes
+
+### Technical Notes
+- Edge functions require SUPABASE_ANON_KEY for user token verification
+- SUPABASE_SERVICE_ROLE_KEY only used for admin operations
+- Token must be passed in Authorization header as `Bearer {token}`
+- Session must be active and valid when calling edge functions
+
+### Deployment Commands Used
+```bash
+npx supabase login
+npx supabase link --project-ref pikrxkxpizdezazlwxhb
+npx supabase functions deploy create-user
+npx supabase functions deploy bulk-create-users
+```
+
+### Next Steps
+1. Wait for Netlify deployment to complete
+2. Test user creation in production
+3. Test CSV bulk import
+4. Verify users created in both Auth and users table
+5. Document any remaining issues
+
+## [2026-03-10] - User Management Automation with Edge Functions
+
+### Added
+- **Automated User Creation System**
+  - Created Supabase Edge Function `create-user` for single user creation
+  - Created Supabase Edge Function `bulk-create-users` for CSV batch import
+  - Both functions handle Supabase Auth + users table creation atomically
+  - Automatic team assignment based on team name or ID
+  - Random password generation if not provided
+  - Admin permission verification for security
+
+- **Updated User Management Page**
+  - Individual user creation via form now fully automated
+  - CSV bulk import now processes via edge function
+  - Password field added to user creation form (optional)
+  - Email field disabled when editing (cannot change after creation)
+  - Detailed success/failure reporting for bulk imports
+  - Error handling with rollback on failures
+
+- **Documentation**
+  - Created `USER-MANAGEMENT-SOLUTION.md` - Complete solution overview
+  - Created `DEPLOY-EDGE-FUNCTIONS.md` - Step-by-step deployment guide
+  - Created `supabase/functions/README.md` - Technical function documentation
+  - CSV format examples and troubleshooting guides
+
+### Changed
+- User creation no longer requires manual two-step process
+- CSV import now creates users in Supabase Auth automatically
+- Service role key operations moved to secure server-side functions
+
+### Fixed
+- Eliminated manual UUID copying requirement
+- Solved scalability issue for 200+ user imports
+- Atomic operations prevent orphaned auth users or table records
+
+### Technical Notes
+- Edge functions use Deno runtime
+- Service role key only used server-side (never exposed to client)
+- Functions verify admin role before allowing user creation
+- Failed creations automatically rolled back
+- Team assignment supports partial name matching
+
+### Deployment Required
+To use this feature, admin must deploy edge functions:
+```bash
+supabase functions deploy create-user
+supabase functions deploy bulk-create-users
+```
+
+See `DEPLOY-EDGE-FUNCTIONS.md` for complete instructions.
+
+## [2026-03-09] - Session Builder Desktop Page Restructure
+
+### Changed
+- **Session Builder Desktop Page**
+  - Restructured layout from two-panel (left: library, right: form) to vertical layout
+  - Top section: Vertical scrollable list of all sessions (fixed height 320px)
+  - Bottom section: Form for creating/editing sessions
+  - Clicking a session from the list populates the form with all session data
+  - Added "New Session" button to clear form for new session creation
+  - Improved filters: Search, Session Type, Age Group
+  - Session count display shows filtered vs total sessions
+  - Form fields properly mapped to database schema:
+    - session_name, title, session_type, duration, age_group
+    - organisation, equipment, coaching_points, steps, key_objectives
+    - pitch_layout_description
+  - Ready for future filter button additions
+
+### Technical Notes
+- Vertical list handles hundreds of sessions efficiently with scrolling
+- Session selection highlights selected session with blue border
+- Form auto-populates when session clicked
+- "Clear Form" button resets to new session creation mode
+- Save functionality placeholder ready for database integration
+
+## [2026-03-09] - U9 Lesson Generation (Ball Striking and 1v1)
+
+### Added
+- **U9 Ball Striking Lessons (2 lessons, 8 sessions)**
+  - Migration 018: `018_ball-striking-u9-lessons-01-02.sql`
+  - Lesson 01: "Strike It Right: Introduction to Ball Striking"
+    - Session 1: Striking Technique (20 min warmup)
+    - Session 2: Shooting Accuracy (15 min skill intro)
+    - Session 3: Shooting Under Pressure (15 min progressive)
+    - Session 4: Shooting Game (15 min game)
+  - Lesson 02: "Strike It Clean: Advanced Ball Striking"
+    - Session 1: First Time Striking (20 min warmup)
+    - Session 2: Power and Placement (15 min skill intro)
+    - Session 3: Shooting from Angles (15 min progressive)
+    - Session 4: Volleys and Half-Volleys (15 min game)
+  - Image prompts: `U9-BALL-STRIKING-LESSON-01-IMAGE-PROMPTS.md` and `U9-BALL-STRIKING-LESSON-02-IMAGE-PROMPTS.md`
+
+- **U9 1v1 Lessons (2 lessons, 8 sessions)**
+  - Migration 019: `019_1v1-u9-lessons-01-02.sql`
+  - Lesson 01: "Take Them On: Introduction to 1v1"
+    - Session 1: 1v1 Basics (20 min warmup)
+    - Session 2: 1v1 Moves (15 min skill intro) - Step-over, Drag-back, Chop
+    - Session 3: 1v1 Under Pressure (15 min progressive)
+    - Session 4: 1v1 Game (15 min game)
+  - Lesson 02: "Master the Moves: Advanced 1v1"
+    - Session 1: 1v1 Space Creation (20 min warmup)
+    - Session 2: 1v1 Advanced Moves (15 min skill intro) - Scissors, Cruyff turn, Elastico
+    - Session 3: 1v1 Combination Play (15 min progressive)
+    - Session 4: 1v1 Tournament (15 min game)
+  - Image prompts: `U9-1V1-LESSON-01-IMAGE-PROMPTS.md` and `U9-1V1-LESSON-02-IMAGE-PROMPTS.md`
+
+### Progress Update
+- **Completed**: 12 of 32 lessons (37.5%)
+  - U9 Defending: Tackling (2), Marking (2), Pressing (2), Intercepting (2) ✅
+  - U9 Attacking: Dribbling (2), Ball Striking (2), 1v1 (2) ✅
+- **Remaining**: 20 lessons
+  - U9 Attacking: Passing/Receiving (2)
+  - U10 All Skills: 8 skills × 2 lessons = 16 lessons
+
+### Technical Notes
+- All lessons follow LESSON-CREATION-GUIDE.md format
+- All image prompts follow IMAGE-PROMPT-GUIDELINES.md standards
+- Each lesson has exactly 4 sessions (warmup, skill_intro, progressive, game)
+- Total duration: 65 minutes per lesson
+- All lessons are Beginner level for U9
+- Metric measurements used throughout (meters, not yards)
+- "football (soccer ball)" terminology consistently applied
+- Ball possession clearly specified in all pitch layouts
+
+## [2026-03-09] - Lesson System Architecture Refactor
+
+### Added
+- **Lesson System Architecture Documentation**
+  - Created comprehensive `LESSON-SYSTEM-ARCHITECTURE.md` specification
+  - Documented core principles: sessions as globally reusable assets
+  - Defined correct database schema with lessons referencing sessions
+  - Established session naming conventions
+  - Documented media storage structure and requirements
+  - Created bulk load process documentation
+  - Defined admin UI workflow for future development
+
+- **First Complete Lesson: U9 Tackling Lesson 01**
+  - Created `lessons/U9-Tackling-Lesson-01.md` with full content
+  - Lesson: "Win It Safely: Block & Poke" (65 minutes total)
+  - 4 complete sessions:
+    1. Mirror Jockey (20 min) - Warmup
+    2. Block Tackle Introduction (15 min) - Skill Intro
+    3. 1v1 Tackle Under Pressure (15 min) - Progressive
+    4. Tackle Game Application (15 min) - Game
+  - Each session includes:
+    - Organisation/how it runs
+    - Equipment lists
+    - Coaching points (5-6 per session)
+    - Step-by-step instructions (5-6 steps)
+    - Key learning objectives (3 per session)
+    - Pitch layout descriptions
+    - Media file naming
+    - Image generation prompts for pitch diagrams
+
+- **Testing Documentation**
+  - Created `TESTING-LESSON-SYSTEM.md` with detailed testing instructions
+  - Created `LESSON-TESTING-CHECKLIST.md` with step-by-step checklist
+  - Created `LESSON-SYSTEM-SUMMARY.md` with overview of all work
+  - Included troubleshooting guides and SQL queries for verification
+
+- **Updated App Component**
+  - Created `src/pages/LessonDetail-NEW.tsx` for new schema
+  - Fetches lesson with all 4 sessions via JOIN queries
+  - Displays all new fields: organisation, steps, key_objectives
+  - Shows pitch diagrams if URLs are set
+  - Handles session type labels
+  - Improved layout with expandable session cards
+
+### Changed
+- **Database Schema Refactored (Migration 010)**
+  - Sessions are now standalone with unique names as natural identifiers
+  - Lessons reference 4 sessions (session_1_id through session_4_id)
+  - Sessions can be reused across multiple lessons
+  - Deleting a lesson no longer deletes its sessions
+  - Added session_type field: warmup, skill_intro, progressive, game
+  - Added comprehensive session fields:
+    - organisation (how it runs)
+    - steps (step-by-step instructions)
+    - key_objectives (player learning objectives)
+    - pitch_layout_description
+    - diagram_url and video_url
+  - Lessons now have coaching_focus array
+  - Foreign key constraints use ON DELETE RESTRICT for sessions
+
+- **Session Naming Convention**
+  - Format: `session-<descriptive-name>-<age-group>`
+  - Examples: `session-mirror-jockey-u9`, `session-block-tackle-intro-u9`
+  - Must be globally unique
+  - Never include lesson numbers
+  - Never include session slot numbers
+
+- **Media Storage Structure**
+  - Bucket: `lesson-media` (public)
+  - Path: `/media/pitch-diagrams/{age-group}/{skill}/{session-name}.png`
+  - Videos: `/media/videos/{age-group}/{skill}/{session-name}.mp4`
+  - Specs: PNG, 4:5 or 1:1 aspect ratio, 800px min resolution
+
+### Fixed
+- Corrected fundamental architecture flaw in original schema
+- Sessions were incorrectly tied to lessons (lesson_id FK)
+- Now sessions are independent and lessons reference them
+- Enables session reusability as originally intended
+
+### Technical Notes
+- Migration 010 drops and recreates all lesson/session tables
+- Sample data includes complete U9 Tackling Lesson 01
+- 4 sessions created with unique names
+- 1 lesson created referencing those 4 sessions
+- Ready for bulk generation of remaining 31 lessons
+- Architecture supports admin UI for Session Builder and Lesson Builder
+
+### Documentation Files Created
+- `LESSON-SYSTEM-ARCHITECTURE.md` - Complete architecture spec
+- `TESTING-LESSON-SYSTEM.md` - Testing instructions
+- `LESSON-TESTING-CHECKLIST.md` - Step-by-step checklist
+- `LESSON-SYSTEM-SUMMARY.md` - Overview and summary
+- `lessons/U9-Tackling-Lesson-01.md` - First complete lesson
+
+### Next Steps
+1. Test migration and verify data
+2. Upload pitch diagram images
+3. Test lesson display in app
+4. Generate remaining 31 lessons (2 per skill × 8 skills × 2 age groups)
+5. Build Session Builder UI (admin creates sessions)
+6. Build Lesson Builder UI (admin selects 4 sessions)
+
+## [2026-03-08] - Announcement Rich Text Editor Implementation
+
+### Changed
+- **Announcements System - Rich Text Editor**
+  - Replaced markdown syntax with WYSIWYG rich text editor (React Quill)
+  - Admin announcement form now has visual formatting toolbar:
+    - Bold, italic, underline buttons
+    - Heading 2 and Heading 3 options (H1 removed - reserved for title)
+    - Bullet and numbered lists
+    - Link insertion
+    - Clean formatting button
+  - Increased editor height to 300px for better usability
+  - Mobile Landing page now renders HTML content with proper styling
+  - Removed react-markdown dependency
+  
+- **Typography Hierarchy**
+  - Announcement title: H1 (30px, Inter/Aktiv Grotesk Corp, bold)
+  - Content H2: 18px (Exo 2, weight 600)
+  - Content H3: 16px (Exo 2, weight 600)
+  - Body text: Exo 2
+  - Added custom CSS for announcement content styling
+  - Enforced font families per brand guidelines (Aktiv Grotesk Corp for headings, Exo 2 for body)
+
+### Fixed
+- Fixed announcement content display in admin table (now renders HTML instead of showing raw code)
+- Fixed react-markdown className prop error (removed unsupported prop)
+- Added `!important` flags to content heading styles to override Quill defaults
+
+### Technical Notes
+- Users can now format announcements visually without knowing markdown syntax
+- Rich text content stored as HTML in database
+- Mobile Landing page uses `dangerouslySetInnerHTML` to render formatted content
+- Desktop admin page shows formatted preview in announcement list table
+
+## [2026-03-08] - Resources and Announcements Systems
+
+### Added
+- **Resources Management System**
+  - Desktop admin page for uploading and managing resource files
+  - 4 categories: Rules, Field Setup, Coach Support, General
+  - File upload with Supabase Storage integration
+  - Mobile Resources page with category filtering
+  - Special Rules section with dropdown selector for 4 age-group rule sets:
+    - First Kicks (4-6 years)
+    - Fun Football (7-8 years)
+    - Mini Football (9-10 years)
+    - Mini Football (11-12 years)
+  - Database migration for resources table and storage bucket
+
+- **Announcements Management System**
+  - Desktop admin page for creating and managing announcements
+  - Flexible targeting system:
+    - User roles (Coach, Manager, Admin, Player, Caregiver)
+    - Team types (First Kicks, Fun Football, Junior, Youth, Senior)
+    - Divisions (Community, Academy)
+    - Age groups (U4-U17)
+    - Specific teams
+  - Optional image upload for announcements
+  - "Ongoing" flag to prevent 7-day auto-expiry
+  - Automatic expiry after 7 days for non-ongoing announcements
+  - Mobile Landing page displays targeted announcements
+  - Database migration for announcements table and storage bucket
+
+- **Lessons and Sessions Database**
+  - Created lessons table with 8 sample lessons
+  - Created sessions table (4 sessions per lesson)
+  - Created lesson_deliveries and session_deliveries tables
+  - Lesson template file for bulk lesson creation
+  - Seed file for adding lessons via SQL
+
+### Changed
+- Updated mobile Landing page to show real data:
+  - Users count from database
+  - Teams count from database
+  - Announcements fetched with targeting logic
+- Updated Coaching page to fetch real lessons from database
+- Fixed lesson selection behavior (navigate to detail on second click)
+- Improved Rules page styling with better visual hierarchy
+
+### Fixed
+- Fixed lesson navigation route (changed from `/lesson/:id` to `/lessons/:id`)
+- Fixed duplicate stats variable declaration in Landing page
+- Fixed bullet point alignment in Rules sections
+
+## [2026-03-06] - Desktop UI Alignment with Figma
+
+### Added
+- Colored page headings to Session Builder and Lesson Builder pages
+  - Session Builder: Green heading (#22c55e) with description
+  - Lesson Builder: Green heading (#22c55e) with description
+  - Matches Figma design specifications for coaching tools section
+
+### Fixed
+- Session Builder and Lesson Builder pages now have consistent heading style with other desktop pages
+- All desktop pages now properly aligned with Figma design specifications
+
+## [2026-03-05] - Desktop Admin Pages Implementation
+
+### Added
+- Implemented all 12 desktop admin pages with full functionality:
+  1. **Landing Page** - Desktop version of landing page
+  2. **Coaching Hub** - Desktop coaching interface
+  3. **Games Management** - Desktop games view
+  4. **Resources Library** - Desktop resources interface
+  5. **Schedule** - Desktop calendar view
+  6. **Messaging** - Desktop messaging interface
+  7. **Session Builder** - Split-panel layout with sessions library (left) and build form (right)
+     - Filter by age group, session type, duration, skill focus
+     - Create/edit sessions with objectives, equipment, setup, coaching points, variations
+     - Save/publish/draft functionality
+     - Mock data with 3 sample sessions
+  8. **Lesson Builder** - Split-panel layout with lessons library (left) and 4-block builder (right)
+     - 4 FIXED session blocks: Warm-Up & Technical, Skill Introduction, Progressive Development, Game Application
+     - Session selection dropdowns filtered by age group and block type
+     - Auto-calculated total duration
+     - Mock data with 1 sample lesson and 8 available sessions
+  9. **Teams Management** - Full CRUD operations for team management
+     - Table view with search and filters (Age Group, Division)
+     - Add/edit/delete teams with modal forms
+     - Coach assignment functionality
+     - Mock data with 3 teams and 4 coaches
+  10. **User Management** - Complete user administration
+      - User table with role management (Player, Caregiver, Coach, Manager, Admin)
+      - Status toggle (Active/Inactive)
+      - CSV import functionality with example format
+      - Add/edit/delete users with modal forms
+      - Team assignment
+      - Mock data with 5 users
+  11. **Reporting Dashboard** - Analytics and metrics
+      - Key metrics cards: Active Users, Training Attendance, Lesson Views, Messages Sent
+      - Attendance trend chart (6-week bar chart)
+      - User engagement by role (progress bars)
+      - Most popular lessons table (top 5)
+      - Summary stats cards: Total Sessions Created, Total Lessons Built, Active Teams
+      - Date range filtering (Last 7/30/90 Days, This Year)
+      - Export functionality (PDF, Excel)
+  12. **Announcements Management** - Landing page announcement system
+      - Create/edit/delete announcements
+      - Priority levels (Normal, High)
+      - Audience targeting (All Users, Coaches Only, Players Only, Caregivers Only)
+      - Pin to top functionality
+      - Publish date tracking
+      - Mock data with 2 sample announcements
+- Updated desktop navigation with correct structure:
+  - Main section (1-6): Landing, Coaching, Games, Resources, Schedule, Messaging
+  - Admin section (7-12): Session Builder, Lesson Builder, Teams, Users, Reporting, Announcements
+- Mobile pages implemented:
+  - Landing Page with blue gradient header, quick access cards, announcements
+  - Coaching Hub with links to Lessons and AI Coach
+  - Lessons page with search, filters, and lesson cards
+  - Lesson Detail page with 4 session blocks, objectives, equipment, coaching points
+- All pages use brand colors (#0091f3 blue, #ea7800 orange, #545859 dark grey)
+- All pages use mock data for prototype demonstration
+
+### Fixed
+- Repository push configuration - now pushing to correct repository (coaching-app-prototype)
+- Build syntax errors in AuthContext.tsx (missing closing braces, removed timeout reference)
+- Build syntax errors in Reporting.tsx (className typos, variable name typo)
+- Session persistence issue - simplified auth initialization logic
+- Removed complex timeout recovery mechanism that was causing "navigating..." hang
+- **Desktop navigation not working** - Added `key={location.pathname}` to `<Outlet />` in DesktopLayout to force re-render on route changes
+  - Pages were accessible via direct URL but not via navigation links
+  - React Router wasn't re-rendering the Outlet component when route changed
+  - Solution forces React to treat each route as a new component instance
+
+### Known Issues
+- **Session Persistence Not Working** - User gets logged out on page refresh
+  - Session IS being saved to localStorage (`sb-pikrxkxpizdezazlwxhb-auth-token` key exists)
+  - `supabase.auth.getSession()` was timing out (3 seconds) when trying to read session
+  - Implemented simplified auth initialization without timeout recovery
+  - Issue may be related to Supabase project configuration or network latency
+  - **WORKAROUND**: User must log in again after page refresh
+  - **TODO**: Debug why getSession() hangs even though session exists in localStorage
+  - **TODO**: Consider alternative session management approach or check Supabase project auth settings
+
+### Technical Notes
+- All admin pages follow consistent split-panel or table-based layouts
+- CRUD operations working in-memory (not yet connected to Supabase database)
+- CSV import uses simple parsing (headers: email, first_name, last_name, role, status, team, cellphone)
+- Reporting charts use simple HTML/CSS bar charts (no charting library yet)
+- All forms include validation and user feedback
+- Modal dialogs for add/edit operations across all management pages
+
+### Deployment
+- Successfully deployed to Netlify: https://wcrfootball.netlify.app
+- Build passing after syntax error fixes
+- All 12 admin pages accessible to admin users on desktop
+
+### Added
+- Created technical-foundation spec using design-first workflow
+  - Completed comprehensive design document covering architecture, database schema, API layer, state management, offline sync, routing, layouts, error handling, testing, security, and deployment
+  - Created requirements document with 27 requirements derived from the technical design
+  - Mapped all 17 correctness properties to specific requirements for validation
+  - Established 12-week implementation roadmap
+- Set up Supabase project and database
+  - Created Supabase account and project (pikrxkxpizdezazlwxhb.supabase.co)
+  - Added environment configuration files (.env.development, .env.production)
+  - Created database migration files (001_initial_schema.sql, 002_rls_policies.sql)
+  - Database schema includes 13 tables with relationships, indexes, and initial data
+  - Row-Level Security policies enforce role-based access control
+  - Executed migration files in Supabase SQL Editor to create complete database schema
+  - All tables, indexes, RLS policies, and initial skill categories now live in production database
+- Implemented Phase 1: Core Infrastructure
+  - Installed and configured Supabase JavaScript client (@supabase/supabase-js)
+  - Created base API client with type-safe CRUD operations (src/lib/api-client.ts)
+  - Defined complete TypeScript type definitions for all database models (src/types/database.ts)
+  - Implemented authentication system with AuthContext and AuthProvider
+  - Created login page with password reset functionality
+  - Built ProtectedRoute component with role-based access control
+  - Created usePermissions hook for permission checking throughout app
+  - Implemented state management with Zustand (3 stores: app, offline, content)
+  - Created online/offline status monitoring hook
+  - Created responsive layout detection hook
+  - Built sync status indicator component
+  - Configured React Router with role-based protected routes
+  - Created MainLayout for mobile with bottom navigation (full and lite versions)
+  - Created DesktopLayout for admin with collapsible sidebar
+  - Created placeholder pages for all routes (mobile and desktop)
+  - Integrated all components in App.tsx with AuthProvider
+  - Updated main.tsx entry point
+  - ✅ Phase 1 complete and tested - authentication working, app rendering
+- Created CLUB-QUESTIONS.md document for requirements gathering
+- Added 10 question sections covering:
+  - Skills terminology and structure
+  - Team structure and tagging system
+  - Friendly Manager API integration
+  - Data synchronization and edit management
+  - Player and team feedback management
+  - Feedback model and framework
+  - AI-powered session builder
+  - AI session adaptation and rewriting
+  - Adding caregivers and players user management
+  - Game scheduling and communication
+- Documented team classification structure with Type, Technical Level, Gender, Age Group, and Team Name attributes
+- Added casual competition scenario with proposed "Lite" user model (CoachLite, ManagerLite, PlayerLite, CaregiverLite)
+- Proposed email-based invitation system for self-managed teams
+- Created PROJECT-ROLLOUT.md document outlining phased rollout strategy
+- Documented Version 1.0 trial plan: 10-week trial with <20 Junior Community teams
+- Defined success criteria for all user roles and features
+- Outlined post-trial decision points and risk management strategy
+- Created KIRO_HANDOVER.md from Figma export with complete UI/UX specifications
+- Created ALIGNMENT-ANALYSIS.md comparing requirements vs Figma handover
+- Added Requirement 22: Admin Reporting Dashboard to requirements document
+  - Usage statistics by role and feature
+  - Lesson delivery tracking and trends
+  - Coach activity reports
+  - Player/team participation metrics
+  - Feedback summaries and ratings
+  - Filtering and export capabilities
+
+### Updated
+- Question 2 (Team Structure & Tagging System) marked as ANSWERED with complete classification details
+- Team types defined: First Kicks (U4-U6), Fun Football (U7-U8), Junior Football (U9-U12), Youth Football (U13-U17), Senior Football
+- Technical levels: Community and Academy/Development
+- Gender categories: Mixed and Female
+- Unique team identifier established as Age Group + Team Name combination
+- Clarified that sessions/lessons are tagged with Type, Technical Level, Gender, Age Group (NOT specific Team Names)
+- Sessions/lessons support multiple tags for flexibility
+- Question 10 (Game Scheduling & Communication) marked as PARTIALLY ANSWERED with current Sporty system workflow
+- Documented Friday midday lockoff process and manual distribution workflow
+- Identified automation opportunity with home field allocation check requirement
+- Documented field allocation issue: Sporty defaults to Field #1, requires manual reallocation
+- Proposed automated workflow: Pull from Sporty → Manual review/edit → Post button → Targeted messaging
+- Added Requirement 22 (Admin Reporting Dashboard) to requirements document with comprehensive metrics and filtering
+
+### Fixed
+- Figma asset import paths (changed from figma:asset URLs to actual file paths)
+- Netlify SPA routing (added _redirects file)
+- RLS policy circular dependencies (migration 003 and 004)
+  - Removed recursive policy checks that caused 500 errors
+  - Simplified to allow all authenticated users to view users table
+  - Fixed user profile fetching after authentication
+- Supabase client multiple instance issue
+  - Implemented singleton pattern to prevent lock timeouts
+  - Added PKCE flow type and explicit storage configuration
+  - Resolved "Lock was not released within 5000ms" errors
+  - Login now works reliably in browser environment
+
+## [2026-03-02] - Netlify Deployment Setup
+
+### Changed
+- Updated `vite.config.ts`: Changed base path from `/coaching-app-prototype/` to `/` for Netlify compatibility
+- Updated `index.html`: Replaced hard-coded built asset references with source entry point `/src/main.tsx`
+
+### Fixed
+- Fixed Vite build failures on Netlify caused by GitHub Pages configuration
+- Fixed asset resolution issues during production build
+
+### Deployment
+- Successfully deployed to Netlify
+- Repository: https://github.com/Mikebrooke65/coaching-app-prototype
+- Branch: main
+- Build command: `npm run build`
+- Publish directory: `dist`
+
+---
+
+## Instructions for Maintaining This File
+
+When making updates:
+1. Add new entries under `[Unreleased]` section
+2. When deploying, move unreleased items to a new dated section
+3. Use categories: Added, Changed, Deprecated, Removed, Fixed, Security
+4. Include commit hashes when relevant

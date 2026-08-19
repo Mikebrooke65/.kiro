@@ -3,7 +3,11 @@
   <html lang="en">
     <head>
       <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <!-- viewport-fit=cover lets the app draw under the status bar / notch /
+           gesture bar so env(safe-area-inset-*) below reports real values
+           instead of 0 — required for the safe-area padding in
+           src/styles/theme.css to do anything on notched/gesture-nav devices. -->
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
       <title>User Authentication and Navigation</title>
     </head>
 
