@@ -107,8 +107,9 @@ export function MainLayout() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <header className="bg-[#0091f3] text-white">
+      {/* Header — safe-area-top keeps the title clear of the status bar /
+          notch on devices where the app draws edge-to-edge */}
+      <header className="bg-[#0091f3] text-white safe-area-top">
         <div className="px-4 py-3 flex justify-between items-center">
           {/* Logo & Title with Gannet Silhouette */}
           <div className="relative">
@@ -130,15 +131,23 @@ export function MainLayout() {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto pb-12">
+      {/* Main content — bottom padding clears the fixed nav below (its own
+          height plus whatever safe-area it adds for a gesture bar) so the
+          last bit of page content is never hidden behind it */}
+      <main
+        className="flex-1 overflow-auto"
+        style={{ paddingBottom: 'calc(4.25rem + env(safe-area-inset-bottom))' }}
+      >
         <Outlet />
       </main>
 
-      {/* Bottom navigation — per-role tabs, max 6, driven by App_Role */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+      {/* Bottom navigation — per-role tabs, max 6, driven by App_Role.
+          safe-area-bottom keeps the tabs clear of a gesture-nav bar; each
+          tab targets a >=48px min-height touch target (Material Design's
+          recommended minimum) rather than shrink-wrapping to the icon. */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom">
         <div
-          className="grid max-w-lg mx-auto gap-1 px-2 py-1"
+          className="grid max-w-lg mx-auto gap-1 px-2 py-1.5"
           style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
         >
           {tabs.map((tab) => (
@@ -147,16 +156,16 @@ export function MainLayout() {
               to={tab.to}
               end={tab.end}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center py-1.5 px-1 rounded-lg text-white transition-all ${
+                `flex flex-col items-center justify-center min-h-[48px] py-2 px-1 rounded-lg text-white transition-all ${
                   isActive ? 'opacity-100' : 'opacity-70'
                 }`
               }
               style={{ backgroundColor: tab.color }}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 {tab.icon}
               </svg>
-              <span className="text-[9px] font-normal leading-tight mt-0.5">{tab.label}</span>
+              <span className="text-[10px] font-normal leading-tight mt-0.5">{tab.label}</span>
             </NavLink>
           ))}
         </div>
