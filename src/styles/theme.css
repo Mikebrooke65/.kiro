@@ -191,3 +191,30 @@
     line-height: 1.5;
   }
 }
+
+/*
+ * Safe-area handling (notch / status bar / gesture bar).
+ *
+ * env(safe-area-inset-*) only reports non-zero values when index.html's
+ * viewport meta tag includes viewport-fit=cover — see index.html. On a
+ * device with no notch/gesture-bar cutout (or on web) these all resolve to
+ * 0px, so applying them everywhere is a safe no-op rather than adding
+ * unwanted spacing.
+ *
+ * Fixed header/nav bars can't rely on padding on a parent, since they're
+ * position:fixed and sit outside normal document flow — each one needs the
+ * inset applied directly.
+ */
+.safe-area-top {
+  padding-top: max(env(safe-area-inset-top), 0px);
+}
+
+.safe-area-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+
+/* For spacers that need to reserve room below a fixed bottom-nav that itself
+   uses .safe-area-bottom (e.g. main content's bottom padding) */
+:root {
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+}
