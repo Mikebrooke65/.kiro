@@ -66,53 +66,96 @@ phone. Check `team_members` for other users in that team.
 5. ✅ Push permission granted
 6. ✅ FCM token received and stored
 7. ✅ Data loads (teams, games, messaging)
-8. ⚠️ **Push notification arrives — but silently.** Root-caused and fixed
-   (see below), **pending rebuild + reinstall verification on the Oppo.**
-9. ⬜ Check safe-area / notch behaviour (cosmetic)
-10. ⬜ Check touch targets feel right (cosmetic)
+8. ✅ **Push notification arrives with sound + vibration — confirmed live on
+   the Oppo, phone locked.** Root-caused and fixed this session (see below).
+9. ✅ Safe-area / notch handling added (`viewport-fit=cover` +
+   `.safe-area-top`/`.safe-area-bottom` in `theme.css`, applied to
+   `MainLayout.tsx`'s header and bottom nav) — **code done, not yet
+   re-verified live on the Oppo** (needs rebuild + reinstall)
+10. ✅ Bottom-nav touch targets enlarged to a `min-h-[48px]` tap area
+    (Material's recommended minimum), icons/labels bumped up — **code done,
+    not yet re-verified live on the Oppo** (needs rebuild + reinstall)
 
-### RESOLVED (2026-08-19, later session) — Push arrives but silent (no sound/vibrate)
+### RESOLVED (2026-08-19) — Push arrived but silent (no sound/vibrate)
 
-Confirmed end-to-end via Logcat with the Oppo's screen **locked** — the correct
-real-world test. (Earlier attempts in this same session were inconclusive
-because the app was still foregrounded or only backgrounded-with-screen-on;
-Android suppresses system-level notification display for a foregrounded app
-by design, regardless of app code, so that never tested the real pipeline.)
+Two-part fix, confirmed end-to-end via Logcat with the Oppo's screen
+**locked** — the correct real-world test. (Earlier attempts in this same
+session were inconclusive because the app was still foregrounded or only
+backgrounded-with-screen-on; Android suppresses system-level notification
+display for a foregrounded app by design, regardless of app code, so that
+never tested the real pipeline.)
 
-What Logcat showed with the phone actually locked:
-- `FirebaseInstanceIdReceiver` fired and `FirebaseMessaging` processed the
-  message — **delivery itself is working.**
-- Immediately alongside it: `FirebaseMessaging: Missing Default Notification
-  Channel metadata in AndroidManifest. Default value will be used.`
-- A notification **did** appear on the lock screen, but with no sound or
-  vibration — exactly Firebase's documented fallback behaviour: without a
-  declared default channel, it posts to its own auto-created "Miscellaneous"
-  channel at `IMPORTANCE_LOW`, which is silent by design.
+**Part 1 — no notification channel declared at all.** Logcat showed:
+`FirebaseMessaging: Missing Default Notification Channel metadata in
+AndroidManifest. Default value will be used.` Without a declared default
+channel, FCM posts to its own auto-created "Miscellaneous" channel at
+`IMPORTANCE_LOW`, which is silent by design — a notification appeared on the
+lock screen, but with no sound or vibration.
+- Fix: `MainActivity.java` creates a `"messages"` channel at
+  `IMPORTANCE_HIGH` in `onCreate()`; `AndroidManifest.xml` declares
+  `com.google.firebase.messaging.default_notification_channel_id` pointing
+  at it. Rebuilt + retested: the "Missing Default Notification Channel"
+  warning was gone, and a notification appeared with **sound working** —
+  but still no vibration.
 
-**Fix applied this session (not yet rebuilt/reinstalled on device):**
-- `android/app/src/main/java/com/clubfootball/app/MainActivity.java` — now
-  creates a `"messages"` notification channel at `IMPORTANCE_HIGH` (vibration
-  + lights on) in `onCreate()`, before any push can arrive.
-- `android/app/src/main/AndroidManifest.xml` — now declares
-  `com.google.firebase.messaging.default_notification_channel_id` = `"messages"`
-  so FCM uses that channel by default instead of its silent fallback.
+**Part 2 — vibration still silent even with the channel fixed.** Checked
+(and ruled out) the per-app channel vibration toggle in ColorOS notification
+settings (was on), and phone-wide vibration settings (ring/silent vibrate
+toggles — on, but those are call-specific, ColorOS has no separate
+notification-vibration master toggle on this device). Root cause: the
+`"messages"` channel only called `enableVibration(true)` without an explicit
+vibration pattern, relying on Android's implicit default pattern — which
+this device (ColorOS 12.1, Oppo A17/CPH2477) doesn't reliably supply.
+Android notification channels are **immutable once created**, so this
+couldn't be patched in place; the channel needed a new ID to pick up a
+proper definition.
+- Fix: bumped the channel ID to `"messages_v2"` in both files, and added an
+  explicit `channel.setVibrationPattern(new long[]{0, 250, 250, 250})`
+  rather than relying on the implicit default.
 
-**Next step:** `npx cap sync android`, rebuild, reinstall on the Oppo, retest
-with the phone **locked** (locked, not just backgrounded — that's the test
-that actually exercises system-level display) to confirm sound + vibration
-now happen.
+**Verified live, phone locked, 2026-08-19:** both sound and vibration now
+fire correctly. Item 8 above is fully done.
 
-**Separate, still-open gap (not touched this session):**
-`usePushNotifications.ts` only registers `registration`/`registrationError`
-listeners. There's no `pushNotificationReceived` or
-`pushNotificationActionPerformed` listener. So even after the fix above:
-- A push arriving while the app is in the foreground still shows nothing
-  in-app (would need an explicit in-app toast/local notification — Android
-  won't show a system banner for a foregrounded app either way).
-- Tapping a delivered notification won't deep-link to the relevant message
-  thread yet.
+### RESOLVED (2026-08-19, continued) — Foreground/tap handling, safe-area, touch targets
 
-Worth a follow-up item before calling messaging notifications fully "done".
+Closed out the remaining V1.1a checklist items in the same session, once
+sound + vibration were confirmed:
+
+- **Foreground + tap listeners added** to `usePushNotifications.ts`:
+  `pushNotificationReceived` now shows an in-app toast (via `sonner`,
+  `<Toaster />` mounted in `App.tsx`) with a "View" action when a push
+  arrives while the app is open (previously showed nothing at all, since
+  Android suppresses its own banner for a foregrounded app regardless of
+  code). `pushNotificationActionPerformed` now navigates to `/messaging`
+  when a delivered notification is tapped, via `router.navigate()` on the
+  `createBrowserRouter` instance exported from `src/routes/index.tsx` (works
+  outside React's tree, since the hook runs above `<RouterProvider>`). No
+  per-thread deep link — the app only has one Messaging screen today, so
+  every push routes there; a real per-thread link would need the
+  `send-message-push` Edge Function to start sending a `data` payload
+  (currently `notification`-only) and a per-thread route to exist, neither
+  of which do yet. Noted as a future enhancement, not a blocker.
+- **Safe-area (item 9)**: `index.html` viewport meta gained
+  `viewport-fit=cover`; `src/styles/theme.css` gained `.safe-area-top` /
+  `.safe-area-bottom` utilities (using `env(safe-area-inset-*)`, a no-op on
+  devices without a notch/gesture-bar cutout); applied to the header and
+  bottom nav in `src/layouts/MainLayout.tsx`. Turned out there was **no**
+  safe-area handling anywhere in the layout actually in use — an unused
+  legacy `src/app/components/MainLayout.tsx` referenced `safe-area-top`/
+  `safe-area-bottom` classes, but they were never defined in CSS and that
+  file isn't the one routed to.
+- **Touch targets (item 10)**: bottom-nav tabs bumped from a ~40px
+  shrink-wrapped tap area (16px icon + 9px label) to `min-h-[48px]`
+  (Material's recommended minimum), icons to 20px, labels to 10px. Main
+  content's bottom padding adjusted to match the taller nav plus its
+  safe-area inset.
+- `npm run build` verified clean after all of the above (no new
+  TypeScript/build errors).
+
+**Not yet re-verified live on the Oppo** — all four of these are
+code-complete but need `npx cap sync android`, a rebuild in Android Studio,
+and reinstall before they're confirmed on-device (native/layout changes
+aren't picked up by a JS-only reload).
 
 ### Known issue discovered: Messaging not admin-aware
 

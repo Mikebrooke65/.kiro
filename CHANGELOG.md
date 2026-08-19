@@ -2,6 +2,68 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-19] - V1.1a Closeout — Vibration Fix, Foreground/Tap Push Handling, Safe-Area & Touch Targets
+
+Closes out V1.1a. Continuation of the same-day push-notification work below:
+the sound fix landed first, this entry covers the vibration follow-up plus
+the three remaining checklist items (foreground/tap push handling, safe-area,
+touch targets).
+
+### Fixed
+- **Vibration still silent after the sound fix.** Root cause: the
+  `"messages"` channel only called `enableVibration(true)` with no explicit
+  pattern, relying on Android's implicit default — unreliable on this device
+  (ColorOS 12.1, Oppo A17/CPH2477). Notification channels are **immutable
+  once created**, so this couldn't be patched in place.
+  - `MainActivity.java` / `AndroidManifest.xml`: bumped the channel id to
+    `"messages_v2"` and added an explicit
+    `channel.setVibrationPattern(new long[]{0, 250, 250, 250})`.
+  - **Verified live, phone locked:** both sound and vibration now fire
+    correctly.
+
+### Added
+- **Foreground push handling** (`src/hooks/usePushNotifications.ts`): added
+  the missing `pushNotificationReceived` listener. A push arriving while the
+  app is open now surfaces as an in-app toast (via `sonner`, mounted in
+  `src/App.tsx`) with a "View" action, since Android suppresses its own
+  system banner for a foregrounded app by design and previously this case
+  produced nothing visible at all.
+- **Tap-to-open handling**: added the missing `pushNotificationActionPerformed`
+  listener. Tapping a delivered notification now navigates straight to
+  Messaging (via `router.navigate()` on the app's `createBrowserRouter`
+  instance, so it works from outside React's render tree). No per-thread deep
+  link yet — the app has a single Messaging screen, so every push routes
+  there regardless of content.
+- **Safe-area (notch/gesture-bar) handling**: `index.html`'s viewport meta
+  now includes `viewport-fit=cover` (required for `env(safe-area-inset-*)` to
+  report real values instead of 0), and `src/styles/theme.css` gained
+  `.safe-area-top` / `.safe-area-bottom` utility classes applied to the fixed
+  header and bottom nav in `src/layouts/MainLayout.tsx`. Previously **no
+  safe-area handling existed anywhere in the active layout** — the only trace
+  of it was in an unused legacy `src/app/components/MainLayout.tsx` that
+  referenced classes that were never defined in CSS.
+- **Bottom nav touch targets**: each tab now has a `min-h-[48px]` target
+  (Material Design's recommended minimum) instead of shrink-wrapping to a
+  16px icon + 9px label — icons bumped to 20px, labels to 10px, tab padding
+  increased. Main content's bottom padding adjusted to match the taller nav
+  plus its safe-area inset so page content is never hidden behind it.
+
+### Verified
+- `npm run build` (`vite build`) completes clean with the above changes —
+  no new TypeScript/build errors.
+- Not yet re-verified live on the Oppo after this round — needs
+  `npx cap sync android`, rebuild in Android Studio, and reinstall before
+  the foreground toast, tap-to-open, safe-area and touch-target changes are
+  confirmed on-device (same as any native/JS change, a hot reload alone
+  won't pick these up).
+
+### Not yet done
+- No per-thread deep link — tapping any message notification opens Messaging
+  generally, not the specific thread. Would need the `send-message-push` Edge
+  Function to attach a `data` payload (currently sends `notification` only)
+  and a per-thread route in the app, neither of which exist today. Not
+  blocking V1.1a; noted as a future enhancement.
+
 ## [2026-08-19] - V1.1a Android Push Notifications — Silent Notification Root-Caused & Fixed
 
 Continuation of on-device Android testing (Snapdragon laptop + Oppo CPH2477,
