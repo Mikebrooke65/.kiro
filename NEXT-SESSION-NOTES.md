@@ -88,6 +88,44 @@ Location: `src/contexts/MessagingContext.tsx` lines ~70–90.
 
 ---
 
+## 🔴 V1.M Messaging — admin routing bugs (captured 2026-08-19)
+
+Two related messaging problems surfaced during V1.1a testing. Capturing as a
+defined V1 work item — "thought this was sorted, it isn't."
+
+**Bug 1 — a message sent TO admins is not received by an admin.**
+- Repro: Mikey (manager) used the messaging page's "send a message to Admins"
+  option and sent a message. Mike (`mikerbrooke@outlook.com`, an admin) never
+  received it.
+- Expected: a message addressed to the Admins group reaches admin users. Sending
+  to admins is a needed capability (a manager/caregiver escalating to the club),
+  so this is a bug, not out-of-scope.
+
+**Bug 2 — messaging is not admin-aware (from the V1.1a session).**
+- `MessagingContext.tsx` (~lines 70–90) fetches threads by the logged-in user's
+  `team_members` rows only — even for admins. So an admin can't see or message
+  teams they're not explicitly a member of.
+
+**Likely common root cause:** recipient/thread resolution keys entirely off
+`team_members` and never special-cases the admin role or an "admins" audience.
+Bug 1 (deliver to admins) and Bug 2 (admins see across teams) may be the same
+change or closely related.
+
+**Where to look:** `src/contexts/MessagingContext.tsx` (thread scoping), plus the
+compose / recipient-targeting path behind the "send to admins" option (into the
+messaging-api send). Confirm how an "Admins" recipient is modelled and why
+delivery doesn't resolve to admin users.
+
+**Decision still open:** should an admin see/message across ALL teams by design?
+That answer shapes Bug 2's fix. Bug 1 (deliver-to-admins) is a straight bug either
+way.
+
+**Size:** needs investigation before sizing. **Not a V1.1a blocker** (V1.1a is the
+native build + push, now proven) — this is a messaging-feature correctness item
+for V1.
+
+---
+
 ## TODO — Club logo in club_settings (V1.4 follow-up)
 
 `club_settings` was seeded on 2026-08-18 with club name (`West Coast Rangers
@@ -231,8 +269,9 @@ One-line status per item. Detail is in the sections further down.
 | Item | Status | What's left |
 |------|--------|-------------|
 | V1.0 Product domain | ✅ DONE | — |
-| V1.1 Capacitor + push | 🟢 Nearly done | Pipeline proven E2E — token registered on real device. Just need to confirm push delivery |
-| V1.1a Android testing | 🟢 90% done | App runs on Oppo, login/nav/data all work, FCM token stored. **Only push delivery test remains** |
+| V1.1 Capacitor + push | 🟢 Nearly done | Pipeline proven E2E — token registered on real device. Push-delivery ping pending |
+| V1.1a Android testing | 🟢 Push test unblocked | App runs on Oppo, login/nav/data work, FCM token stored. Mikey added as U9 Lithium manager to enable the two-user push test — confirm the notification arrives, then DONE |
+| V1.M Messaging admin routing | 🔴 Bug | "Send to Admins" not delivered to an admin; admin messaging is team-scoped. See the V1.M section |
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
