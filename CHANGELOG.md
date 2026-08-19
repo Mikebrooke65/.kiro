@@ -2,6 +2,49 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-19] - V1.1a Android Push Notifications — Silent Notification Root-Caused & Fixed
+
+Continuation of on-device Android testing (Snapdragon laptop + Oppo CPH2477,
+via Android Studio). Push delivery itself was already working — the missing
+piece turned out to be sound/vibration, not delivery.
+
+### Fixed
+- **Push notifications arrived silently — no sound, no vibration, no heads-up
+  banner.** Root cause confirmed via Logcat: `AndroidManifest.xml` had no
+  `com.google.firebase.messaging.default_notification_channel_id` meta-data,
+  so FCM fell back to its own auto-created "Miscellaneous" channel at
+  `IMPORTANCE_LOW`, which delivers quietly into the notification shade with no
+  sound/vibration/heads-up. Confirmed live: Logcat showed `FirebaseMessaging:
+  Missing Default Notification Channel metadata in AndroidManifest. Default
+  value will be used.` at the exact moment a locked-screen test push arrived,
+  and the phone showed a silent lock-screen popup with no sound — matching the
+  fallback-channel theory exactly.
+- **`android/app/src/main/java/com/clubfootball/app/MainActivity.java`**: now
+  creates a `"messages"` notification channel at `IMPORTANCE_HIGH` (vibration +
+  lights enabled) in `onCreate()`, before any push can arrive.
+- **`android/app/src/main/AndroidManifest.xml`**: added the
+  `com.google.firebase.messaging.default_notification_channel_id` meta-data
+  tag, pointing FCM at the `"messages"` channel above.
+
+### Verified
+- Delivery itself (separate from the sound/vibration bug above) was confirmed
+  live via Logcat with the phone **locked** (the correct test — app
+  foregrounded or even just backgrounded-but-visible doesn't exercise real
+  system-level display): `FirebaseInstanceIdReceiver` fired and
+  `FirebaseMessaging` processed the message, and a silent notification did
+  appear on the lock screen.
+
+### Not yet done
+- **Rebuild + reinstall not yet verified on device** — this fix needs
+  `npx cap sync android` and a fresh install on the Oppo before it's confirmed
+  end-to-end. Native manifest/Java changes aren't picked up by a JS-only reload.
+- **Foreground/tap handling still missing** — `usePushNotifications.ts` only
+  listens for `registration`/`registrationError`. There's no
+  `pushNotificationReceived` listener (so a push arriving while the app is open
+  does nothing visible) and no `pushNotificationActionPerformed` listener (so
+  tapping a notification doesn't deep-link to the relevant thread). Separate
+  from the silent-notification fix above; not yet scheduled.
+
 ## [2026-08-18] - V1.5 Role-Aware Navigation
 
 ### Changed
