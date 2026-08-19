@@ -42,10 +42,15 @@
           at IMPORTANCE_HIGH with sound/vibration. Without this meta-data tag,
           FCM falls back to its own auto-created channel at IMPORTANCE_LOW,
           which delivers silently.
+
+          "messages_v2" (bumped 2026-08-19, was "messages") — notification
+          channels are immutable once created, so the old channel's missing
+          explicit vibration pattern couldn't be fixed in place. See
+          MainActivity.java for the full explanation.
         -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="messages" />
+            android:value="messages_v2" />
     </application>
 
     <!-- Permissions -->
