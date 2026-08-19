@@ -1,52 +1,90 @@
 # Next Session Notes
-## Current State — 18 August 2026
+## Current State — 19 August 2026
 
 ---
 
-## 🟡 V1.1a Progress — Android Device Testing (updated 2026-08-18, Kiro Web session)
+## 🟢 V1.1a Progress — Android Device Testing (updated 2026-08-19, Kiro Web session)
 
 **Working on the Snapdragon laptop (the "other laptop") via Kiro Web.**
+**The app is RUNNING on the Oppo phone. WebView question answered: YES it works.**
 
-### ✅ Completed
-- Node.js v24 LTS (ARM64 Windows installer) — installed, awaiting reboot for PATH
-- Git for Windows (64-bit) — installed, awaiting reboot for PATH
-- Android Studio Quail 3 (2026.1.3 Patch 1) — installed
-- Android SDK Platform-Tools — installed
-- Android 15.0 (API 35 "VanillaIceCream") SDK Platform — installed
-- Pixel 9 virtual device selected (1080x2424, API 35, Google Play)
-- Oppo phone plugged in via USB (charging)
+### ✅ Completed (all done 2026-08-19)
+- Node.js v24.19.0 — verified working
+- Git for Windows — verified working
+- Android Studio Quail — installed, Gradle sync complete
+- Oppo CPH2477 — Developer Mode enabled, USB Debugging on, detected by Studio
+- Repo cloned, `npm install` done, `.env.development` copied, built, synced
+- **App runs on device** — login works, navigation works, UI renders correctly
+- **Push notification permission** — auto-granted (Android 13+, fresh USB install)
+- **FCM token received** — `cwfMAUmgQVqiTktxNjRDqd:APA91bF...`
+- **Device token stored in Supabase** — confirmed in Logcat: "Device token registered for push notifications"
+- **Data loads correctly** — teams, games, messaging threads (4 active) all fetch
 
-### ⚠️ Emulator won't work on this machine
-- The Android Emulator hypervisor driver failed to install (expected — it's
-  Intel-only, this is an ARM/Snapdragon chip)
-- x86_64 system images need translation on ARM = slow and unreliable
-- **Decision: skip the emulator, use the real Oppo phone via USB debugging**
-  (this is actually better for V1.1a anyway — tests push notifications for real)
+### ⚠️ Gotchas encountered this session
+- **Blank white screen on first run** — caused by `npm run build` using production
+  mode which reads `.env.production` not `.env.development`. Fix: `copy .env.development .env`
+  then rebuild. **Always copy as `.env` too** (or use `.env.production` for the
+  Capacitor build).
+- **Don't upgrade AGP or Gradle** when prompted by Android Studio — dismiss those
+  popups. The project works as-is.
+- **Oppo Build Number** is under Settings → About Device → (look inside for
+  Build Number, may be one level deeper under Version/Version Info).
+- Oppo build identifier: `CPH2477_11_A_5.5`
 
-### 🔲 Next steps after reboot
-1. Open PowerShell, verify: `node -v` and `git --version`
-2. Enable Developer Mode on the Oppo:
-   - Settings → About Phone → tap "Build Number" 7 times
-   - Settings → Additional Settings → Developer Options → enable "USB Debugging"
-   - Accept the "Allow USB debugging from this computer?" prompt on the phone
-3. Clone repo: `git clone https://github.com/Mikebrooke65/WCR-Football-App.git`
-4. `cd WCR-Football-App && npm install`
-5. Copy `.env.development` from OneDrive backup:
-   `C:\Users\miker\OneDrive\Project Secrets\WCR-Football.env.development`
-   → rename to `.env.development` in the repo root
-6. `npm run build`
-7. `npx cap sync android`
-8. `npx cap open android` (opens project in Android Studio)
-9. In Android Studio, select the Oppo phone (should appear in device list) → Run
-10. Verify: app loads, login works, push permission prompt appears, device_tokens
-    row lands in Supabase, send a test message → push arrives
+### 🔲 Next steps — PUSH NOTIFICATION END-TO-END TEST
 
-### Known traps
-- If `npm install` throws `TAR_ENTRY_ERROR` = low disk. Check disk space first.
-- If the phone doesn't appear in Android Studio, check USB cable supports data
-  (not charge-only) and that USB Debugging is enabled.
-- After build+sync, if behaviour looks wrong in the app, re-run steps 6–7 before
-  assuming a bug (stale bundle).
+The app is running and the token is registered, but we haven't yet confirmed a
+push notification actually **arrives** on the Oppo. The issue is:
+
+**Problem: Can't test push between two users because they're on different teams.**
+
+- Mike (admin, `mikerbrooke@outlook.com`, on Oppo) is in **U9 Lithium** (`16f292bb-02f2-4da3-9e76-4a4cd5b3168f`)
+- Mikey (test, `mandcbrooke1@gmail.com`, on other phone) is in **riverhead tests** (`d7b3943a-...`)
+- The messaging context only fetches threads for teams the user is a `team_members`
+  member of — even for admins. So they can't see each other's threads or message
+  each other.
+
+**Fix to unblock the test (pick one):**
+
+Option A — Add Mikey to U9 Lithium (quickest, run in Supabase SQL Editor):
+```sql
+INSERT INTO team_members (user_id, team_id, role)
+VALUES ('72d19061-63fd-4c6d-8770-a8c8393cd693', '16f292bb-02f2-4da3-9e76-4a4cd5b3168f', 'player')
+ON CONFLICT DO NOTHING;
+```
+Then refresh both apps — they should see each other in messaging. Send from
+Mikey → Mike to test push delivery to the Oppo.
+
+Option B — Log in as another user who is already in U9 Lithium on the other
+phone. Check `team_members` for other users in that team.
+
+**After push is confirmed working, the V1.1a verification checklist is:**
+1. ✅ App installs on device
+2. ✅ WebView renders correctly
+3. ✅ Login works
+4. ✅ Navigation works
+5. ✅ Push permission granted
+6. ✅ FCM token received and stored
+7. ✅ Data loads (teams, games, messaging)
+8. ⬜ **Push notification actually arrives on device** ← THIS IS NEXT
+9. ⬜ Check safe-area / notch behaviour (cosmetic)
+10. ⬜ Check touch targets feel right (cosmetic)
+
+### Known issue discovered: Messaging not admin-aware
+
+The `MessagingContext.tsx` fetches threads by querying `team_members` for the
+logged-in user's teams — even admins only see threads for teams they're explicitly
+a member of. This means an admin can't message users on teams they're not a member
+of. Not blocking V1.1a, but noted as a bug/limitation for the messaging feature.
+
+Location: `src/contexts/MessagingContext.tsx` lines ~70–90.
+
+### Environment on the Snapdragon laptop
+- Repo location: `C:\Users\miker\WCR-Football-App`
+- Branch: `prototype`
+- Disk free: 341 GB (plenty)
+- `.env` AND `.env.development` both present in repo root
+- Android Studio has the project open, Oppo CPH2477 connected via USB
 
 ---
 
@@ -193,8 +231,8 @@ One-line status per item. Detail is in the sections further down.
 | Item | Status | What's left |
 |------|--------|-------------|
 | V1.0 Product domain | ✅ DONE | — |
-| V1.1 Capacitor + push | 🟡 Hardware-gated | Pipeline proven to `devicesFound: 0`. Needs a real device to finish |
-| V1.1a Android testing | ⬜ Not started | Android Studio on the other laptop. **No Mac needed — cheapest way to de-risk the WebView question** |
+| V1.1 Capacitor + push | 🟢 Nearly done | Pipeline proven E2E — token registered on real device. Just need to confirm push delivery |
+| V1.1a Android testing | 🟢 90% done | App runs on Oppo, login/nav/data all work, FCM token stored. **Only push delivery test remains** |
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
