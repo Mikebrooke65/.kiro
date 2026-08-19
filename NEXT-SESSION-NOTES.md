@@ -106,15 +106,35 @@ personally** or **to the Admin group**. So the team-scoped thread fetch in
 `MessagingContext.tsx` is intended behaviour and should stay. The only defect is
 Admin-group delivery.
 
-**Where to look:** the recipient/audience path behind the "send to Admins" option
-— how an "Admins" recipient is modelled on send, and why delivery doesn't fan out
-to admin users (or create/route a thread they receive). Likely in the messaging
-compose + send path and how admin recipients are resolved, **not** in the
-team-scoped thread query (which is correct).
+**CONFIRMED ROOT CAUSE (2026-08-19) — it's a schema gap, not a delivery bug.**
+Live error on send-to-Club-Admin: `invalid input syntax for type uuid: ""`.
+- `messagingApi.createMessage` inserts `team_id: payload.team_id`. A "Club Admin"
+  message has no team, so the compose screen passes `team_id: ""` → empty string
+  into a uuid column → the error. (`src/lib/messaging-api.ts`, `createMessage`.)
+- The deeper problem: `messages.team_id` is `uuid **NOT NULL** references
+  teams(id)` (migration 033), and **all** messaging RLS is team-scoped
+  (`team_members.team_id = messages.team_id`). So a teamless message can't be
+  stored *or* read as things stand. Coercing `""` → `null` does NOT fix it (NOT
+  NULL rejects it; and RLS would hide it anyway).
+- `resolveRecipients('club_admin')` is fine — it correctly returns admin user ids.
+  The message row just can't exist without a team. So **`club_admin` (and any
+  cross-team `individual`) targeting is unsupported by the data model** even
+  though the targeting types exist in code.
 
-**Size:** needs a short investigation before sizing. **Not a V1.1a blocker**
-(V1.1a is the native build + push, now proven) — this is a messaging-feature
-correctness item for V1.
+**Fix shape (a small build, not a one-liner):**
+1. Migration: make `messages.team_id` **nullable** (a club-admin / cross-team
+   message has no team).
+2. RLS: add read/write policies for teamless messages keyed off
+   `message_recipients.recipient_user_ids` (already stores the resolved ids) plus
+   the sender — so an admin-targeted message is readable by its recipients without
+   a team, without loosening the existing team-scoped rules.
+3. `createMessage`: pass `team_id: payload.team_id || null`.
+4. Confirm the `send-message-push` trigger/Edge Function handles a teamless
+   message (it currently keys off team context — check migration 042 path).
+5. Re-test send-to-Club-Admin end to end, including the push.
+
+**Not a V1.1a blocker.** V1.1a's push test does **not** need club-admin — use a
+normal U9 Lithium team message (Mikey is now a manager there). See below.
 
 ---
 
