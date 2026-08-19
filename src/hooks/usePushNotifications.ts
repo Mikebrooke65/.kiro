@@ -2,9 +2,11 @@ import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
+import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 import { deviceTokensApi } from '../lib/device-tokens-api';
 import { supabase } from '../lib/supabase';
+import { router } from '../routes';
 
 /**
  * Registers this device for push notifications (via Firebase Cloud Messaging)
@@ -61,6 +63,8 @@ export function usePushNotifications() {
 
     let registrationListener: { remove: () => void } | undefined;
     let errorListener: { remove: () => void } | undefined;
+    let receivedListener: { remove: () => void } | undefined;
+    let actionListener: { remove: () => void } | undefined;
 
     const setup = async () => {
       const permission = await PushNotifications.checkPermissions();
@@ -91,6 +95,36 @@ export function usePushNotifications() {
         console.error('Push notification registration error:', err);
       });
 
+      // Fires only while the app is in the foreground. Android never shows
+      // its own system banner in that state (by design), so without this
+      // listener a message arriving while the app is open produces nothing
+      // visible at all. Every push today is a team message and this app has
+      // a single Messaging screen (no per-thread deep link yet), so route
+      // straight there regardless of content.
+      receivedListener = await PushNotifications.addListener(
+        'pushNotificationReceived',
+        (notification) => {
+          const title = notification.title || 'New message';
+          const body = notification.body || undefined;
+          toast(title, {
+            description: body,
+            action: {
+              label: 'View',
+              onClick: () => router.navigate('/messaging'),
+            },
+          });
+        }
+      );
+
+      // Fires when the user taps a notification that the OS delivered while
+      // the app was backgrounded or not running. Deep-links to Messaging.
+      actionListener = await PushNotifications.addListener(
+        'pushNotificationActionPerformed',
+        () => {
+          router.navigate('/messaging');
+        }
+      );
+
       await PushNotifications.register();
     };
 
@@ -99,6 +133,8 @@ export function usePushNotifications() {
     return () => {
       registrationListener?.remove();
       errorListener?.remove();
+      receivedListener?.remove();
+      actionListener?.remove();
     };
   }, [isAuthenticated, user]);
 }
