@@ -33,6 +33,19 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!--
+          Tells FCM which channel to post to when a message doesn't specify
+          its own android.notification.channel_id (true for every push sent
+          by send-message-push today). Must match the channel id created in
+          MainActivity.onCreate() — that's what actually creates the channel
+          at IMPORTANCE_HIGH with sound/vibration. Without this meta-data tag,
+          FCM falls back to its own auto-created channel at IMPORTANCE_LOW,
+          which delivers silently.
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages" />
     </application>
 
     <!-- Permissions -->
