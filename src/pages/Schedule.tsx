@@ -73,19 +73,18 @@ export function Schedule() {
       const data = await eventsApi.getEvents();
       setEvents(data);
 
-      // Load RSVPs for all events in a single query (was N parallel calls,
-      // one per event, each independently hitting auth.getUser() — see the
-      // comment on getUserRsvps in events-api.ts for why that caused the
-      // "Lock was stolen by another request" error and slow page loads).
-      const rsvpMap = await eventsApi.getUserRsvps(data.map(e => e.id));
+      // These three don't depend on each other's results — only on `data`
+      // — so run them together instead of one-after-another. Each is a
+      // separate network round trip; awaiting them in sequence was adding
+      // their latencies up instead of overlapping them, which is most of
+      // why the page took several seconds to appear.
+      const [rsvpMap, counts, totals] = await Promise.all([
+        eventsApi.getUserRsvps(data.map(e => e.id)),
+        eventsApi.getAttendeeCounts(data.map(e => e.id)),
+        eventsApi.getTotalMemberCounts(data),
+      ]);
       setRsvps(rsvpMap);
-
-      // Load attendee counts
-      const counts = await eventsApi.getAttendeeCounts(data.map(e => e.id));
       setAttendeeCounts(counts);
-
-      // Load total eligible member counts
-      const totals = await eventsApi.getTotalMemberCounts(data);
       setTotalMemberCounts(totals);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load events');

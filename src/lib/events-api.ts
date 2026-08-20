@@ -221,18 +221,25 @@ export class EventsApi extends ApiClient {
     const empty: EventAttendeeDetails = { going: [], maybe: [], not_going: [], no_response: [] };
     if (!event.target_teams || event.target_teams.length === 0) return empty;
 
-    const { data: members, error: membersError } = await this.supabase
-      .from('team_members')
-      .select('user_id, user:users(id, first_name, last_name)')
-      .in('team_id', event.target_teams);
+    // Roster and RSVPs don't depend on each other — fetch them together
+    // instead of one after another. This was the other half of the "why is
+    // this modal slow to open" delay, same cause as the Schedule page load
+    // above: independent queries were being awaited in sequence.
+    const [
+      { data: members, error: membersError },
+      { data: rsvps, error: rsvpsError },
+    ] = await Promise.all([
+      this.supabase
+        .from('team_members')
+        .select('user_id, user:users(id, first_name, last_name)')
+        .in('team_id', event.target_teams),
+      this.supabase
+        .from('event_rsvps')
+        .select('user_id, status, decline_reason')
+        .eq('event_id', event.id),
+    ]);
 
     if (membersError || !members) return empty;
-
-    const { data: rsvps, error: rsvpsError } = await this.supabase
-      .from('event_rsvps')
-      .select('user_id, status, decline_reason')
-      .eq('event_id', event.id);
-
     if (rsvpsError) return empty;
 
     const rsvpByUser = new Map<string, { status: string; decline_reason: string | null }>();

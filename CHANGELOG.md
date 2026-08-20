@@ -2,6 +2,31 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-20] - Schedule/RSVP Fixes Round 3 — page-load speed
+
+Live-tested Round 2: the lock-contention fix and Create Event both check
+out (Create Event does work — a newly created event just sorts into the
+upcoming list by date rather than always landing first, which is correct
+now that past/upcoming are split). The attendee-list-modal report turned
+out to be specific to the two original seed events, not a code bug — new
+events show attendance correctly, so it's a data gap on those two old
+events rather than something to fix in `getEventAttendeeDetails`. One real
+item left: Schedule still took ~5 seconds to appear.
+
+### Fixed
+- **Schedule page took several seconds to load.** `loadEvents()` in
+  `src/pages/Schedule.tsx` (and `DesktopSchedule.tsx`) awaited
+  `getUserRsvps()`, `getAttendeeCounts()`, and `getTotalMemberCounts()` one
+  after another — three separate network round trips stacked in sequence,
+  even though none of them depend on each other's result (all three only
+  need the event list, which is already fetched by that point). They now
+  run together with `Promise.all`, so the wait is however long the
+  slowest of the three takes, not the sum of all three.
+- **Attendee list modal was slow to open.** Same cause, smaller scale:
+  `getEventAttendeeDetails()` awaited the `team_members` roster query and
+  the `event_rsvps` query one after another even though neither depends on
+  the other. Now run together with `Promise.all`.
+
 ## [2026-08-20] - Schedule/RSVP Fixes Round 2 — lock contention, attendee list dropping real RSVPs
 
 Two bugs found live-testing the Round 1 Schedule/RSVP fixes below.
