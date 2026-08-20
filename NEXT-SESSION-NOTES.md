@@ -382,15 +382,15 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Where Things Stand (updated 2026-08-19)
+## V1 — Where Things Stand (updated 2026-08-20)
 
 One-line status per item. Detail is in the sections further down.
 
 | Item | Status | What's left |
 |------|--------|-------------|
 | V1.0 Product domain | ✅ DONE | — |
-| V1.1 Capacitor + push | 🟢 Nearly done | Pipeline proven E2E — token registered on real device. Push-delivery ping pending |
-| V1.1a Android testing | 🟢 Push test unblocked | App runs on Oppo, login/nav/data work, FCM token stored. Mikey added as U9 Lithium manager to enable the two-user push test — confirm the notification arrives, then DONE |
+| V1.1 Capacitor + push | ✅ DONE | Confirmed live on-device 2026-08-19/20: sound, vibration, foreground toast, tap-to-navigate all working |
+| V1.1a Android testing | ✅ DONE | All 10 checklist items confirmed live on the Oppo (CPH2477, Android 12) |
 | V1.M Messaging — send to Admins | 🔴 Bug | "Send to Admins" not delivered to an admin. (Team-scoped threads are correct by design — not a bug.) See the V1.M section |
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
@@ -398,23 +398,33 @@ One-line status per item. Detail is in the sections further down.
 | V1.4 Welcome + Team page | 🟠 Built, **1 blocker** | **Add-junior RLS bug = next-session Task 1**; then e2e smoke test; logo; 32 optional tests. Modal layout fixed 2026-08-19 |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
-| V1.7 RSVP / availability | ⬜ Not started | **Biggest competitive gap.** Schema exists, UI/flow to build. Decision 5 open |
+| V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP (design discussion queued, Decision 5 open) |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
 | V1.9 Store + privacy policy | 🟡 Privacy draft in progress | Store accounts + assets need V1.1a/b. Privacy policy drafted (`docs/privacy-policy-draft.md`) — open flags to close |
 | V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample (Decision 6) |
 
 **Substantive build work left for V1**: the V1.4 add-junior RLS fix (Task 1),
-V1.6, V1.7, V1.8, and the V1.R retention build. Everything else is hardware,
-accounts, or decisions. **V1.7 RSVP/availability is the biggest remaining feature
-and top competitive gap.**
+V1.6, the V1.7 caregiver multi-child RSVP design + build, V1.8, and the V1.R
+retention build. Everything else is hardware, accounts, or decisions.
+**V1.1 and V1.1a are now fully closed out; V1.7 RSVP is mostly built with one
+deferred design question (caregiver multi-child) left before it's complete.**
 
-### PLAN FOR NEXT SESSION (updated 2026-08-19 — starts when the next ~2000 credits land)
+### PLAN FOR NEXT SESSION (updated 2026-08-20)
 
 **Progress since this plan was written:** V1.4 + V1.5 smoke test is part-done.
 Confirmed working: per-role nav, Team page/roster, and the Add Junior **modal
 layout** (fixed, commit `8d699de`). The add-a-junior flow is **blocked by an RLS
-bug** — that fix is now the defined first task below.
+bug** — that fix is still the defined first task below (not yet started).
+
+**Also since this plan was written (2026-08-19/20): V1.1 + V1.1a are fully
+DONE** (confirmed live on the Oppo — sound, vibration, foreground toast,
+tap-to-navigate, safe-area, touch targets). **V1.7 RSVP is now mostly
+built** (RSVP UI, optimistic updates, past/upcoming split, attendee list,
+Create Event validation) — see the V1.7 section above. The "THEN — start
+V1.1a" and "V1.7 ... Resolve Decision 5 first" bullets below are stale;
+Task 1 (add-a-junior RLS) is still the next real unstarted task, followed
+by the caregiver multi-child RSVP design discussion.
 
 **TASK 1 (DEFINED) — Fix add-a-junior RLS failure. START HERE.**
 
@@ -1257,21 +1267,44 @@ page) and orient the person:
 
 ---
 
-### V1.7 RSVP / Availability — NOT STARTED
+### V1.7 RSVP / Availability — MOSTLY BUILT (corrected 2026-08-20 — this
+section was stale; the RSVP UI already existed in code and was undocumented)
 
 **Why it matters**: this is Heja's core feature. "Is my kid at training
 this week?" Every parent expects it. Without it the app isn't a credible
 Heja replacement.
 
-**Scope**:
-- Availability response (going / not going / maybe) on schedule events
-- RSVP status visible to coaches/managers per event
-- RSVP reminder push notifications (needs V1.1 proven on hardware)
+**What's actually there (Schedule page, `src/pages/Schedule.tsx` +
+`src/lib/events-api.ts`)**:
+- Going / Maybe / Can't Go RSVP buttons on every event card, with a
+  decline-reason picker for Can't Go.
+- "X/Y attending" counter, and (as of 2026-08-20) tapping it opens a modal
+  listing everyone by status, sourced from the event's target-team roster.
+- Optimistic UI updates (2026-08-20) — RSVP taps reflect instantly instead
+  of the multi-second lag reported this session.
+- Past/upcoming split (2026-08-20) — past events grey out, RSVP buttons
+  replaced with "Event has passed — RSVP closed"; coach/manager/admin can
+  still Edit a past event (e.g. mark cancelled, fix a moved date).
+- Create Event validation now names the specific missing field(s) instead
+  of failing silently (2026-08-20).
 
-**Note**: `event_rsvps` table already exists (migration 023) with
-`going / not_going / maybe / no_response` and a unique constraint per
-event+user. Schema is in place — this is a UI/flow build, not a data
-model design.
+**Still open / not built**:
+- **RSVP reminder push notifications** (needs V1.1 proven on hardware —
+  V1.1 is now done, so this is unblocked whenever it's prioritized).
+- **Caregiver multi-child RSVP.** `event_rsvps` is one row per
+  `(event_id, user_id)` — a caregiver with two children on the same team
+  can't currently RSVP separately for each child. Needs a design decision
+  before schema work: e.g. add a nullable `child_id` column to
+  `event_rsvps` (null = responding for self/one child as today, set =
+  responding on behalf of a specific child), vs. giving each child their
+  own lightweight RSVP-eligible identity. Also ties into eligibility more
+  broadly — RSVP should cover players, managers, and coaches of a team,
+  with caregivers responding on behalf of their child(ren). **This
+  discussion is queued as the next thing to work through with Mike before
+  touching the schema.**
+- Confirm RSVP eligibility (player/manager/coach roles) is actually
+  correctly scoped once the caregiver design is settled — not verified
+  either way yet.
 
 **Open**: does this apply to Club Tournament teams too, or only club
 teams? (Open Decision 5)

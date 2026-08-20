@@ -2,6 +2,58 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-20] - Schedule/RSVP Fixes (validation, performance, past/upcoming, attendee list)
+
+Six issues reported on the Schedule/RSVP page after V1.1a closeout. This
+entry covers the four tackled first per the agreed fix order; caregiver
+multi-child RSVP is a deferred schema/design discussion, not yet built —
+see NEXT-SESSION-NOTES.md.
+
+### Fixed
+- **Create Event validation gave no indication of what was missing.**
+  `handleCreateEvent` in `src/pages/Schedule.tsx` now builds a specific set
+  of missing fields and shows a red banner naming them (e.g. "Please
+  complete: Date, Venue"), plus red-border highlighting on each invalid
+  field. The banner previously rendered at the page level, behind the
+  modal's `z-[60]` overlay — from the user's perspective, hitting Create on
+  an incomplete form did nothing at all. It's now inside the modal itself.
+- **RSVP tap had a multi-second delay before reflecting the change.**
+  `handleRsvp` and `handleDeclineConfirm` now update local state
+  immediately (optimistic update), then reconcile with the server response
+  or roll back on error. `eventsApi.setRsvp` (`src/lib/events-api.ts`) was
+  also collapsed from a SELECT-then-INSERT/UPDATE (two network round trips
+  per tap) to a single `.upsert()` on the `(event_id, user_id)` unique
+  constraint from migration 023. Combined, RSVP taps and decline-reason
+  confirms should now feel instant.
+
+### Added
+- **Past events grey out and lock RSVP.** Schedule now splits events into
+  Upcoming (ascending date) and Past (descending date, own "Past Events"
+  section, greyed card + "Event has passed — RSVP closed" in place of the
+  buttons). Coach/manager/admin can still hit Edit on a past event (e.g. to
+  mark it cancelled or correct a date that was actually moved) — only the
+  Send Reminder button and RSVP buttons are hidden for past events.
+- **Attendee list view.** Tapping the "X/Y attending" line on any event now
+  opens a modal listing everyone by status (Going / Maybe / Can't Go with
+  their decline reason / No Response), sourced from the event's target
+  team roster so "no response" is derivable, not just silence. New
+  `eventsApi.getEventAttendeeDetails()` in `src/lib/events-api.ts`.
+
+### Not yet fixed
+- **New events sort to the bottom instead of the top.** Turned out to
+  already be correct once past/upcoming were split — upcoming events sort
+  ascending by date, so a newly created *future* event lands in its
+  correct chronological slot, not necessarily first. If this still looks
+  wrong after this update, it's worth a closer look at whether the
+  complaint was really about past events cluttering the list (now fixed
+  separately) rather than sort order itself.
+- **Caregiver multi-child RSVP.** `event_rsvps` has one row per
+  `(event_id, user_id)` — no per-child dimension. A caregiver with two kids
+  on the same team currently can't RSVP separately for each. This needs a
+  design decision (e.g. a `child_id` column, or treating each child as
+  having their own RSVP-eligible identity) before any schema change —
+  intentionally deferred, see NEXT-SESSION-NOTES.md.
+
 ## [2026-08-20] - V1.1a Fully Closed Out — Live Device Verification
 
 No code changes — this entry verifies the [2026-08-19] V1.1a Closeout entry

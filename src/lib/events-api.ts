@@ -1,6 +1,20 @@
 import { ApiClient, ApiError } from './api-client';
 import type { Event, EventRsvp, Team } from '../types/database';
 
+export interface EventAttendeeDetail {
+  user_id: string;
+  name: string;
+  status: 'going' | 'not_going' | 'maybe' | 'no_response';
+  decline_reason?: 'late' | 'sick' | 'injured' | 'holiday' | 'other' | null;
+}
+
+export interface EventAttendeeDetails {
+  going: EventAttendeeDetail[];
+  maybe: EventAttendeeDetail[];
+  not_going: EventAttendeeDetail[];
+  no_response: EventAttendeeDetail[];
+}
+
 export class EventsApi extends ApiClient {
   // Get events visible to current user
   async getEvents(): Promise<Event[]> {
@@ -64,7 +78,16 @@ export class EventsApi extends ApiClient {
     return data as EventRsvp;
   }
 
-  // Set user's RSVP for an event
+  // Set user's RSVP for an event.
+  //
+  // Single upsert on the (event_id, user_id) unique constraint (migration 023)
+  // instead of a SELECT-to-check-existence followed by an INSERT-or-UPDATE —
+  // that used to be two sequential network round trips for every tap of
+  // Going/Maybe/Can't Go, which is most of why RSVP felt slow to respond.
+  // Trade-off: responded_at now reflects the *most recent* response instead
+  // of only the first one. That's fine for what it's used for (knowing who
+  // has vs. hasn't responded at all) and not worth a second round trip to
+  // preserve.
   async setRsvp(
     eventId: string,
     status: 'going' | 'not_going' | 'maybe' | 'no_response',
@@ -74,34 +97,23 @@ export class EventsApi extends ApiClient {
     if (!user) throw new ApiError('User not authenticated');
 
     const now = new Date().toISOString();
-    const updateData: Record<string, unknown> = { 
-      status,
-      decline_reason: status === 'not_going' ? (declineReason || null) : null,
-    };
-
-    // Try to update existing RSVP
-    const { data: existing } = await this.supabase
+    const { data, error } = await this.supabase
       .from('event_rsvps')
-      .select('*')
-      .eq('event_id', eventId)
-      .eq('user_id', user.id)
+      .upsert(
+        {
+          event_id: eventId,
+          user_id: user.id,
+          status,
+          decline_reason: status === 'not_going' ? (declineReason || null) : null,
+          responded_at: status !== 'no_response' ? now : null,
+        },
+        { onConflict: 'event_id,user_id' }
+      )
+      .select()
       .single();
 
-    if (existing) {
-      // Only set responded_at on first real response
-      if (!existing.responded_at && status !== 'no_response') {
-        updateData.responded_at = now;
-      }
-      return this.update<EventRsvp>('event_rsvps', existing.id, updateData);
-    }
-
-    // Create new RSVP
-    return this.insert<EventRsvp>('event_rsvps', {
-      event_id: eventId,
-      user_id: user.id,
-      responded_at: status !== 'no_response' ? now : null,
-      ...updateData,
-    });
+    if (error) throw new ApiError(error.message);
+    return data as EventRsvp;
   }
 
   // Get attendee counts (going) for multiple events
@@ -166,6 +178,58 @@ export class EventsApi extends ApiClient {
     }
 
     return counts;
+  }
+
+  // Full breakdown of who's going / maybe / can't go (with reason) / hasn't
+  // responded, for the "X/Y attending" counter on an event — that counter
+  // only ever showed a number with no way to see the people behind it.
+  // Roster comes from team_members for the event's target team(s) so
+  // "no response" is derivable (team roster minus everyone with an RSVP
+  // row), not just the people who happened to respond.
+  async getEventAttendeeDetails(event: Event): Promise<EventAttendeeDetails> {
+    const empty: EventAttendeeDetails = { going: [], maybe: [], not_going: [], no_response: [] };
+    if (!event.target_teams || event.target_teams.length === 0) return empty;
+
+    const { data: members, error: membersError } = await this.supabase
+      .from('team_members')
+      .select('user_id, user:users(id, first_name, last_name)')
+      .in('team_id', event.target_teams);
+
+    if (membersError || !members) return empty;
+
+    const { data: rsvps, error: rsvpsError } = await this.supabase
+      .from('event_rsvps')
+      .select('user_id, status, decline_reason')
+      .eq('event_id', event.id);
+
+    if (rsvpsError) return empty;
+
+    const rsvpByUser = new Map<string, { status: string; decline_reason: string | null }>();
+    (rsvps || []).forEach((r: any) => rsvpByUser.set(r.user_id, r));
+
+    const result: EventAttendeeDetails = { going: [], maybe: [], not_going: [], no_response: [] };
+
+    // De-dupe in case a member sits on more than one of the event's target teams
+    const seen = new Set<string>();
+    for (const m of members as any[]) {
+      if (!m.user || seen.has(m.user_id)) continue;
+      seen.add(m.user_id);
+
+      const rsvp = rsvpByUser.get(m.user_id);
+      const status = (rsvp?.status as EventAttendeeDetail['status']) || 'no_response';
+      result[status].push({
+        user_id: m.user_id,
+        name: `${m.user.first_name} ${m.user.last_name}`.trim(),
+        status,
+        decline_reason: rsvp?.decline_reason as EventAttendeeDetail['decline_reason'],
+      });
+    }
+
+    (Object.keys(result) as (keyof EventAttendeeDetails)[]).forEach((key) => {
+      result[key].sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    return result;
   }
 
   // Get user's teams (for event creation targeting)
