@@ -264,13 +264,14 @@ export class EventsApi extends ApiClient {
     }
 
     // Anyone who actually RSVP'd but wasn't returned by the team_members
-    // roster query above (e.g. their role — like 'manager' — isn't one of
-    // the roles team_members.role currently allows, or they've since left
-    // the team) was previously dropped from the list entirely: the loop
-    // above only walks the roster, so a real RSVP with no matching roster
-    // row just vanished. Look up their name separately and still show
-    // them, rather than silently discarding a response someone actually
-    // gave.
+    // roster query above (most likely because they've since left the team,
+    // or the event's target teams changed after they RSVP'd — the query
+    // above has no role filter, so this is never about a role like
+    // 'manager' being excluded) was previously dropped from the list
+    // entirely: the loop above only walks the roster, so a real RSVP with
+    // no matching roster row just vanished. Look up their name separately
+    // and still show them, rather than silently discarding a response
+    // someone actually gave.
     const missingUserIds = Array.from(rsvpByUser.keys()).filter((id) => !seen.has(id));
     if (missingUserIds.length > 0) {
       const { data: extraUsers } = await this.supabase

@@ -11,7 +11,6 @@ import {
   resolveCaregiver,
   resolveCaregiverLink,
   assignChildProvenance,
-  applyConsentDecision,
   type AddJuniorForm,
   type FieldError,
   type ConsentDecision,
@@ -25,6 +24,11 @@ import {
 export type AddJuniorResult =
   | { ok: false; errors: FieldError[] }
   | { ok: true; childId: string; caregiverId: string; approvalId: string };
+
+/** A `caregiver_approvals` row with the linked player's name embedded. */
+export type CaregiverApprovalWithPlayer = CaregiverApproval & {
+  player?: { first_name: string; last_name: string } | null;
+};
 
 class CaregiversApi extends ApiClient {
   /** Get all caregivers for a player */
@@ -141,8 +145,15 @@ class CaregiversApi extends ApiClient {
     return data as CaregiverApproval;
   }
 
-  /** Get pending approval requests for a caregiver's linked players */
-  async getMyPendingApprovals(caregiverId: string): Promise<CaregiverApproval[]> {
+  /**
+   * Get pending approval requests for a caregiver's linked players.
+   *
+   * Embeds the player's name (`request_kind: 'add_child'` rows are a
+   * caregiver being asked to consent to a *child*, not to themself, so the
+   * UI needs the child's name to label the request correctly — see
+   * `CaregiverApprovalPage.tsx`).
+   */
+  async getMyPendingApprovals(caregiverId: string): Promise<CaregiverApprovalWithPlayer[]> {
     // Get player IDs this caregiver is linked to
     const { data: links } = await this.supabase
       .from('player_caregivers')
@@ -155,13 +166,13 @@ class CaregiversApi extends ApiClient {
 
     const { data, error } = await this.supabase
       .from('caregiver_approvals')
-      .select('*')
+      .select('*, player:users!caregiver_approvals_player_id_fkey(first_name, last_name)')
       .in('player_id', playerIds)
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
     if (error) throw new ApiError(error.message);
-    return data as CaregiverApproval[];
+    return data as CaregiverApprovalWithPlayer[];
   }
 
   /** Escalate approvals that have been pending for more than 7 days */
@@ -270,6 +281,11 @@ class CaregiversApi extends ApiClient {
     });
 
     // 4. Link child ↔ caregiver with no duplicate (Req 5.7) — reuse the helper.
+    // The read is fine client-side (player_caregivers SELECT is open to any
+    // authenticated user, migration 036), but the INSERT is admin-only RLS,
+    // so a coach/manager running this flow has no client-side write path.
+    // That write goes through the `link-player-caregiver` Edge Function,
+    // scoped to the caller being a coach/manager/admin of THIS team.
     const { data: existingLinks, error: linkLookupError } = await this.supabase
       .from('player_caregivers')
       .select('player_id, caregiver_id')
@@ -277,10 +293,7 @@ class CaregiversApi extends ApiClient {
     if (linkLookupError) throw new ApiError(linkLookupError.message);
 
     if (resolveCaregiverLink(childId, caregiverId, existingLinks || []).action === 'create') {
-      const { error: linkError } = await this.supabase
-        .from('player_caregivers')
-        .insert({ player_id: childId, caregiver_id: caregiverId });
-      if (linkError) throw new ApiError(linkError.message);
+      await this.linkCaregiver(teamId, childId, caregiverId);
     }
 
     // 5. Insert the pending consent record (Req 5.8).
@@ -319,40 +332,38 @@ class CaregiversApi extends ApiClient {
   /**
    * Respond to a pending add-child request (Req 5.11, 5.12).
    *
-   * Uses `applyConsentDecision` to compute the new status, `responded_at`, and
-   * whether the child becomes active, then persists both the approval row and
-   * the child's `users.active` flag. `approve` activates the child; `deny` and
-   * `escalate` leave it inactive.
+   * `approve` activates the child and adds it to the team roster; `deny` and
+   * `escalate` leave it inactive. All three writes this requires (the
+   * approval row, `users.active`, and the `team_members` insert on approval)
+   * go through the `respond-junior-approval` Edge Function: the caregiver
+   * responding is neither an admin nor a coach/manager nor the child
+   * themself, so client-side RLS permits the approval-row update but not the
+   * other two. Doing all three server-side keeps the decision atomic —
+   * `respondedBy` is taken from the caller's own auth session server-side,
+   * so it's passed here only for the return type's sake.
    */
   async respondToJuniorApproval(
     approvalId: string,
     decision: ConsentDecision,
-    respondedBy: string
+    _respondedBy: string
   ): Promise<CaregiverApproval> {
-    const outcome = applyConsentDecision(decision, new Date().toISOString());
+    const { data: result, error } = await this.supabase.functions.invoke(
+      'respond-junior-approval',
+      { body: { approval_id: approvalId, decision } }
+    );
 
-    const { data, error } = await this.supabase
-      .from('caregiver_approvals')
-      .update({
-        status: outcome.status,
-        responded_by: respondedBy,
-        responded_at: outcome.respondedAt,
-      })
-      .eq('id', approvalId)
-      .select()
-      .single();
-    if (error) throw new ApiError(error.message);
-
-    const approval = data as CaregiverApproval;
-
-    // Activate or keep the child inactive to match the decision (Req 5.11/5.12).
-    const { error: childError } = await this.supabase
-      .from('users')
-      .update({ active: outcome.childActive })
-      .eq('id', approval.player_id);
-    if (childError) throw new ApiError(childError.message);
-
-    return approval;
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+    if (result?.error) {
+      throw new ApiError(
+        typeof result.error === 'string' ? result.error : 'Failed to respond to request'
+      );
+    }
+    if (!result?.approval) {
+      throw new ApiError('Failed to respond to request');
+    }
+    return result.approval as CaregiverApproval;
   }
 
   /** Approve a pending add-child request and activate the child (Req 5.11). */
@@ -403,6 +414,34 @@ class CaregiversApi extends ApiClient {
       throw new ApiError('Failed to create user');
     }
     return result.id as string;
+  }
+
+  /**
+   * Insert a `player_caregivers` link via the service-role
+   * `link-player-caregiver` Edge Function. The browser cannot insert this
+   * row directly — the only INSERT-capable RLS policy on that table is
+   * admin-only — so this is the one step of `addJunior` that must run
+   * server-side, gated on the caller being a coach/manager/admin of the
+   * specific `teamId` the child is being added to.
+   */
+  private async linkCaregiver(
+    teamId: string,
+    playerId: string,
+    caregiverId: string
+  ): Promise<void> {
+    const { data: result, error } = await this.supabase.functions.invoke(
+      'link-player-caregiver',
+      { body: { team_id: teamId, player_id: playerId, caregiver_id: caregiverId } }
+    );
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+    if (result?.error) {
+      throw new ApiError(
+        typeof result.error === 'string' ? result.error : 'Failed to link caregiver'
+      );
+    }
   }
 
   /** Create a caregiver user directly (used when no approval needed or after approval) */

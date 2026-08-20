@@ -2,6 +2,50 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-20] - Task 1: add-a-junior RLS fix, plus a bigger gap found behind it
+
+Investigating the known "manager can't submit Add Junior" RLS bug (NEXT-SESSION-NOTES
+Task 1) surfaced a second, more serious problem: even with that RLS error fixed,
+an **approved** add-a-junior child would never have actually appeared on the team
+roster. Both are fixed here.
+
+- **The reported bug.** `caregiversApi.addJunior` step 4 inserted into
+  `player_caregivers` client-side as the coach/manager. The only INSERT-capable
+  policies on that table are admin-only (migrations 002, 036) — no policy lets a
+  coach/manager insert. New service-role Edge Function
+  `supabase/functions/link-player-caregiver` does this insert instead, gated on
+  the caller being admin or a coach/manager of the specific team the child
+  belongs to.
+- **The bigger gap.** No code path anywhere ever wrote a `team_members` row for
+  an add-a-junior child — not pending, not approved. Pending children display
+  correctly via a separate, `caregiver_approvals`-based query (by design, Req
+  5.10), but nothing filled the gap once a caregiver actually approved:
+  `respondToJuniorApproval()` had the right logic (activate the child) but was
+  never called by any UI. The only reachable Approve/Deny button
+  (`CaregiverApprovalPage.tsx`) called the older, generic `respondToApproval()`,
+  which doesn't check `request_kind` and has no path to activate a child or add
+  them to the roster — so an approved child would have stayed permanently
+  invisible. Separately, even the unwired logic would itself have hit RLS:
+  activating `users.active` and inserting `team_members` are both blocked for a
+  caregiver who is neither admin, self, nor a coach/manager of that team.
+  New service-role Edge Function `supabase/functions/respond-junior-approval`
+  now does all three writes (approval status, child activation, roster insert)
+  together so a decision can't land half-done. `CaregiverApprovalPage.tsx` now
+  branches on `request_kind`: add-a-junior rows go through the new
+  approve/deny path with correct wording (naming the child, not implying the
+  caregiver themself is being added); the legacy add-caregiver flow is
+  unchanged. Response errors now show in the page instead of only the console.
+- **Correction to the record:** the original Round 2 attendee-list fix write-up
+  (this file and a comment in `events-api.ts`) claimed `team_members.role`
+  doesn't allow `'manager'` — that was wrong (migration 048 added it). Both are
+  corrected below/inline; the underlying fix was unaffected.
+- **Not yet deployed or live-tested** — both new Edge Functions need
+  `supabase functions deploy link-player-caregiver` and
+  `supabase functions deploy respond-junior-approval` (Edge Functions don't
+  ship with `git push`), then an end-to-end run as a coach/manager: submit Add
+  Junior → caregiver gets the approval email → caregiver approves → child
+  shows active on the roster.
+
 ## [2026-08-20] - Caregiver multi-child RSVP — design agreed, docs only
 
 No code changes. Talked through the caregiver multi-child RSVP design
@@ -82,17 +126,20 @@ Two bugs found live-testing the Round 1 Schedule/RSVP fixes below.
   instead of N of each; wired into both Schedule pages.
 - **Attendee list modal didn't show your own "Going" even though the RSVP
   was recorded.** `getEventAttendeeDetails()` built its roster from
-  `team_members` (which only allows `role in ('player', 'coach')`), then
-  merged RSVPs onto that roster — so anyone who RSVP'd but wasn't returned
-  by that roster query (e.g. a manager, since `team_members.role` doesn't
-  currently have a 'manager' option — or anyone who left the team since
-  RSVPing) was silently dropped from every list, despite their RSVP being
-  correctly saved. The method now also looks up anyone in `event_rsvps`
-  who wasn't matched to a roster row and shows them in the right bucket
-  under their real name, instead of discarding a response someone
-  actually gave. This is a symptom of the same underlying gap flagged in
-  Round 1 — team_members doesn't yet model manager/caregiver eligibility —
-  but this fix means a recorded RSVP is never invisible in the meantime.
+  `team_members` for the event's target team(s), then merged RSVPs onto
+  that roster — so anyone who RSVP'd but wasn't returned by that roster
+  query (most likely because they'd since left the team, or the event's
+  target teams changed after they RSVP'd) was silently dropped from every
+  list, despite their RSVP being correctly saved.
+  **Correction (2026-08-20):** the original write-up of this fix blamed
+  `team_members.role` for not allowing `'manager'` — that was wrong.
+  Migration 048 added `'manager'` as a valid `team_members.role` value
+  back in V1.4, and this query has no role filter, so managers were never
+  excluded. The method now also looks up anyone in `event_rsvps` who
+  wasn't matched to a roster row and shows them in the right bucket under
+  their real name, instead of discarding a response someone actually
+  gave — that defensive fix is still correct regardless of the exact
+  reason a roster row was missing.
 
 ## [2026-08-20] - Schedule/RSVP Fixes (validation, performance, past/upcoming, attendee list)
 

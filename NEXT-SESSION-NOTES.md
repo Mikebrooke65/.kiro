@@ -395,7 +395,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
-| V1.4 Welcome + Team page | 🟠 Built, **1 blocker** | **Add-junior RLS bug = next-session Task 1**; then e2e smoke test; logo; 32 optional tests. Modal layout fixed 2026-08-19 |
+| V1.4 Welcome + Team page | 🟠 Built, **Task 1 fix written, needs deploy + live test** | Add-junior RLS bug + the bigger gap behind it (see Task 1) fixed in code 2026-08-20; needs 2 Edge Function deploys + an end-to-end live test before it's DONE; then e2e smoke test; logo; 32 optional tests. Modal layout fixed 2026-08-19 |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
@@ -414,63 +414,101 @@ deferred design question (caregiver multi-child) left before it's complete.**
 
 **Progress since this plan was written:** V1.4 + V1.5 smoke test is part-done.
 Confirmed working: per-role nav, Team page/roster, and the Add Junior **modal
-layout** (fixed, commit `8d699de`). The add-a-junior flow is **blocked by an RLS
-bug** — that fix is still the defined first task below (not yet started).
+layout** (fixed, commit `8d699de`). The add-a-junior flow was **blocked by an
+RLS bug** — Task 1 below is now written and built, pending deploy + a live
+re-test.
 
 **Also since this plan was written (2026-08-19/20): V1.1 + V1.1a are fully
 DONE** (confirmed live on the Oppo — sound, vibration, foreground toast,
 tap-to-navigate, safe-area, touch targets). **V1.7 RSVP is now mostly
 built** (RSVP UI, optimistic updates, past/upcoming split, attendee list,
-Create Event validation) — see the V1.7 section above. The "THEN — start
-V1.1a" and "V1.7 ... Resolve Decision 5 first" bullets below are stale;
-Task 1 (add-a-junior RLS) is still the next real unstarted task, followed
-by the caregiver multi-child RSVP design discussion.
+Create Event validation) — see the V1.7 section above.
 
-**TASK 1 (DEFINED) — Fix add-a-junior RLS failure. START HERE.**
+**TASK 1 (BUILT 2026-08-20, not yet deployed/live-tested) — Fix add-a-junior
+RLS failure and the bigger gap found behind it.**
 
-**Also relevant to this task (added 2026-08-20):** the caregiver
-multi-child RSVP build (see the V1.7 section above) needs the exact same
-kind of fix — a service-role Edge Function to let a caregiver write a row
-on behalf of a child, since client-side RLS can't cleanly express "you can
-write this because you're this child's caregiver." A scope check that day
-confirmed RSVP and Add Junior are the only two places this is needed
-today, so build the Edge Function generically (subject/child id + action
-type) with both use cases in mind rather than solving the pattern twice.
+Investigating this properly (per plan) turned up more than the original
+symptom: the RLS error was real, but even with it fixed, an **approved**
+child would never have actually landed on the team roster. Full picture:
 
-- **Symptom:** a manager submitting Add Junior gets *"new row violates row-level
-  security policy for table player_caregivers"*. The child row is created, then
-  the flow dies at the caregiver link.
-- **Root cause:** `caregiversApi.addJunior` (in `src/lib/caregivers-api.ts`)
-  inserts into `player_caregivers` **client-side as the manager**. The only
-  INSERT-capable policies on that table are admin-only (migrations 002 and 036);
-  no policy lets a manager insert. Same class of defect as the V1.3 registration
-  RLS failure — a client write RLS does not actually permit.
-- **Chosen approach (decided 2026-08-19): move the write server-side.** Put the
-  `player_caregivers` link insert into a service-role Edge Function, consistent
-  with how the child `auth.users` row is already created (`create-auth-user`) and
-  with the `redeem-invite` pattern. Preferred over adding an RLS policy because at
-  link time the child has no `team_members` row to key "manager of this team" on.
-- **Scope / definition of done:**
-  1. Move the `player_caregivers` link insert (step 4 of `addJunior`) into a
-     service-role Edge Function. Simplest: extend `create-auth-user` to also
-     create the link when it creates the child (it already has both ids under
-     service role), or add a small dedicated endpoint.
-  2. **Check step 5** — the `caregiver_approvals` insert immediately after almost
-     certainly hits the same manager-can't-write wall. Verify; move it server-side
-     too if so. Treat these two as one fix.
-  3. Keep the invite-code / authorization model intact — the manager is
-     authenticated and is acting on their own team; the function must not become a
-     way to link arbitrary users. Gate on the caller being an authenticated
-     manager/coach of `team_id`.
-  4. Redeploy the affected Edge Function(s) (`supabase functions deploy ...`) —
-     **remember Edge Functions do NOT ship with `git push`**.
-  5. Re-run the add-a-junior flow end to end as a manager: submit → caregiver
-     approval email arrives → approve → child activates on the roster. This also
-     closes the last unverified V1.4 path (the recovered `caregiver_approvals`
-     table + RLS).
-- **Size:** small-to-moderate; same pattern used twice already. Keep it lean —
-  do not gold-plate. Full detail in "Known issues found in V1.4 smoke test" near
-  the end of this file.
+1. **The reported bug — confirmed.** `caregiversApi.addJunior` step 4 inserts
+   into `player_caregivers` client-side as the coach/manager. The only
+   INSERT-capable policies on that table are admin-only (migrations 002, 036)
+   — no policy lets a coach/manager insert. Same class of defect as the V1.3
+   registration RLS failure.
+2. **Step 5 (`caregiver_approvals` insert) — checked, not broken.** Migration
+   036 already has a working "coaches/managers can create caregiver
+   approvals" INSERT policy. No fix needed there; the original notes'
+   suspicion that it "almost certainly" had the same problem was wrong.
+3. **The bigger gap — newly found.** No code path anywhere ever wrote a
+   `team_members` row for an add-a-junior child, pending *or* approved.
+   Pending children display via a separate `caregiver_approvals`-based query
+   in `TeamPage.tsx`'s `fetchRoster()` (by design — Req 5.10 — a pending
+   child isn't a team member yet), but nothing filled that gap once a
+   caregiver actually approved: `respondToJuniorApproval()` existed in
+   `caregivers-api.ts` with the right logic (activate the child, per Req
+   5.11) but was **never called by any UI**. The only reachable
+   Approve/Deny button (`CaregiverApprovalPage.tsx`) called the older,
+   generic `respondToApproval()`, which doesn't branch on `request_kind` and
+   has no path to activate a child or create its roster row at all — so an
+   approved add-a-junior child would have silently stayed invisible forever,
+   not just until the RLS bug was fixed.
+4. Also found: even the (unwired) `respondToJuniorApproval()` logic would
+   itself have hit RLS — activating a child means updating `users.active`,
+   and that table's UPDATE policy is admin-only or self-only (migrations
+   002/003/004); a caregiver is neither. Same for a client-side
+   `team_members` insert on their behalf (migrations 036/044 don't cover it).
+   All three of these writes need service role.
+- **Fix built (2026-08-20):** two new Edge Functions, kept single-purpose
+  like `create-auth-user` rather than one generic shared function (see the
+  note below on why the earlier "build it generically for RSVP too" idea was
+  dropped):
+  - **`link-player-caregiver`** — inserts the `player_caregivers` row. Gated
+    on the caller being admin, or coach/manager **of the specific `team_id`
+    passed in** (stricter than `create-auth-user`'s "any team" check, per the
+    original ask). Wired into `addJunior` step 4.
+  - **`respond-junior-approval`** — the real fix. Takes an approval id +
+    decision (approve/deny/escalate); verifies the caller is admin or the
+    linked caregiver; on `pending` status, does all three writes together
+    (approval row, `users.active`, and — on approve — the `team_members`
+    insert) so a decision can't land half-done. Wired into
+    `caregiversApi.respondToJuniorApproval()`.
+  - `CaregiverApprovalPage.tsx` now branches on `request_kind`: `add_child`
+    rows go through `approveJunior`/`denyJunior` (which call the new
+    function) with correct display text ("you've been listed as a caregiver
+    for **[child]**..."); `add_caregiver` rows keep the old behaviour
+    unchanged. `getMyPendingApprovals()` now embeds the child's name so the
+    UI can label the request correctly, and response errors are now shown in
+    the page instead of only logged to the console.
+  - Also corrected a factual error from the original write-up of the Round 2
+    attendee-list fix (CHANGELOG + a code comment in `events-api.ts`): it
+    blamed `team_members.role` for not allowing `'manager'` — migration 048
+    added that role back in V1.4, so that was never the actual cause. Fixed
+    the wording in both places; the underlying defensive fix was already
+    correct regardless.
+- **Still to do before this is DONE:**
+  1. Deploy both new functions — `supabase functions deploy
+     link-player-caregiver` and `supabase functions deploy
+     respond-junior-approval`. **Edge Functions do NOT ship with `git
+     push`.**
+  2. Re-run the add-a-junior flow end to end as a coach/manager: submit →
+     child created → caregiver link created (no RLS error) → caregiver gets
+     the approval email → caregiver opens Caregiver Approvals → sees the
+     child's name (not "wants to be added as a caregiver") → approves → child
+     shows active and selectable on the Team page roster. Also test Deny:
+     child should stay inactive/non-selectable and off the roster.
+  3. This closes the last unverified V1.4 path.
+- **On the "build it generically for RSVP too" idea (2026-08-19/20):** the
+  caregiver multi-child RSVP design (V1.7 section above) still needs its own
+  new Edge Function work later — it was **not** folded into
+  `link-player-caregiver` / `respond-junior-approval`, because those two
+  ended up narrowly shaped around the add-a-junior tables specifically
+  (`player_caregivers`, `caregiver_approvals`, and a `team_members` insert
+  keyed off an approval row) rather than a generic "write on behalf of a
+  child" primitive. When the RSVP piece is built, decide then whether a
+  shared helper is worth it or whether two more single-purpose functions
+  (matching the `create-auth-user` pattern used throughout) is simpler —
+  lean toward the latter unless real duplication shows up.
 
 **TASK 2 — Finish the V1.4/V1.5 run-through** (blocked behind Task 1 for the
 add-junior part). Remaining checklist items, hard-refresh / incognito first:
@@ -1899,37 +1937,21 @@ docs/
 Two issues surfaced while verifying the add-a-junior flow. Recorded here as V1
 scope items.
 
-### 1. RLS blocks add-a-junior — BUG, blocks the flow
+### 1. RLS blocks add-a-junior — FIXED IN CODE 2026-08-20, needs deploy + live test
 
 **Symptom:** as a **manager** (not admin), submitting Add Junior returns the red
 error *"new row violates row-level security policy for table player_caregivers"*.
 The child row is created server-side, but the flow then dies at the caregiver link.
 
-**Root cause:** `caregiversApi.addJunior` step 4 does a **client-side INSERT into
-`player_caregivers`** as the logged-in user. The only INSERT-capable policies on
-that table are admin-only ("Admins can manage player-caregiver links", migration
-002; "Allow admins to manage player_caregivers", migration 036) — every other
-policy is SELECT. A manager therefore has no INSERT path. This is the same class
-of defect as the V1.3 registration RLS failure: the design assumed an "ordinary
-RLS-governed client write" that RLS does not actually permit.
-
-**Fix options:**
-- **(recommended) Move the `player_caregivers` link insert server-side** into a
-  service-role Edge Function, consistent with how the child `auth.users` row is
-  already created (`create-auth-user`) and with the V1.3 `redeem-invite` pattern.
-  Preferred because at link time the child has no `team_members` row yet, so a
-  client RLS policy has nothing to key "manager of this child's team" on. The
-  cleanest shape is to have the child-creation step (or a small dedicated
-  endpoint) also create the link, since it already has both ids under service
-  role. **Likely also affects step 5** (`caregiver_approvals` insert) — check the
-  same manager can insert there, or move it server-side too.
-- (alternative) Add a scoped INSERT policy letting a manager/coach create the
-  link, keyed off `caregiver_approvals` (team_id + `requested_by = auth.uid()`).
-  More convoluted and easier to get subtly wrong; the server-side move is safer.
-
-**Estimated size:** small-to-moderate. Same pattern we already used twice, but it
-is real build work (Edge Function change + redeploy + a verification pass), not a
-one-line patch. **Deferred pending a credit decision** (see session note below).
+Investigated in full on 2026-08-20 and turned out to be part of a bigger gap —
+see "TASK 1" in the PLAN FOR NEXT SESSION section above for the complete
+root-cause writeup and what was actually built (two new Edge Functions:
+`link-player-caregiver` and `respond-junior-approval`). This subsection is kept
+short now to avoid duplicating that writeup; the short version is: the RLS error
+here was real and is fixed, but so is a second, more serious gap where even an
+*approved* child was never landing on the roster at all. Both are fixed in code;
+**both new functions still need `supabase functions deploy` and a live
+end-to-end test before this is DONE.**
 
 ### 2. Modal layout — Add Junior FIXED, others may share the bug
 
