@@ -395,7 +395,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
-| V1.4 Welcome + Team page | 🟠 Built, **Task 1 fix written, needs deploy + live test** | Add-junior RLS bug + the bigger gap behind it (see Task 1) fixed in code 2026-08-20; needs 2 Edge Function deploys + an end-to-end live test before it's DONE; then e2e smoke test; logo; 32 optional tests. Modal layout fixed 2026-08-19 |
+| V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Found along the way: no nav link anywhere to Caregiver Approvals — small follow-up. Remaining: logo; 32 optional tests |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
@@ -424,8 +424,8 @@ tap-to-navigate, safe-area, touch targets). **V1.7 RSVP is now mostly
 built** (RSVP UI, optimistic updates, past/upcoming split, attendee list,
 Create Event validation) — see the V1.7 section above.
 
-**TASK 1 (BUILT 2026-08-20, not yet deployed/live-tested) — Fix add-a-junior
-RLS failure and the bigger gap found behind it.**
+**TASK 1 (DONE & LIVE-CONFIRMED 2026-08-20) — Fix add-a-junior RLS failure
+and the bigger gap found behind it.**
 
 Investigating this properly (per plan) turned up more than the original
 symptom: the RLS error was real, but even with it fixed, an **approved**
@@ -486,18 +486,30 @@ child would never have actually landed on the team roster. Full picture:
     added that role back in V1.4, so that was never the actual cause. Fixed
     the wording in both places; the underlying defensive fix was already
     correct regardless.
-- **Still to do before this is DONE:**
-  1. Deploy both new functions — `supabase functions deploy
-     link-player-caregiver` and `supabase functions deploy
-     respond-junior-approval`. **Edge Functions do NOT ship with `git
-     push`.**
-  2. Re-run the add-a-junior flow end to end as a coach/manager: submit →
-     child created → caregiver link created (no RLS error) → caregiver gets
-     the approval email → caregiver opens Caregiver Approvals → sees the
-     child's name (not "wants to be added as a caregiver") → approves → child
-     shows active and selectable on the Team page roster. Also test Deny:
-     child should stay inactive/non-selectable and off the roster.
-  3. This closes the last unverified V1.4 path.
+- **Deployed & live-tested end to end (2026-08-20):** both Edge Functions
+  deployed (`link-player-caregiver`, `respond-junior-approval`). Ran the
+  full flow as a coach/manager on a real team ("West Coast Rangers" /
+  "Open riverhead tests"): Add Junior submitted with no RLS error → child
+  created → caregiver approval email arrived, correctly naming the child
+  ("Davey Booo has been added to Open riverhead tests and listed you as
+  their caregiver") → Caregiver Approvals page showed a clear Approve/Deny
+  UI for the request → approved → page correctly emptied to "no pending
+  approvals" → Team page roster now shows the child as an active player.
+  **This closes the last unverified V1.4 path.**
+- **Found along the way, not yet fixed — small follow-up:** there is no nav
+  link, button, or notification anywhere in the app pointing to
+  `/caregiver-approvals` (confirmed by grep — the route exists,
+  `CaregiverApprovalPage.tsx`, but nothing links to it). Testing today only
+  worked because the URL was typed in by hand. A real caregiver would have
+  no way to find this page. Worth a small task later: a Home-screen card,
+  a nav badge, or a link from the approval-request email's "Open the app"
+  text. Low effort, but blocks the flow being usable end to end for a real
+  (non-technical) caregiver.
+- **Not yet tested:** the Deny path (child should stay inactive/off the
+  roster) and the Escalate path (used by the 7-day auto-timeout in
+  `escalateTimedOutApprovals()`, which has no UI trigger and runs
+  unattended — not exercised here). Worth a quick pass next time before
+  fully closing this out.
 - **On the "build it generically for RSVP too" idea (2026-08-19/20):** the
   caregiver multi-child RSVP design (V1.7 section above) still needs its own
   new Edge Function work later — it was **not** folded into
@@ -1937,7 +1949,7 @@ docs/
 Two issues surfaced while verifying the add-a-junior flow. Recorded here as V1
 scope items.
 
-### 1. RLS blocks add-a-junior — FIXED IN CODE 2026-08-20, needs deploy + live test
+### 1. RLS blocks add-a-junior — FIXED, DEPLOYED & LIVE-CONFIRMED 2026-08-20
 
 **Symptom:** as a **manager** (not admin), submitting Add Junior returns the red
 error *"new row violates row-level security policy for table player_caregivers"*.
@@ -1945,13 +1957,14 @@ The child row is created server-side, but the flow then dies at the caregiver li
 
 Investigated in full on 2026-08-20 and turned out to be part of a bigger gap —
 see "TASK 1" in the PLAN FOR NEXT SESSION section above for the complete
-root-cause writeup and what was actually built (two new Edge Functions:
-`link-player-caregiver` and `respond-junior-approval`). This subsection is kept
-short now to avoid duplicating that writeup; the short version is: the RLS error
-here was real and is fixed, but so is a second, more serious gap where even an
-*approved* child was never landing on the roster at all. Both are fixed in code;
-**both new functions still need `supabase functions deploy` and a live
-end-to-end test before this is DONE.**
+root-cause writeup and what was built (two new Edge Functions:
+`link-player-caregiver` and `respond-junior-approval`). The short version: the
+RLS error here was real and is fixed, and so is a second, more serious gap
+where even an *approved* child was never landing on the roster at all. Both
+deployed and confirmed working end to end on a real device the same day —
+see "TASK 1" above for the full test notes. Two small things not yet covered:
+the Deny/Escalate paths weren't exercised, and there's no nav link anywhere to
+the Caregiver Approvals page (both noted as follow-ups under TASK 1).
 
 ### 2. Modal layout — Add Junior FIXED, others may share the bug
 

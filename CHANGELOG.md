@@ -39,12 +39,19 @@ roster. Both are fixed here.
   (this file and a comment in `events-api.ts`) claimed `team_members.role`
   doesn't allow `'manager'` — that was wrong (migration 048 added it). Both are
   corrected below/inline; the underlying fix was unaffected.
-- **Not yet deployed or live-tested** — both new Edge Functions need
-  `supabase functions deploy link-player-caregiver` and
-  `supabase functions deploy respond-junior-approval` (Edge Functions don't
-  ship with `git push`), then an end-to-end run as a coach/manager: submit Add
-  Junior → caregiver gets the approval email → caregiver approves → child
-  shows active on the roster.
+- **Deployed and live-tested, same day.** Both Edge Functions deployed
+  (`link-player-caregiver`, `respond-junior-approval`). Full flow run on a
+  real team as a coach/manager: Add Junior submitted with no RLS error →
+  child created → caregiver approval email arrived, correctly naming the
+  child → Caregiver Approvals page (reached at `/caregiver-approvals` —
+  see follow-up below) showed a clear Approve/Deny UI → approved → page
+  correctly emptied to "no pending approvals" → Team page roster showed the
+  child as an active player. Deny/Escalate not yet tested.
+- **Follow-up found, not yet fixed:** there is no nav link, button, or
+  notification anywhere in the app pointing to `/caregiver-approvals` — the
+  page only exists as a route. Today's test only worked because the URL was
+  typed in by hand; a real caregiver has no way to discover this page.
+  Logged in `NEXT-SESSION-NOTES.md` under TASK 1 as a small follow-up.
 
 ## [2026-08-20] - Caregiver multi-child RSVP — design agreed, docs only
 
