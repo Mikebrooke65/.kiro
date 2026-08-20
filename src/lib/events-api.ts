@@ -78,6 +78,37 @@ export class EventsApi extends ApiClient {
     return data as EventRsvp;
   }
 
+  // Get the current user's RSVPs for a batch of events in one query.
+  //
+  // Schedule pages used to call getUserRsvp() once per event via
+  // Promise.all — each call independently hit supabase.auth.getUser(),
+  // which does a network round trip and takes an internal navigator lock
+  // to guard session refresh. Firing N of those concurrently on page load
+  // (one per event) contended for that lock and could surface as
+  // "Lock was stolen by another request", plus made the page slower to
+  // load, and left the auth client in a state where an immediately-following
+  // getUser() call (e.g. from createEvent) could fail. This does exactly
+  // one auth.getUser() call and one query for the whole page instead of N+N.
+  async getUserRsvps(eventIds: string[]): Promise<Record<string, EventRsvp>> {
+    if (eventIds.length === 0) return {};
+    const { data: { user } } = await this.supabase.auth.getUser();
+    if (!user) return {};
+
+    const { data, error } = await this.supabase
+      .from('event_rsvps')
+      .select('*')
+      .in('event_id', eventIds)
+      .eq('user_id', user.id);
+
+    if (error) throw new ApiError(error.message);
+
+    const map: Record<string, EventRsvp> = {};
+    (data || []).forEach((rsvp: EventRsvp) => {
+      map[rsvp.event_id] = rsvp;
+    });
+    return map;
+  }
+
   // Set user's RSVP for an event.
   //
   // Single upsert on the (event_id, user_id) unique constraint (migration 023)
@@ -223,6 +254,37 @@ export class EventsApi extends ApiClient {
         status,
         decline_reason: rsvp?.decline_reason as EventAttendeeDetail['decline_reason'],
       });
+    }
+
+    // Anyone who actually RSVP'd but wasn't returned by the team_members
+    // roster query above (e.g. their role — like 'manager' — isn't one of
+    // the roles team_members.role currently allows, or they've since left
+    // the team) was previously dropped from the list entirely: the loop
+    // above only walks the roster, so a real RSVP with no matching roster
+    // row just vanished. Look up their name separately and still show
+    // them, rather than silently discarding a response someone actually
+    // gave.
+    const missingUserIds = Array.from(rsvpByUser.keys()).filter((id) => !seen.has(id));
+    if (missingUserIds.length > 0) {
+      const { data: extraUsers } = await this.supabase
+        .from('users')
+        .select('id, first_name, last_name')
+        .in('id', missingUserIds);
+
+      const nameById = new Map<string, string>(
+        (extraUsers || []).map((u: any) => [u.id, `${u.first_name} ${u.last_name}`.trim()])
+      );
+
+      for (const userId of missingUserIds) {
+        const rsvp = rsvpByUser.get(userId)!;
+        const status = (rsvp.status as EventAttendeeDetail['status']) || 'no_response';
+        result[status].push({
+          user_id: userId,
+          name: nameById.get(userId) || 'Unknown',
+          status,
+          decline_reason: rsvp.decline_reason as EventAttendeeDetail['decline_reason'],
+        });
+      }
     }
 
     (Object.keys(result) as (keyof EventAttendeeDetails)[]).forEach((key) => {

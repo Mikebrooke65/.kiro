@@ -34,16 +34,11 @@ export function DesktopSchedule() {
       const data = await eventsApi.getEvents();
       setEvents(data);
 
-      // Load RSVPs for all events
-      const rsvpPromises = data.map(event => eventsApi.getUserRsvp(event.id));
-      const rsvpResults = await Promise.all(rsvpPromises);
-      
-      const rsvpMap: Record<string, EventRsvp> = {};
-      rsvpResults.forEach((rsvp, index) => {
-        if (rsvp) {
-          rsvpMap[data[index].id] = rsvp;
-        }
-      });
+      // Load RSVPs for all events in a single query (was N parallel calls,
+      // one per event, each independently hitting auth.getUser() — see the
+      // comment on getUserRsvps in events-api.ts for why that caused the
+      // "Lock was stolen by another request" error and slow page loads).
+      const rsvpMap = await eventsApi.getUserRsvps(data.map(e => e.id));
       setRsvps(rsvpMap);
 
       // Load attendee counts

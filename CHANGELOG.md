@@ -2,6 +2,40 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-20] - Schedule/RSVP Fixes Round 2 — lock contention, attendee list dropping real RSVPs
+
+Two bugs found live-testing the Round 1 Schedule/RSVP fixes below.
+
+### Fixed
+- **"Lock was stolen by another request" red banner on Schedule load, and
+  Create Event silently doing nothing.** `loadEvents()` in
+  `src/pages/Schedule.tsx` (and `src/pages/desktop/DesktopSchedule.tsx`,
+  same pattern) fetched each event's RSVP with
+  `Promise.all(events.map(event => eventsApi.getUserRsvp(event.id)))`.
+  Every one of those calls independently hit `supabase.auth.getUser()`,
+  which does a network round trip and takes an internal navigator lock to
+  guard session refresh. Firing N of those concurrently on page load (one
+  per event) contended for that lock — surfacing as the "Lock was stolen"
+  error in the page banner, slowing the page load, and apparently leaving
+  the auth client in a state where an immediately-following
+  `auth.getUser()` call (e.g. from Create Event) could hang indefinitely,
+  matching the "nothing happens" report. New `eventsApi.getUserRsvps()`
+  does one `auth.getUser()` call and one query for the whole event list
+  instead of N of each; wired into both Schedule pages.
+- **Attendee list modal didn't show your own "Going" even though the RSVP
+  was recorded.** `getEventAttendeeDetails()` built its roster from
+  `team_members` (which only allows `role in ('player', 'coach')`), then
+  merged RSVPs onto that roster — so anyone who RSVP'd but wasn't returned
+  by that roster query (e.g. a manager, since `team_members.role` doesn't
+  currently have a 'manager' option — or anyone who left the team since
+  RSVPing) was silently dropped from every list, despite their RSVP being
+  correctly saved. The method now also looks up anyone in `event_rsvps`
+  who wasn't matched to a roster row and shows them in the right bucket
+  under their real name, instead of discarding a response someone
+  actually gave. This is a symptom of the same underlying gap flagged in
+  Round 1 — team_members doesn't yet model manager/caregiver eligibility —
+  but this fix means a recorded RSVP is never invisible in the meantime.
+
 ## [2026-08-20] - Schedule/RSVP Fixes (validation, performance, past/upcoming, attendee list)
 
 Six issues reported on the Schedule/RSVP page after V1.1a closeout. This
