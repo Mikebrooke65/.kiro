@@ -2,6 +2,41 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-20] - V1.1a Fully Closed Out — Live Device Verification
+
+No code changes — this entry verifies the [2026-08-19] V1.1a Closeout entry
+below on the actual Oppo device and documents a build-tooling gotcha hit
+along the way.
+
+### Verified
+- **Foreground toast**: confirmed live — a push arriving while the app is
+  open surfaces an in-app toast.
+- **Tap-to-open**: confirmed live — tapping a delivered notification
+  (app backgrounded, not locked) opens straight to Messaging.
+- **Safe-area**: confirmed live — header and bottom nav sit clear of the
+  screen edges on-device.
+- **Touch targets**: confirmed live — bottom-nav tabs are noticeably easier
+  to hit.
+- Sound + vibration (from the 2026-08-19 entry) reconfirmed working
+  throughout this round too.
+
+**V1.1a is now fully closed out** — all 10 items on the verification
+checklist done and confirmed on the Oppo (CPH2477, Android 12, ColorOS 12.1).
+
+### Fixed (process, not code)
+- **First verification attempt looked like a regression — it wasn't.** No
+  foreground toast, and a tapped notification didn't navigate. Root cause:
+  `npx cap sync android` only copies whatever's currently in `dist/`, it
+  doesn't run `npm run build` itself — and neither that command nor the
+  subsequent Gradle build in Android Studio errors or warns when `dist/` is
+  stale. The Oppo was running a build from before this session's JS changes.
+  Confirmed via Logcat: the on-device JS bundle filename
+  (`index-a0YP_yLY.js`) didn't match a fresh local build of the same commit
+  (`index-BpluvNrK.js`) — different content hash, provably different code.
+  **Standing rule going forward: always run `npm run build` immediately
+  before `npx cap sync android`, every time, even if you built earlier in
+  the same session.**
+
 ## [2026-08-19] - V1.1a Closeout — Vibration Fix, Foreground/Tap Push Handling, Safe-Area & Touch Targets
 
 Closes out V1.1a. Continuation of the same-day push-notification work below:

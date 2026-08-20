@@ -68,13 +68,17 @@ phone. Check `team_members` for other users in that team.
 7. ✅ Data loads (teams, games, messaging)
 8. ✅ **Push notification arrives with sound + vibration — confirmed live on
    the Oppo, phone locked.** Root-caused and fixed this session (see below).
+   Foreground toast and tap-to-open also confirmed live (see below).
 9. ✅ Safe-area / notch handling added (`viewport-fit=cover` +
    `.safe-area-top`/`.safe-area-bottom` in `theme.css`, applied to
-   `MainLayout.tsx`'s header and bottom nav) — **code done, not yet
-   re-verified live on the Oppo** (needs rebuild + reinstall)
+   `MainLayout.tsx`'s header and bottom nav) — **confirmed live on the
+   Oppo**, header/nav sit clear of the screen edges.
 10. ✅ Bottom-nav touch targets enlarged to a `min-h-[48px]` tap area
-    (Material's recommended minimum), icons/labels bumped up — **code done,
-    not yet re-verified live on the Oppo** (needs rebuild + reinstall)
+    (Material's recommended minimum), icons/labels bumped up — **confirmed
+    live on the Oppo**, tabs feel noticeably easier to hit.
+
+**V1.1a is now fully closed out.** All 10 checklist items done and verified
+live on the Oppo (CPH2477, Android 12, ColorOS 12.1).
 
 ### RESOLVED (2026-08-19) — Push arrived but silent (no sound/vibrate)
 
@@ -152,10 +156,27 @@ sound + vibration were confirmed:
 - `npm run build` verified clean after all of the above (no new
   TypeScript/build errors).
 
-**Not yet re-verified live on the Oppo** — all four of these are
-code-complete but need `npx cap sync android`, a rebuild in Android Studio,
-and reinstall before they're confirmed on-device (native/layout changes
-aren't picked up by a JS-only reload).
+**Verified live on the Oppo, 2026-08-20:** foreground toast appears when a
+push arrives while the app is open; tapping a delivered notification (app
+backgrounded, not locked) opens straight to the Messaging page; header and
+bottom nav sit clear of the screen edges; bottom-nav tabs feel easier to hit.
+All four items fully done.
+
+### Gotcha hit while verifying this session: stale build looked like a bug
+
+First verification attempt showed no foreground toast and a notification tap
+that didn't navigate anywhere — looked like the new listener code was
+broken. It wasn't. `npx cap sync android` only copies whatever's already in
+`dist/`; it doesn't run `npm run build` itself. The Oppo was running a build
+from *before* tonight's `usePushNotifications.ts`/`App.tsx` changes, even
+though `npx cap sync android` completed with no errors and Android Studio's
+Gradle build succeeded — neither step will warn you if `dist/` is stale.
+Confirmed via Logcat: the JS bundle filename running on-device
+(`index-a0YP_yLY.js`) didn't match a fresh local build of the same commit
+(`index-BpluvNrK.js`) — different content hash, so provably different code.
+Fix: **always run `npm run build` immediately before `npx cap sync android`,
+every time**, even if you built earlier in the same session. Worth treating
+this as a standing rule for future device-testing rounds, not just this one.
 
 ### Known issue discovered: Messaging not admin-aware
 
