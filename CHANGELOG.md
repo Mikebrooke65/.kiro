@@ -2,6 +2,39 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-20] - Caregiver multi-child RSVP — design agreed, docs only
+
+No code changes. Talked through the caregiver multi-child RSVP design
+(the deferred question from the Round 1 Schedule/RSVP fixes) using a
+worked example: John Smith is a coach of a team and also caregiver to
+Johnny and Jenny Smith, both players on that same team.
+
+Agreed design, written up in full in `NEXT-SESSION-NOTES.md` under the
+V1.7 section: if a logged-in user has more than one "identity" eligible
+to respond to an event (their own, plus one per linked child who's also
+on the roster), tapping any RSVP button opens a modal listing each
+identity separately, each with its own fully independent Going/Maybe/
+Can't Go. Data model: a new `subject_user_id` column on `event_rsvps`
+records who the RSVP is actually about, separate from `user_id` (who
+submitted it); the unique constraint moves to `(event_id, subject_user_id)`.
+Caregiver-on-behalf-of-child writes route through a service-role Edge
+Function — the same pattern already planned for the Task 1 add-a-junior
+RLS fix, so build queued alongside that task rather than solving the
+same RLS problem twice.
+
+Also did a scope check across every caregiver/player-reachable page to
+confirm RSVP isn't about to be the first of several places needing this
+pattern — it's the only one today. Add Junior needs the same server-side
+write fix but is a one-time consent decision, not a recurring per-event
+action. Everything else caregivers can reach is read-only (Team,
+Tournaments, Resources) or already caregiver-level (Messaging). Pages
+with per-player actions (Games feedback, Subs/lineup management) are
+locked to coach/manager/admin at the routing level, so caregivers can't
+reach them at all. Given that, the plan is to build the identity-lookup
+helper and the Edge Function generically rather than RSVP-specifically,
+so a future feature needing the same "act on behalf of my child" pattern
+doesn't have to redo this design work.
+
 ## [2026-08-20] - Schedule/RSVP Fixes Round 3 — page-load speed
 
 Live-tested Round 2: the lock-contention fix and Create Event both check

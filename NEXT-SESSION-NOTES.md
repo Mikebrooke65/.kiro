@@ -398,7 +398,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.4 Welcome + Team page | 🟠 Built, **1 blocker** | **Add-junior RLS bug = next-session Task 1**; then e2e smoke test; logo; 32 optional tests. Modal layout fixed 2026-08-19 |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
-| V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP (design discussion queued, Decision 5 open) |
+| V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
 | V1.9 Store + privacy policy | 🟡 Privacy draft in progress | Store accounts + assets need V1.1a/b. Privacy policy drafted (`docs/privacy-policy-draft.md`) — open flags to close |
 | V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
@@ -427,6 +427,15 @@ Task 1 (add-a-junior RLS) is still the next real unstarted task, followed
 by the caregiver multi-child RSVP design discussion.
 
 **TASK 1 (DEFINED) — Fix add-a-junior RLS failure. START HERE.**
+
+**Also relevant to this task (added 2026-08-20):** the caregiver
+multi-child RSVP build (see the V1.7 section above) needs the exact same
+kind of fix — a service-role Edge Function to let a caregiver write a row
+on behalf of a child, since client-side RLS can't cleanly express "you can
+write this because you're this child's caregiver." A scope check that day
+confirmed RSVP and Add Junior are the only two places this is needed
+today, so build the Edge Function generically (subject/child id + action
+type) with both use cases in mind rather than solving the pattern twice.
 
 - **Symptom:** a manager submitting Add Junior gets *"new row violates row-level
   security policy for table player_caregivers"*. The child row is created, then
@@ -1291,20 +1300,72 @@ Heja replacement.
 **Still open / not built**:
 - **RSVP reminder push notifications** (needs V1.1 proven on hardware —
   V1.1 is now done, so this is unblocked whenever it's prioritized).
-- **Caregiver multi-child RSVP.** `event_rsvps` is one row per
-  `(event_id, user_id)` — a caregiver with two children on the same team
-  can't currently RSVP separately for each child. Needs a design decision
-  before schema work: e.g. add a nullable `child_id` column to
-  `event_rsvps` (null = responding for self/one child as today, set =
-  responding on behalf of a specific child), vs. giving each child their
-  own lightweight RSVP-eligible identity. Also ties into eligibility more
-  broadly — RSVP should cover players, managers, and coaches of a team,
-  with caregivers responding on behalf of their child(ren). **This
-  discussion is queued as the next thing to work through with Mike before
-  touching the schema.**
-- Confirm RSVP eligibility (player/manager/coach roles) is actually
-  correctly scoped once the caregiver design is settled — not verified
-  either way yet.
+- **Caregiver multi-child RSVP — DESIGN AGREED 2026-08-20, not yet built.**
+  Queued to build alongside Task 1 (add-a-junior RLS fix) since they share
+  the same server-side write pattern. Worked example that drove the
+  design: John Smith is a coach of a team, and also caregiver to Johnny
+  and Jenny Smith who are both players on that same team.
+
+  **Agreed UX**: for any given event, work out how many "identities" a
+  logged-in user has — their own (if they're a player/coach on the
+  event's target team) plus one per child linked via `player_caregivers`
+  who is also a player on that team. If it's exactly one identity, RSVP
+  buttons behave exactly as they do today (single immediate RSVP). If
+  it's two or more, tapping any of Going/Maybe/Can't Go opens a modal
+  listing each identity down the left (e.g. "John Smith — Coach",
+  "Johnny Smith", "Jenny Smith"), each with its own independent
+  Going/Maybe/Can't Go — including its own decline-reason flow for Can't
+  Go — and each one saves immediately on tap, same as a normal RSVP does
+  today. **Confirmed: each identity's RSVP is fully independent** — no
+  requirement to set your own status before setting a child's, or vice
+  versa.
+
+  **Agreed data model**: add a new `subject_user_id` column to
+  `event_rsvps` — records who the RSVP is actually *about* (defaults to
+  the same value as the logged-in user for a normal self-RSVP; set to the
+  child's own `users.id` when a caregiver responds on their behalf). Move
+  the unique constraint from `(event_id, user_id)` to
+  `(event_id, subject_user_id)` so one login can hold multiple RSVP rows
+  for the same event. `user_id` stays as "who actually submitted this,"
+  for audit purposes.
+
+  **Note this doesn't require any change to the "X/Y attending"
+  counter/denominator** — Johnny and Jenny are already counted in that
+  total via their own `team_members` rows; a caregiver responding "for
+  Johnny" is just supplying the RSVP value for a roster member who
+  doesn't personally use the app, not adding a new person to count.
+
+  **RLS wrinkle — same fix as Task 1**: `event_rsvps` RLS currently only
+  allows writing a row where `user_id = auth.uid()`, so a caregiver
+  writing on behalf of a child would be blocked the same way the
+  add-a-junior flow is blocked today. Don't solve this twice — route
+  caregiver-on-behalf-of-child RSVP writes through a service-role Edge
+  Function, same pattern as the Task 1 fix below.
+
+  **Scope check done 2026-08-20 — RSVP is the only place this is needed
+  today.** Walked every caregiver/player-reachable page looking for
+  anywhere else "act on behalf of a child" comes up: Team (roster —
+  read-only), Messaging (caregiver gets their own inbox, not one per
+  child), Tournaments/Resources (read-only). Caregiver-approvals (Add
+  Junior) needs the same *server-side write* fix but is a one-time
+  consent decision, not a recurring per-event action, so it doesn't need
+  the identity-picker modal. Coaching/Lessons/Games/Subs/AI Coach are all
+  locked to coach/manager/admin at the routing level — caregivers can't
+  reach them, so no concern there either. Given that, build the two
+  reusable pieces generally rather than RSVP-specifically, so a future
+  feature that needs "act on behalf of my child" (payments per child, a
+  medical/consent form, etc.) doesn't have to redo this: (1) a shared
+  helper resolving "given a logged-in user and a team, what are their
+  eligible identities" rather than baking that lookup into Schedule.tsx,
+  and (2) the Edge Function itself built generically (subject/child id +
+  action type) so Task 1 and the RSVP fix can both call it.
+- Also ties into eligibility more broadly — RSVP should cover players,
+  managers, and coaches of a team. Confirm this is actually correctly
+  scoped once the caregiver build lands — not verified either way yet.
+  Note `team_members.role` currently only allows `'player'` or `'coach'`
+  (migration 021) — there's no `'manager'` option, which is a related gap
+  worth checking when this gets built (does a manager currently even get
+  a `team_members` row at all?).
 
 **Open**: does this apply to Club Tournament teams too, or only club
 teams? (Open Decision 5)
