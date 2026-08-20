@@ -8,6 +8,7 @@ import { DesktopLayout } from '../layouts/DesktopLayout';
 
 // Auth pages
 import { Login } from '../pages/Login';
+import { ResetPassword } from '../pages/ResetPassword';
 
 // Mobile pages
 import { Landing } from '../pages/Landing';
@@ -59,6 +60,10 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <Login />,
+  },
+  {
+    path: '/reset-password',
+    element: <ResetPassword />,
   },
   {
     path: '/invite/:code',

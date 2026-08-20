@@ -14,6 +14,7 @@ interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
 }
 
@@ -246,12 +247,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Reset password function
+  // Reset password function — sends the reset email (step 1 of 2). The link
+  // in that email lands back on /reset-password with a short-lived recovery
+  // session already established by the Supabase client (detectSessionInUrl,
+  // on by default) by the time this app's own auth-state check resolves.
   const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
 
+    if (error) throw error;
+  };
+
+  // Update password function — step 2 of the reset flow (ResetPassword.tsx),
+  // and reusable anywhere else a signed-in user wants to change their
+  // password. Requires an active session; the recovery-link session from
+  // resetPasswordForEmail above is sufficient, no separate re-auth needed.
+  const updatePassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throw error;
   };
 
@@ -276,6 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     resetPassword,
+    updatePassword,
     updateProfile,
   };
 

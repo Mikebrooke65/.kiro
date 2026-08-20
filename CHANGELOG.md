@@ -2,6 +2,40 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-21] - Fix broken password-reset completion
+
+Found while reviewing whether username/password setup was fully sorted for
+every way a user account gets created: the "Forgot your password?" flow on
+the Login screen only ever sent the reset email — `AuthContext.resetPassword`
+correctly called `supabase.auth.resetPasswordForEmail(...)` with
+`redirectTo: '${origin}/reset-password'`, but no `/reset-password` route
+existed. The router's catch-all sent that link straight back to the app's
+home screen with no way to actually set a new password — a live, currently-
+broken dead end, not a future gap. It's also the exact mechanism every
+caregiver added through the current "Add Junior" flow is told to rely on
+(`create-auth-user`'s code comment: "capable of signing in via password
+reset / magic link") — so this was quietly blocking real accounts, not just
+an edge case.
+
+Added a real `/reset-password` page (`src/pages/ResetPassword.tsx`) and
+route. No manual token parsing was needed: Supabase's client already turns
+the emailed link into a short-lived recovery session on load
+(`detectSessionInUrl`, on by default), which `AuthContext`'s existing
+session check picks up the same way it picks up any other session — so the
+new page just reads `useAuth()`'s `isLoading`/`isAuthenticated` and shows one
+of three states: still checking the link, invalid/expired (no session
+materialized), or a set-new-password form. Added `updatePassword` to
+`AuthContext` alongside the existing `resetPassword`, calling
+`supabase.auth.updateUser({ password })`.
+
+**Not yet live-tested** — needs a real "forgot password" run end to end
+(request email → click link → land on the new page → set password → land in
+the app) once deployed. Also worth checking the Supabase dashboard's
+Authentication → URL Configuration → Redirect URLs list includes
+`/reset-password` (or a wildcard covering it) — `resetPasswordForEmail`
+silently fails to redirect correctly if the URL isn't allow-listed there,
+and that's a dashboard setting, not something in this codebase.
+
 ## [2026-08-20] - Task 1: add-a-junior RLS fix, plus a bigger gap found behind it
 
 Investigating the known "manager can't submit Add Junior" RLS bug (NEXT-SESSION-NOTES
