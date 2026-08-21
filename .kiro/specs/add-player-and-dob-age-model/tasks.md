@@ -122,23 +122,25 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - **Property 10: Whole-team messaging includes affiliated caregivers**
     - **Validates: Requirements 6.3**
 
-- [ ] 8. Checkpoint - Ensure all tests pass
+- [x] 8. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
+  - All tests pass; build is clean. No questions arose.
 
-- [ ] 9. API wrappers (`src/lib/`)
-  - [ ] 9.1 Extend invites-api.generateInviteCode with subjectUserId
+- [x] 9. API wrappers (`src/lib/`)
+  - [x] 9.1 Extend invites-api.generateInviteCode with subjectUserId
     - Add an optional trailing `subjectUserId` parameter, confirm `intendedRole` accepts `'caregiver'`; passed through to the `invite_codes` insert unchanged otherwise
     - _Requirements: 4.3, 5.1_
-  - [ ] 9.2 Replace direct caregiver account creation in caregivers-api.addJunior
+  - [x] 9.2 Replace direct caregiver account creation in caregivers-api.addJunior
     - When no `users` row exists for the supplied caregiver email, call `generateInviteCode(..., 'caregiver', childId)` instead of `createAuthUser`; when one already exists, keep the existing immediate-link path (Requirement 4.4) unchanged
     - _Requirements: 4.3, 4.4, 4.5_
-  - [ ] 9.3 Implement getPendingApprovalCount
+  - [x] 9.3 Implement getPendingApprovalCount
     - Thin wrapper over the existing `getMyPendingApprovals` (Task 1), returning just the count
     - _Requirements: 8.3_
   - [ ]* 9.4 Write property test for pending-approval count driving nav visibility
     - **Property 12: Pending-approval count drives nav visibility**
     - **Validates: Requirements 8.1, 8.3, 8.4**
-  - [ ]* 9.5 Write unit tests for invite-generation call shape
+    - Deferred to Task 12: this property is about the nav tab's presence/badge derivation (`tabsForRole`'s extension), which doesn't exist until 12.1 is built — writing it now would mean inventing that pure function's shape ahead of its real call site. Will be written alongside 12.1, not skipped.
+  - [x]* 9.5 Write unit tests for invite-generation call shape
     - Cover the Adult path (`intended_role: 'player'`, no `subjectUserId`) and the Caregiver path (`intended_role: 'caregiver'`, `subjectUserId` set)
     - _Requirements: 3.1, 4.3_
 

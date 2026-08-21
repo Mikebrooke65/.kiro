@@ -6,6 +6,7 @@ import type {
   Team,
 } from '../types/database';
 import { emailApi } from './email-api';
+import { invitesApi } from './invites-api';
 import {
   validateAddJunior,
   resolveCaregiver,
@@ -20,10 +21,21 @@ import {
  * Outcome of `addJunior`. On validation failure the entered values are kept by
  * the caller and the invalid fields are reported (Req 5.3); on success the ids
  * of the created/reused rows are returned.
+ *
+ * `caregiverId` is `null` when `caregiverInvited` is `true`: the invite
+ * branch (Requirement 4.3) doesn't create a caregiver account synchronously,
+ * so there is no id yet — the caregiver's `users` row is created only when
+ * they redeem the invite.
  */
 export type AddJuniorResult =
   | { ok: false; errors: FieldError[] }
-  | { ok: true; childId: string; caregiverId: string; approvalId: string };
+  | {
+      ok: true;
+      childId: string;
+      caregiverId: string | null;
+      caregiverInvited: boolean;
+      approvalId: string;
+    };
 
 /** A `caregiver_approvals` row with the linked player's name embedded. */
 export type CaregiverApprovalWithPlayer = CaregiverApproval & {
@@ -175,6 +187,18 @@ class CaregiversApi extends ApiClient {
     return data as CaregiverApprovalWithPlayer[];
   }
 
+  /**
+   * Count of pending approval requests for a caregiver (Req 8.3).
+   *
+   * Thin wrapper over `getMyPendingApprovals` — drives the Approvals nav
+   * tab's badge and visibility (Task 12), which needs only the count, not
+   * the full request list.
+   */
+  async getPendingApprovalCount(caregiverId: string): Promise<number> {
+    const approvals = await this.getMyPendingApprovals(caregiverId);
+    return approvals.length;
+  }
+
   /** Escalate approvals that have been pending for more than 7 days */
   async escalateTimedOutApprovals(): Promise<CaregiverApproval[]> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -206,18 +230,31 @@ class CaregiversApi extends ApiClient {
   // -------------------------------------------------------------------------
 
   /**
-   * Add a junior to a Club Tournament team with caregiver consent (Req 5.4–5.9).
+   * Add a junior to a Club Tournament team with caregiver consent (Req 5.4–5.9;
+   * caregiver provisioning updated by `.kiro/specs/add-player-and-dob-age-model/`
+   * Requirement 4.3/4.4/4.5, task 9.2).
    *
    * Steps, in order:
    * 1. Validate the form; reject and report invalid fields (Req 5.3).
-   * 2. Resolve the caregiver `users` row by email: reuse if it exists
-   *    (Req 5.5), otherwise create a sign-in-capable row with the real email
-   *    (Req 5.4).
-   * 3. Create an inactive child `users` row with a synthetic, non-sign-in email
-   *    and recorded provenance (Req 5.6, 5.16).
-   * 4. Link child ↔ caregiver in `player_caregivers`, no duplicate (Req 5.7).
-   * 5. Insert a pending `caregiver_approvals` record (Req 5.8).
-   * 6. Notify the caregiver via `send-email` (Req 5.9), fire-and-forget.
+   * 2. Create an inactive child `users` row with a synthetic, non-sign-in email
+   *    and recorded provenance (Req 5.6, 5.16) — moved ahead of caregiver
+   *    resolution because the Caregiver invite (step 3b below) must carry the
+   *    child's id as `subject_user_id`, and that id doesn't exist until this
+   *    row is created.
+   * 3. Resolve the caregiver `users` row by email:
+   *    - Reuse (Requirement 4.4, unchanged): an account already exists, so
+   *      link it to the child immediately (step 3a) and notify by the
+   *      existing approval-request email, exactly as before this feature.
+   *    - Invite (Requirement 4.3, new): no account exists, so generate a
+   *      Caregiver invite (`intended_role: 'caregiver'`, `subjectUserId:
+   *      childId`) instead of creating the account directly, and send it via
+   *      the same invite-email pattern every other invite uses (step 3b).
+   *      No `player_caregivers` link is created here — the `redeem-invite`
+   *      Edge Function creates it at redemption time from the invite's own
+   *      `subject_user_id` (Requirement 4.5's "was just invited" branch).
+   * 4. Insert a pending `caregiver_approvals` record (Req 5.8) — unconditional:
+   *    it doesn't reference a caregiver id (that table has none), so it's
+   *    created the same way regardless of which branch step 3 took.
    */
   async addJunior(teamId: string, form: AddJuniorForm): Promise<AddJuniorResult> {
     // 1. Validate (Req 5.3) — reuse the pure helper.
@@ -241,7 +278,20 @@ class CaregiversApi extends ApiClient {
     const teamRow = team as Pick<Team, 'id' | 'name' | 'age_group' | 'team_type'>;
     const provenance = assignChildProvenance(teamRow.team_type);
 
-    // 2. Resolve the caregiver (Req 5.4/5.5) — reuse the pure helper.
+    // 2. Create the inactive child row (Req 5.6, 5.16) — ahead of caregiver
+    // resolution; see the ordering note in the doc comment above. The Edge
+    // Function generates the synthetic email and withholds sign-in.
+    const childId = await this.createAuthUser({
+      first_name: form.childFirstName.trim(),
+      last_name: form.childLastName.trim(),
+      role: 'player',
+      active: false,
+      is_child: true,
+      child_provenance: provenance,
+      can_sign_in: false,
+    });
+
+    // 3. Resolve the caregiver (Req 5.4/5.5, 4.3/4.4) — reuse the pure helper.
     const normalizedEmail = form.caregiverEmail.trim().toLowerCase();
     const { data: matchingUsers, error: userLookupError } = await this.supabase
       .from('users')
@@ -253,50 +303,59 @@ class CaregiversApi extends ApiClient {
     const caregiverLastName = caregiverRest.join(' ');
 
     const caregiverResolution = resolveCaregiver(normalizedEmail, matchingUsers || []);
-    let caregiverId: string;
+    let caregiverId: string | null = null;
+    let caregiverInvited = false;
+
     if (caregiverResolution.action === 'reuse') {
+      // 3a. Existing account (Req 4.4, unchanged): link it to the child now.
+      // The read is fine client-side (player_caregivers SELECT is open to any
+      // authenticated user, migration 036), but the INSERT is admin-only RLS,
+      // so a coach/manager running this flow has no client-side write path.
+      // That write goes through the `link-player-caregiver` Edge Function,
+      // scoped to the caller being a coach/manager/admin of THIS team.
       caregiverId = caregiverResolution.caregiverId;
+
+      const { data: existingLinks, error: linkLookupError } = await this.supabase
+        .from('player_caregivers')
+        .select('player_id, caregiver_id')
+        .eq('player_id', childId);
+      if (linkLookupError) throw new ApiError(linkLookupError.message);
+
+      if (resolveCaregiverLink(childId, caregiverId, existingLinks || []).action === 'create') {
+        await this.linkCaregiver(teamId, childId, caregiverId);
+      }
     } else {
-      caregiverId = await this.createAuthUser({
-        email: normalizedEmail,
-        first_name: caregiverFirstName || form.caregiverName.trim(),
-        last_name: caregiverLastName || '',
-        cellphone: form.caregiverPhone.trim(),
-        role: 'caregiver',
-        active: true,
-        can_sign_in: true,
-      });
+      // 3b. No account (Req 4.3, new): invite instead of creating one
+      // directly. `subjectUserId` is what lets `redeem-invite` complete the
+      // `player_caregivers` link server-side once this invite is redeemed.
+      const invite = await invitesApi.generateInviteCode(
+        teamId,
+        normalizedEmail,
+        form.caregiverPhone.trim(),
+        undefined,
+        'caregiver',
+        childId
+      );
+      caregiverInvited = true;
+
+      try {
+        await emailApi.sendTeamInvite({
+          to: normalizedEmail,
+          recipientName: caregiverFirstName || undefined,
+          teamName: `${teamRow.age_group} ${teamRow.name}`,
+          inviteCode: invite.code,
+        });
+      } catch (err) {
+        // The invite row exists either way; a send failure shouldn't undo it
+        // (mirrors every other fire-and-forget email in this flow) but is
+        // worth surfacing since without this email the caregiver has no way
+        // to learn the invite exists.
+        console.warn('Failed to send caregiver invite email:', err);
+      }
     }
 
-    // 3. Create the inactive child row (Req 5.6, 5.16). The Edge Function
-    // generates the synthetic email and withholds sign-in.
-    const childId = await this.createAuthUser({
-      first_name: form.childFirstName.trim(),
-      last_name: form.childLastName.trim(),
-      role: 'player',
-      active: false,
-      is_child: true,
-      child_provenance: provenance,
-      can_sign_in: false,
-    });
-
-    // 4. Link child ↔ caregiver with no duplicate (Req 5.7) — reuse the helper.
-    // The read is fine client-side (player_caregivers SELECT is open to any
-    // authenticated user, migration 036), but the INSERT is admin-only RLS,
-    // so a coach/manager running this flow has no client-side write path.
-    // That write goes through the `link-player-caregiver` Edge Function,
-    // scoped to the caller being a coach/manager/admin of THIS team.
-    const { data: existingLinks, error: linkLookupError } = await this.supabase
-      .from('player_caregivers')
-      .select('player_id, caregiver_id')
-      .eq('player_id', childId);
-    if (linkLookupError) throw new ApiError(linkLookupError.message);
-
-    if (resolveCaregiverLink(childId, caregiverId, existingLinks || []).action === 'create') {
-      await this.linkCaregiver(teamId, childId, caregiverId);
-    }
-
-    // 5. Insert the pending consent record (Req 5.8).
+    // 4. Insert the pending consent record (Req 5.8) — unconditional; see
+    // the doc comment above for why this doesn't depend on step 3's branch.
     const { data: approval, error: approvalError } = await this.supabase
       .from('caregiver_approvals')
       .insert({
@@ -313,20 +372,30 @@ class CaregiversApi extends ApiClient {
       .single();
     if (approvalError) throw new ApiError(approvalError.message);
 
-    // 6. Notify the caregiver (Req 5.9). Fire-and-forget: a send failure must
-    // not undo the records already written (mirrors the matching-path welcome).
-    try {
-      await emailApi.sendCaregiverApprovalRequest({
-        to: normalizedEmail,
-        recipientName: caregiverFirstName || undefined,
-        childName: `${form.childFirstName.trim()} ${form.childLastName.trim()}`.trim(),
-        teamName: `${teamRow.age_group} ${teamRow.name}`,
-      });
-    } catch (err) {
-      console.warn('Failed to send caregiver approval-request email:', err);
+    // 5. Notify an EXISTING caregiver of the pending approval (Req 5.9). Not
+    // sent on the invite branch (3b): that caregiver has no account yet to
+    // log in and view it — the invite email (above) is their only notice
+    // until they redeem it and reach the Approvals tab (Task 12).
+    if (!caregiverInvited) {
+      try {
+        await emailApi.sendCaregiverApprovalRequest({
+          to: normalizedEmail,
+          recipientName: caregiverFirstName || undefined,
+          childName: `${form.childFirstName.trim()} ${form.childLastName.trim()}`.trim(),
+          teamName: `${teamRow.age_group} ${teamRow.name}`,
+        });
+      } catch (err) {
+        console.warn('Failed to send caregiver approval-request email:', err);
+      }
     }
 
-    return { ok: true, childId, caregiverId, approvalId: (approval as CaregiverApproval).id };
+    return {
+      ok: true,
+      childId,
+      caregiverId,
+      caregiverInvited,
+      approvalId: (approval as CaregiverApproval).id,
+    };
   }
 
   /**

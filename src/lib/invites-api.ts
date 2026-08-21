@@ -31,14 +31,21 @@ class InvitesApi extends ApiClient {
    * `intendedRole` records the role the invite is created for (Requirement 6.1/6.7).
    * It is persisted on the `invite_codes` row and honoured by `redeem-invite`,
    * which defaults a null/absent value to `player` server-side. `admin` is not a
-   * valid intended role and is excluded by the DB CHECK constraint (migration 049).
+   * valid intended role and is excluded by the DB CHECK constraint. `'caregiver'`
+   * was added to the valid set by `.kiro/specs/add-player-and-dob-age-model/`
+   * Requirement 5.1 (migration 053).
+   *
+   * `subjectUserId` (Requirement 4.3/7.2) is populated only for a Caregiver
+   * invite — the child `users.id` the invited caregiver will be linked to once
+   * they redeem it. Left `undefined`/`null` for every other invite type.
    */
   async generateInviteCode(
     teamId: string,
     recipientEmail: string,
     recipientPhone?: string,
     competitionId?: string,
-    intendedRole?: 'player' | 'coach' | 'manager'
+    intendedRole?: 'player' | 'coach' | 'manager' | 'caregiver',
+    subjectUserId?: string
   ): Promise<InviteCode> {
     const { data: { user: authUser } } = await this.supabase.auth.getUser();
     if (!authUser) throw new ApiError('Not authenticated');
@@ -57,6 +64,7 @@ class InvitesApi extends ApiClient {
         recipient_phone: recipientPhone || null,
         expires_at: expiresAt.toISOString(),
         intended_role: intendedRole ?? null,
+        subject_user_id: subjectUserId ?? null,
       })
       .select()
       .single();

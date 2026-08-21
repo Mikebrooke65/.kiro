@@ -352,8 +352,18 @@ export interface InviteCode {
   redeemed_at: string | null;
   expires_at: string;
   created_at: string;
-  /** Role granted on redemption. NULL defaults to 'player' server-side; 'admin' is excluded by design. */
-  intended_role: 'player' | 'coach' | 'manager' | null;
+  /**
+   * Role granted on redemption. NULL defaults to 'player' server-side;
+   * 'admin' is excluded by design. 'caregiver' added by
+   * `.kiro/specs/add-player-and-dob-age-model/` Requirement 5.1 (migration 053).
+   */
+  intended_role: 'player' | 'coach' | 'manager' | 'caregiver' | null;
+  /**
+   * The child `users.id` a Caregiver invite (`intended_role: 'caregiver'`)
+   * links to on redemption. NULL for every other invite type.
+   * `.kiro/specs/add-player-and-dob-age-model/` Requirement 4.3/7.2 (migration 053).
+   */
+  subject_user_id: string | null;
 }
 
 // Invite code validation result
