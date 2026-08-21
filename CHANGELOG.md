@@ -2,6 +2,50 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-21] - Add Player / DOB age model — full spec built, applied & deployed
+
+All 13 tasks of the `.kiro/specs/add-player-and-dob-age-model/` spec, built
+across a single long session and delivered as a chain of 7 git-am-able
+patches (Task 1, Tasks 2-3, Task 5, Tasks 6-7, Task 9, Task 10, Task 11,
+Task 12, Task 13), each independently verified via `git am` on a clean
+clone plus `npm test`/`npm run build` before delivery. Applied to
+`prototype`, pushed to GitHub (`8a0415a..6286a19`), and both affected Edge
+Functions redeployed, all in this session.
+
+- **"Add Player" replaces "Add Junior"** as the Team page's single entry
+  point (`AddPlayerModal.tsx`; `AddJuniorModal.tsx` removed), routing to an
+  adult-invite path or a junior/caregiver path based on the person's age.
+- **Age is now DOB-based, not just team-based.** 16+ counts as adult;
+  falls back to `teams.age_group` only when no DOB is on file for that
+  person. Adults self-declare their own DOB when redeeming their invite —
+  that self-declaration is the record of truth, not whatever the Manager
+  guessed when sending the invite. An under-16 self-declaration is rejected
+  server-side (message points the Manager to redo it as a Junior) — the
+  16-year threshold is deliberately not duplicated client-side.
+- **Caregiver invites**: adding a Junior whose caregiver doesn't have an
+  account yet now sends them an invite (`intended_role: 'caregiver'`)
+  instead of silently failing to link. Redeeming it never auto-approves the
+  pending caregiver-approval request — double opt-in stays two separate
+  acts.
+- **New "Approvals" bottom-nav tab**, with an exact pending-count badge,
+  appears for any role with a pending caregiver approval — not gated by
+  `users.role`, since caregiver affiliation is derived (via
+  `player_caregivers` + `team_members`), not stored, so an Admin/Coach/
+  Manager can simultaneously be a caregiver of their own child. This closes
+  a gap called out in the 2026-08-20 entry below and in `NEXT-SESSION-NOTES.md`:
+  there was previously no way for a caregiver to discover
+  `/caregiver-approvals` short of typing the URL by hand.
+- Invite redemption's Success Screen now routes straight to
+  `/caregiver-approvals` when the server signals a pending approval.
+- `create-auth-user` and `redeem-invite` Edge Functions both redeployed to
+  match (DOB field, adult self-declaration, caregiver-invite handling).
+
+**Not yet live-tested end to end on a device** — automated tests (158
+passing) and a clean build are the only verification so far. Next session
+should do a real click-through: Add Player as both adult and junior, redeem
+both invite types, confirm the Approvals tab appears with the correct badge
+and disappears after approving. Full detail in `NEXT-SESSION-NOTES.md`.
+
 ## [2026-08-21] - Fix broken password-reset completion
 
 Found while reviewing whether username/password setup was fully sorted for

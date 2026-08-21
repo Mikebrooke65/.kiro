@@ -1,5 +1,80 @@
 # Next Session Notes
-## Current State — 19 August 2026
+## Current State — 21 August 2026
+
+**Since this was last updated:** the Add Player / DOB age model Kiro spec
+(13 tasks) is now fully built, applied to `prototype`, pushed to GitHub, and
+both affected Edge Functions redeployed — see the section immediately below.
+That closes out the "no nav link to Caregiver Approvals" follow-up noted
+throughout this file under V1.4/TASK 1 (now fixed via a real nav tab), and
+supersedes the older "no DOB field, age comes from `teams.age_group` only"
+design decisions recorded further down — DOB is now collected. Historical
+sections are left in place with inline correction notes rather than deleted,
+so the "why" of the original decision isn't lost.
+
+---
+
+## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21)
+
+All 13 tasks of the `.kiro/specs/add-player-and-dob-age-model/` spec are
+done. Built across a long autonomous session (delivered as a chain of 7
+git-am-able patches — Task 1, Tasks 2-3, Task 5, Tasks 6-7, Task 9, Task 10,
+Task 11, Task 12, Task 13 — each independently verified via `git am` on a
+clean clone, `npm test`, and `npm run build` before delivery), then applied,
+pushed to `origin/prototype`, and deployed in this same session. **Nothing
+outstanding on this spec.**
+
+**What shipped:**
+- **Unified "Add Player" entry point** replaces "Add Junior" on the Team
+  page (`AddPlayerModal.tsx`, `AddJuniorModal.tsx` deleted) — same
+  Coach/Manager/Admin + Club-Tournament-only gating as before.
+- **DOB-based age classification** (16+ = adult) instead of relying only on
+  `teams.age_group`. Falls back to the team's age group only when no DOB is
+  recorded for that person — per-person, not per-team. This is the change
+  that supersedes the "no DOB field" decisions recorded later in this file.
+- **Adult path** reuses the existing invite mechanism. The DOB entered by
+  the Manager/Coach adding them is provisional routing only — the invitee
+  **self-declares their own DOB** when redeeming the invite, and that
+  self-declaration is the record of truth. An under-16 self-declaration is
+  rejected server-side with a message telling the Manager to redo it as a
+  Junior instead — deliberately not duplicated client-side, so there's one
+  source of truth for the age rule.
+- **Junior path** — when the caregiver's account doesn't exist yet, a
+  **Caregiver invite** is generated (instead of the old immediate-link-only
+  path); redeeming it never auto-approves the pending request — double
+  opt-in stays two separate acts, same as the existing add-a-junior consent
+  model documented later in this file.
+- **Caregiver-team affiliation stays derived, never stored** (joins
+  `player_caregivers` against the child's `team_members` row) — this is why
+  the new Approvals nav tab is **not gated by `users.role`**: the same
+  person can be Admin/Coach/Manager and a caregiver of their own child at
+  the same time.
+- **The long-standing "no nav link to Caregiver Approvals" gap is fixed.**
+  A new bottom-nav "Approvals" tab appears (with an exact pending-count
+  badge) whenever a user has a pending caregiver approval, for any role. A
+  failed pending-count fetch just hides the tab rather than blocking
+  navigation. This closes the follow-up first noted 2026-08-20 under V1.4/
+  TASK 1 and repeated in the "Known issues" section near the end of this
+  file — both of those notes can now be read as historical/resolved.
+- **Invite redemption's Success Screen** routes straight to
+  `/caregiver-approvals` when the server signals a pending approval, instead
+  of the normal post-registration destination.
+
+**Applied & deployed this session (2026-08-21):**
+- All 7 patches applied via `git am` on the Snapdragon laptop
+  (`C:\Users\miker\WCR-Football-App`), pushed to `origin/prototype`
+  (`8a0415a..6286a19`).
+- Both changed Edge Functions redeployed: `create-auth-user` (gained
+  `date_of_birth`) and `redeem-invite` (adult self-declaration + caregiver
+  invite handling).
+- **Not yet live-tested end to end** — the patches are verified via
+  automated tests (158 passing, 2 environment-only skips, unrelated to this
+  feature) and a clean build, but nobody has clicked through the actual
+  Add Player → invite → redemption → approval flow on a real device yet.
+  Worth a live smoke test next session, the same way V1.4's add-a-junior
+  flow was smoke-tested 2026-08-20 (see "TASK 1" further down for that
+  playbook — same rough loop applies here: Add Player as adult and as
+  junior, redeem both invite types, confirm the Approvals tab appears with
+  the right badge count, confirm it disappears after approving).
 
 ---
 
@@ -395,7 +470,8 @@ One-line status per item. Detail is in the sections further down.
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
-| V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Found along the way: no nav link anywhere to Caregiver Approvals — small follow-up. Remaining: logo; 32 optional tests |
+| V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
+| Add Player / DOB age model | ✅ DONE, applied & deployed 2026-08-21 | All 13 tasks built, applied to `prototype`, pushed, both Edge Functions redeployed. Not yet live-tested end to end on a device — see the dedicated section near the top of this file |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
@@ -496,15 +572,15 @@ child would never have actually landed on the team roster. Full picture:
   UI for the request → approved → page correctly emptied to "no pending
   approvals" → Team page roster now shows the child as an active player.
   **This closes the last unverified V1.4 path.**
-- **Found along the way, not yet fixed — small follow-up:** there is no nav
-  link, button, or notification anywhere in the app pointing to
-  `/caregiver-approvals` (confirmed by grep — the route exists,
-  `CaregiverApprovalPage.tsx`, but nothing links to it). Testing today only
-  worked because the URL was typed in by hand. A real caregiver would have
-  no way to find this page. Worth a small task later: a Home-screen card,
-  a nav badge, or a link from the approval-request email's "Open the app"
-  text. Low effort, but blocks the flow being usable end to end for a real
-  (non-technical) caregiver.
+- **Found along the way — FIXED 2026-08-21:** there was no nav link,
+  button, or notification anywhere in the app pointing to
+  `/caregiver-approvals` (confirmed by grep at the time — the route
+  existed, `CaregiverApprovalPage.tsx`, but nothing linked to it), so
+  testing on 2026-08-20 only worked because the URL was typed in by hand.
+  Fixed by Task 12 of the Add Player / DOB age model spec: a bottom-nav
+  "Approvals" tab now appears (with a pending-count badge) whenever a user
+  has a pending approval, for any role. See the dedicated section near the
+  top of this file.
 - **Not yet tested:** the Deny path (child should stay inactive/off the
   roster) and the Escalate path (used by the 7-day auto-timeout in
   `escalateTimedOutApprovals()`, which has no UI trigger and runs
@@ -1704,6 +1780,14 @@ architecture.
 The band comes from `teams.age_group`, not a per-player DOB (we deliberately
 do **not** collect birthdates — see point 4 below).
 
+> **Superseded 2026-08-21** — the Add Player / DOB age model spec now
+> collects DOB per-person (adults self-declare at invite redemption;
+> children's DOB is recorded when added as a Junior) and uses it as the
+> primary age signal, falling back to `teams.age_group` only when no DOB is
+> on record. This section's reasoning (privacy-minimal, avoids collecting
+> birthdates) is kept below for the historical "why," but is no longer the
+> current behaviour — see the dedicated section near the top of this file.
+
 #### Model A CONFIRMED — child never logs in, caregiver is the account
 
 A child (U16 and down) is a **data record, not a login**. They get a real
@@ -1822,6 +1906,8 @@ email and the ability to sign in).
   (there is no DOB field). U17/Open → player's own phone. U16 and below →
   caregiver's. Edge case accepted: a 17-year-old in a U15 team would show
   caregiver info.
+  **Superseded 2026-08-21** — see the correction note under "Adult / Child
+  User Model" above: DOB is now collected and is the primary age signal.
 - **No schema change needed** — `users`, `player_caregivers` and
   `caregiver_approvals` already support all of this. It's purely a
   UI/flow question.
@@ -1962,9 +2048,11 @@ root-cause writeup and what was built (two new Edge Functions:
 RLS error here was real and is fixed, and so is a second, more serious gap
 where even an *approved* child was never landing on the roster at all. Both
 deployed and confirmed working end to end on a real device the same day —
-see "TASK 1" above for the full test notes. Two small things not yet covered:
-the Deny/Escalate paths weren't exercised, and there's no nav link anywhere to
-the Caregiver Approvals page (both noted as follow-ups under TASK 1).
+see "TASK 1" above for the full test notes. One thing still not covered: the
+Deny/Escalate paths weren't exercised. The other follow-up noted here at the
+time — no nav link anywhere to the Caregiver Approvals page — is now FIXED
+(2026-08-21, Add Player / DOB age model spec, Task 12 — see the dedicated
+section near the top of this file).
 
 ### 2. Modal layout — Add Junior FIXED, others may share the bug
 
