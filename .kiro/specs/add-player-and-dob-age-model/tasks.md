@@ -10,11 +10,11 @@ Tasks marked with `*` are optional test tasks and are not required for a working
 
 ## Tasks
 
-- [ ] 1. Database migrations for schema foundation
-  - [ ] 1.1 Add `date_of_birth` column to `users` migration
+- [x] 1. Database migrations for schema foundation
+  - [x] 1.1 Add `date_of_birth` column to `users` migration
     - Add nullable `date_of_birth date`, no default, so every existing row stays `NULL`
     - _Requirements: 2.3, 2.4, 7.1_
-  - [ ] 1.2 Extend `invite_codes` for caregiver invites migration
+  - [x] 1.2 Extend `invite_codes` for caregiver invites migration
     - Add nullable `subject_user_id uuid REFERENCES users(id)`
     - Replace `invite_codes_intended_role_check` to allow `('player','coach','manager','caregiver')`
     - _Requirements: 5.1, 7.2, 7.3_
