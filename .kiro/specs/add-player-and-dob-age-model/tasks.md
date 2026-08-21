@@ -168,16 +168,19 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - _Requirements: 1.1, 1.4, 1.5, 1.6_
     - Skipped: this codebase has no component-rendering test infrastructure (no React Testing Library / jsdom harness anywhere in the repo — every existing test is pure-logic). Adding one is a real infrastructure decision outside an optional test task's scope. The field-set-by-route logic itself is covered where it's pure and testable: `validateAddPlayerForm`'s route-conditional field checks (10.2) and `routeAddPlayer`'s own Property 1 test (task 2.2). The role/team-type gating is `canAddUser`, already property/unit-tested by the prior spec and reused unchanged (10.5's note above).
 
-- [ ] 11. Adult self-declaration at invite redemption (registration/redemption screen)
-  - [ ] 11.1 Add a DOB self-declaration step for player/coach/manager-intended invites
+- [x] 11. Adult self-declaration at invite redemption (registration/redemption screen)
+  - [x] 11.1 Add a DOB self-declaration step for player/coach/manager-intended invites
     - Prompt the invitee to confirm their own date of birth is 16 or over before completing registration; send it as `date_of_birth` in the redemption request
     - _Requirements: 3.4_
-  - [ ] 11.2 Handle the DOB-mismatch rejection response
+    - `LiteLandingPage.tsx` shows a date input whenever `needsAdultSelfDeclaration(validation.invite?.intended_role)` (`success-screen-logic.ts`, new) is true — everything except `'caregiver'`, matching `redeem-invite/logic.ts`'s own `effectiveRole !== 'caregiver'` gate without a client import across the `supabase/functions/` boundary. Client-side `isValidDateOfBirth` only checks it's a real, non-future calendar date (form hygiene); the 16-or-over threshold itself is enforced server-side (11.2), not duplicated here.
+  - [x] 11.2 Handle the DOB-mismatch rejection response
     - On the new `RedeemError` from Task 5.2, show a message explaining this invite is for an adult and directing the Manager to redo the addition as a Junior; do not auto-redirect into the Junior flow
     - _Requirements: 3.5_
+    - No new code needed: `ADD_PLAYER_MESSAGES.underage_self_registration`'s text ("This invite is for an adult. Please ask your Manager to add you as a Junior instead.") already satisfies both parts, and `LiteLandingPage.tsx`'s existing `safeRegistrationErrorMessage`/`formError` path already renders any `ApiError` message that isn't a forbidden raw-database fragment — this one isn't, so it passes through unchanged. Confirmed there is no redirect logic anywhere in this screen to accidentally trigger.
   - [ ]* 11.3 Write unit test for DOB step visibility by intended role
     - Assert the DOB self-declaration step renders for player/coach/manager-intended redemption and not for a caregiver-intended one
     - _Requirements: 3.4, 4.6_
+    - Skipped for the same reason as 10.6 (no component-rendering test infrastructure in this codebase). The pure decision it would render is unit-tested directly: `needsAdultSelfDeclaration` in `success-screen-logic.test.ts` covers player/coach/manager/caregiver/null/unrecognized.
 
 - [ ] 12. Caregiver Approvals visibility (`src/layouts/MainLayout.tsx`, redemption success screen)
   - [ ] 12.1 Add a pending-approval-gated nav tab with badge

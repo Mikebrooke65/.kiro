@@ -80,3 +80,43 @@ export function formatTeamLabel(
   if (!team) return null;
   return `${team.age_group} ${team.name}`;
 }
+
+// ---------------------------------------------------------------------------
+// Adult self-declaration at redemption
+// `.kiro/specs/add-player-and-dob-age-model/` Requirement 3.4, task 11
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the redemption form must collect the invitee's own date of birth
+ * (Requirement 3.4). Every intended role except `caregiver` self-declares —
+ * mirrors `requiresTeamMembership`/the DOB check in
+ * `redeem-invite/logic.ts`'s step 2b: `effectiveRole !== 'caregiver'`. A
+ * null/absent/unrecognized `intended_role` defaults to `player` server-side
+ * (`resolveEffectiveRole`), which also needs it, so this treats anything
+ * other than the literal `'caregiver'` string as needing the step — the same
+ * outcome as importing that resolution, without a client importing Edge
+ * Function code across the `supabase/functions/` boundary.
+ */
+export function needsAdultSelfDeclaration(intendedRole: string | null | undefined): boolean {
+  return intendedRole !== 'caregiver';
+}
+
+/**
+ * True when `value` is a real `yyyy-mm-dd` calendar date, not in the future
+ * as of `asOf`. Client-side form hygiene only — whether it indicates 16 or
+ * over is enforced server-side (Requirement 3.5), not duplicated here.
+ */
+export function isValidDateOfBirth(value: string, asOf: Date = new Date()): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? '');
+  if (!match) return false;
+
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+
+  const check = new Date(year, month - 1, day);
+  const isRealCalendarDate =
+    check.getFullYear() === year && check.getMonth() === month - 1 && check.getDate() === day;
+
+  return isRealCalendarDate && check.getTime() <= asOf.getTime();
+}

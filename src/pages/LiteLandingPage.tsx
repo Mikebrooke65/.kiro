@@ -7,6 +7,8 @@ import {
   selectWelcomeVariant,
   buildGreeting,
   formatTeamLabel,
+  needsAdultSelfDeclaration,
+  isValidDateOfBirth,
   type RedeemInviteResult,
 } from '../lib/success-screen-logic';
 import type { InviteCodeValidation } from '../types/database';
@@ -64,6 +66,15 @@ function safeRegistrationErrorMessage(err: unknown): string {
   return message;
 }
 
+/** Today as `yyyy-mm-dd`, for the DOB input's `max` (can't be in the future). */
+function todayIso(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function LiteLandingPage() {
   const { code } = useParams<{ code: string }>();
   const [validation, setValidation] = useState<InviteCodeValidation | null>(null);
@@ -73,7 +84,14 @@ export function LiteLandingPage() {
   // (Req 1.1/1.6/1.8) — a plain boolean would lose the flags and team/user data.
   const [result, setResult] = useState<RedeemInviteResult | null>(null);
   const [formError, setFormError] = useState('');
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', password: '', consent: false });
+  const [form, setForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
+    date_of_birth: '',
+    consent: false,
+  });
 
   // All Success Screen branding (name, colour, logo, app link) comes from here —
   // never a hardcoded literal (Req 1.7). Absent values are omitted downstream.
@@ -87,6 +105,12 @@ export function LiteLandingPage() {
       });
     }
   }, [code]);
+
+  // Requirement 3.4 — every intended role except Caregiver self-declares
+  // their own date of birth here; a Caregiver invite is never asked for one
+  // (Requirement 4.6). `validation.invite` is only set once `valid` is true.
+  const requiresDateOfBirth =
+    validation?.valid === true && needsAdultSelfDeclaration(validation.invite?.intended_role);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,6 +128,10 @@ export function LiteLandingPage() {
       setFormError('Password must be at least 6 characters.');
       return;
     }
+    if (requiresDateOfBirth && !isValidDateOfBirth(form.date_of_birth)) {
+      setFormError('Please enter a valid date of birth.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -113,6 +141,9 @@ export function LiteLandingPage() {
         email: form.email,
         password: form.password,
         privacy_consent: form.consent,
+        // Omitted entirely on a Caregiver invite — redeem-invite never asks
+        // for one on that path (Requirement 4.6).
+        date_of_birth: requiresDateOfBirth ? form.date_of_birth : undefined,
       });
       setResult(res);
     } catch (err) {
@@ -192,6 +223,26 @@ export function LiteLandingPage() {
           <input type="password" placeholder="Create a password (min 6 characters)" value={form.password}
             onChange={e => setForm({ ...form, password: e.target.value })}
             className="w-full border rounded-lg px-3 py-2 text-sm" required minLength={6} />
+
+          {/* Adult self-declaration (Req 3.4) — every intended role except
+              Caregiver confirms their own date of birth here; this is the
+              record of truth, not the Manager's Add Player routing entry. */}
+          {requiresDateOfBirth && (
+            <div>
+              <label htmlFor="lite-registration-dob" className="block text-xs text-gray-500 mb-1">
+                Date of birth — confirms you're 16 or over
+              </label>
+              <input
+                id="lite-registration-dob"
+                type="date"
+                value={form.date_of_birth}
+                max={todayIso()}
+                onChange={e => setForm({ ...form, date_of_birth: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                required
+              />
+            </div>
+          )}
 
           {/* Privacy consent */}
           <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-2">

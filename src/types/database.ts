@@ -381,6 +381,12 @@ export interface LiteRegistrationData {
   email: string;
   password: string;
   privacy_consent: boolean;
+  /**
+   * ISO `yyyy-mm-dd`, self-declared by the invitee at redemption. Required by
+   * `redeem-invite` for every intended role except `caregiver`.
+   * `.kiro/specs/add-player-and-dob-age-model/` Requirement 3.4.
+   */
+  date_of_birth?: string;
 }
 
 // Invite player data (mid-season)

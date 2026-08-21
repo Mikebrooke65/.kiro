@@ -129,6 +129,9 @@ class InvitesApi extends ApiClient {
         first_name: userData.first_name,
         last_name: userData.last_name,
         privacy_consent: userData.privacy_consent === true,
+        // Self-declared at redemption (Req 3.4); absent/undefined for a
+        // Caregiver invite, which `redeem-invite` never asks for one.
+        date_of_birth: userData.date_of_birth,
       },
     });
 
