@@ -9,6 +9,7 @@ import {
   formatTeamLabel,
   needsAdultSelfDeclaration,
   isValidDateOfBirth,
+  resolvePrimaryActionHref,
   type RedeemInviteResult,
 } from '../lib/success-screen-logic';
 import type { InviteCodeValidation } from '../types/database';
@@ -330,7 +331,11 @@ function SuccessScreen({
         )}
 
         {variant === 'generic' && (
-          <GenericComplete buttonClass={buttonClass} buttonStyle={buttonStyle} />
+          <GenericComplete
+            hasPendingApproval={result.has_pending_approval}
+            buttonClass={buttonClass}
+            buttonStyle={buttonStyle}
+          />
         )}
       </div>
     </div>
@@ -359,6 +364,12 @@ function MatchingWelcome({
   const competitionName = result.competition_name?.trim() || null;
   // App link only when branding supplies one, otherwise omitted (Req 1.4 / 1.11).
   const appUrl = branding.app_url?.trim() || null;
+  // A pending Caregiver approval overrides the normal destination (Req 8.2) —
+  // see resolvePrimaryActionHref's own doc comment for why it wins even over
+  // a branded appUrl.
+  const primaryHref = resolvePrimaryActionHref(result.has_pending_approval, appUrl);
+  const primaryLabel =
+    primaryHref === '/caregiver-approvals' ? 'Review the Request' : appUrl ? 'Open the app' : 'Go to Login';
 
   return (
     <>
@@ -390,16 +401,11 @@ function MatchingWelcome({
         </ul>
       </div>
 
-      {/* App link only when branding provides a URL (Req 1.4 / 1.11). */}
-      {appUrl ? (
-        <a href={appUrl} className={`${buttonClass} mt-6`} style={buttonStyle}>
-          Open the app
-        </a>
-      ) : (
-        <a href="/login" className={`${buttonClass} mt-6`} style={buttonStyle}>
-          Go to Login
-        </a>
-      )}
+      {/* Destination is the pending Caregiver approval when signalled,
+          otherwise the app link or a login fallback (Req 1.4 / 1.11 / 8.2). */}
+      <a href={primaryHref} className={`${buttonClass} mt-6`} style={buttonStyle}>
+        {primaryLabel}
+      </a>
     </>
   );
 }
@@ -428,12 +434,20 @@ function ConfirmationRequired({ emailSent }: { emailSent: boolean }) {
 
 /** Generic fallback: registration completed, please log in (Req 1.8). */
 function GenericComplete({
+  hasPendingApproval,
   buttonClass,
   buttonStyle,
 }: {
+  hasPendingApproval: boolean | undefined;
   buttonClass: string;
   buttonStyle: React.CSSProperties | undefined;
 }) {
+  // No branding-supplied appUrl reaches this fallback variant either way —
+  // it always falls back to /login unless a Caregiver approval is pending
+  // (Req 8.2), same rule as MatchingWelcome.
+  const primaryHref = resolvePrimaryActionHref(hasPendingApproval, null);
+  const primaryLabel = primaryHref === '/caregiver-approvals' ? 'Review the Request' : 'Go to Login';
+
   return (
     <>
       <div className="text-4xl mb-4">✅</div>
@@ -441,8 +455,8 @@ function GenericComplete({
       <p className="text-sm text-gray-600 mb-6">
         Your registration is complete. You can now log in to the app.
       </p>
-      <a href="/login" className={buttonClass} style={buttonStyle}>
-        Go to Login
+      <a href={primaryHref} className={buttonClass} style={buttonStyle}>
+        {primaryLabel}
       </a>
     </>
   );

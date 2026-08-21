@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
 import { Outlet, NavLink } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../types/database';
 import { LogoutButton } from '../components/LogoutButton';
+import { caregiversApi } from '../lib/caregivers-api';
+import { resolveApprovalsTab, type ApprovalsTabState } from '../lib/main-layout-logic';
 import gannetWhite from '../assets/e2b3da3f33b0748e111b306a15bee82b12f28232.png';
 
 // Bottom-nav tab definition. Visibility is driven purely by App_Role
@@ -15,6 +18,8 @@ interface TabDef {
   color: string;
   icon: JSX.Element;
   end?: boolean;
+  /** Shown as a small numeric badge on the tab (Requirement 8.3, 8.4). */
+  badge?: number;
 }
 
 const ICONS: Record<string, JSX.Element> = {
@@ -74,15 +79,27 @@ const ICONS: Record<string, JSX.Element> = {
       d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
     />
   ),
+  approvals: (
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
+  ),
 };
 
 /**
  * Build the bottom-nav tabs for a given App_Role. Every role gets Home, Team,
  * Schedule and Messages. Coaching is Coach/Admin only; Games is
- * Manager/Coach/Admin (its coach-only sections are gated inside the page). The
- * result is always <= 6 tabs.
+ * Manager/Coach/Admin (its coach-only sections are gated inside the page).
+ * The result is <= 6 tabs, plus one more — Approvals — exactly when
+ * `approvalsTab.visible` (Requirement 8.1/8.3/8.4). That one isn't gated by
+ * role: a caregiver affiliation is derived, not stored (Requirement 6), so
+ * anyone — Admin, Coach, Manager, Player — could also be a caregiver of
+ * their own child and need to see it.
  */
-function tabsForRole(role: UserRole | undefined): TabDef[] {
+function tabsForRole(role: UserRole | undefined, approvalsTab: ApprovalsTabState): TabDef[] {
   const showCoaching = role === UserRole.ADMIN || role === UserRole.COACH;
   const showGames =
     role === UserRole.ADMIN || role === UserRole.COACH || role === UserRole.MANAGER;
@@ -98,12 +115,53 @@ function tabsForRole(role: UserRole | undefined): TabDef[] {
       : []),
     { to: '/schedule', label: 'Schedule', color: '#06b6d4', icon: ICONS.schedule },
     { to: '/messaging', label: 'Messages', color: '#545859', icon: ICONS.messages },
+    ...(approvalsTab.visible
+      ? [
+          {
+            to: '/caregiver-approvals',
+            label: 'Approvals',
+            color: '#dc2626',
+            icon: ICONS.approvals,
+            badge: approvalsTab.badge,
+          },
+        ]
+      : []),
   ];
 }
 
 export function MainLayout() {
   const { user } = useAuth();
-  const tabs = tabsForRole(user?.role);
+
+  // Requirement 8.1/8.3 — fetched alongside the existing useAuth() profile
+  // read. Starts at 0 (tab hidden) so a slow/failed fetch never blocks
+  // navigation; a failure leaves it at 0 rather than throwing, so the rest
+  // of the nav renders normally without the Approvals tab (Requirement 8.1,
+  // task 12.2) — resolveApprovalsTab(0) is already `{ visible: false }`, so
+  // no separate error-state branch is needed here.
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.id) {
+      setPendingApprovalCount(0);
+      return;
+    }
+    caregiversApi
+      .getPendingApprovalCount(user.id)
+      .then((count) => {
+        if (!cancelled) setPendingApprovalCount(count);
+      })
+      .catch((err) => {
+        console.warn('Failed to load pending caregiver approval count:', err);
+        if (!cancelled) setPendingApprovalCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const approvalsTab = resolveApprovalsTab(pendingApprovalCount);
+  const tabs = tabsForRole(user?.role, approvalsTab);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -156,15 +214,25 @@ export function MainLayout() {
               to={tab.to}
               end={tab.end}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center min-h-[48px] py-2 px-1 rounded-lg text-white transition-all ${
+                `relative flex flex-col items-center justify-center min-h-[48px] py-2 px-1 rounded-lg text-white transition-all ${
                   isActive ? 'opacity-100' : 'opacity-70'
                 }`
               }
               style={{ backgroundColor: tab.color }}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {tab.icon}
-              </svg>
+              <span className="relative">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {tab.icon}
+                </svg>
+                {/* Badge (Requirement 8.3/8.4) — only ever present when the
+                    tab itself is (tabsForRole only includes Approvals with a
+                    positive count), so no zero-badge case to hide here. */}
+                {!!tab.badge && (
+                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-white text-[10px] font-bold leading-none text-red-600">
+                    {tab.badge > 99 ? '99+' : tab.badge}
+                  </span>
+                )}
+              </span>
               <span className="text-[10px] font-normal leading-tight mt-0.5">{tab.label}</span>
             </NavLink>
           ))}

@@ -10,7 +10,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { needsAdultSelfDeclaration, isValidDateOfBirth } from './success-screen-logic';
+import {
+  needsAdultSelfDeclaration,
+  isValidDateOfBirth,
+  resolvePrimaryActionHref,
+} from './success-screen-logic';
 
 describe('needsAdultSelfDeclaration (Requirement 3.4, 4.6)', () => {
   it('is true for player/coach/manager intended roles', () => {
@@ -53,5 +57,28 @@ describe('isValidDateOfBirth', () => {
 
   it('rejects a calendar-invalid date rather than letting it roll over', () => {
     expect(isValidDateOfBirth('2024-02-30', REFERENCE)).toBe(false);
+  });
+});
+
+describe('resolvePrimaryActionHref (Requirement 8.2)', () => {
+  it('routes to caregiver approvals when a request is pending, even with an appUrl set', () => {
+    expect(resolvePrimaryActionHref(true, 'https://club.example.com')).toBe(
+      '/caregiver-approvals'
+    );
+    expect(resolvePrimaryActionHref(true, null)).toBe('/caregiver-approvals');
+  });
+
+  it('falls back to the branded appUrl when nothing is pending', () => {
+    expect(resolvePrimaryActionHref(false, 'https://club.example.com')).toBe(
+      'https://club.example.com'
+    );
+    expect(resolvePrimaryActionHref(undefined, 'https://club.example.com')).toBe(
+      'https://club.example.com'
+    );
+  });
+
+  it('falls back to /login when nothing is pending and there is no appUrl', () => {
+    expect(resolvePrimaryActionHref(false, null)).toBe('/login');
+    expect(resolvePrimaryActionHref(undefined, null)).toBe('/login');
   });
 });

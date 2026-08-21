@@ -136,10 +136,10 @@ Tasks marked with `*` are optional test tasks and are not required for a working
   - [x] 9.3 Implement getPendingApprovalCount
     - Thin wrapper over the existing `getMyPendingApprovals` (Task 1), returning just the count
     - _Requirements: 8.3_
-  - [ ]* 9.4 Write property test for pending-approval count driving nav visibility
+  - [x]* 9.4 Write property test for pending-approval count driving nav visibility
     - **Property 12: Pending-approval count drives nav visibility**
     - **Validates: Requirements 8.1, 8.3, 8.4**
-    - Deferred to Task 12: this property is about the nav tab's presence/badge derivation (`tabsForRole`'s extension), which doesn't exist until 12.1 is built — writing it now would mean inventing that pure function's shape ahead of its real call site. Will be written alongside 12.1, not skipped.
+    - Written alongside Task 12.1 as planned: `resolveApprovalsTab` (new `src/lib/main-layout-logic.ts`) is the nav tab's pure presence/badge derivation, property-tested in `main-layout-logic.test.ts`.
   - [x]* 9.5 Write unit tests for invite-generation call shape
     - Cover the Adult path (`intended_role: 'player'`, no `subjectUserId`) and the Caregiver path (`intended_role: 'caregiver'`, `subjectUserId` set)
     - _Requirements: 3.1, 4.3_
@@ -182,18 +182,22 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - _Requirements: 3.4, 4.6_
     - Skipped for the same reason as 10.6 (no component-rendering test infrastructure in this codebase). The pure decision it would render is unit-tested directly: `needsAdultSelfDeclaration` in `success-screen-logic.test.ts` covers player/coach/manager/caregiver/null/unrecognized.
 
-- [ ] 12. Caregiver Approvals visibility (`src/layouts/MainLayout.tsx`, redemption success screen)
-  - [ ] 12.1 Add a pending-approval-gated nav tab with badge
+- [x] 12. Caregiver Approvals visibility (`src/layouts/MainLayout.tsx`, redemption success screen)
+  - [x] 12.1 Add a pending-approval-gated nav tab with badge
     - Extend `tabsForRole` to accept `pendingApprovalCount` and conditionally include an Approvals tab with a badge equal to that count; fetched alongside the existing `useAuth()` profile read
+    - New `src/lib/main-layout-logic.ts` holds the pure `resolveApprovalsTab(pendingApprovalCount)` decision (visible/badge), kept free of React per this codebase's no-RTL convention. `MainLayout()` fetches `caregiversApi.getPendingApprovalCount(user.id)` in a `useEffect` keyed on `user?.id` and passes the result through `resolveApprovalsTab` into `tabsForRole(role, approvalsTab)`. Deliberately **not** gated by `users.role` like every other tab — Requirement 6 makes caregiver affiliation derived, not stored, so any role could simultaneously be a caregiver of their own child and needs to see this tab too.
     - _Requirements: 8.1, 8.3, 8.4_
-  - [ ] 12.2 Render without the tab on a failed pending-count fetch
+  - [x] 12.2 Render without the tab on a failed pending-count fetch
     - If `getPendingApprovalCount` fails, render the rest of navigation without the Approvals tab rather than blocking
+    - The fetch's `.catch` logs a warning and leaves `pendingApprovalCount` at its initial `0` — no separate error-state branch needed, since `resolveApprovalsTab(0)` already yields `{ visible: false }` and the rest of the nav renders normally.
     - _Requirements: 8.1_
-  - [ ] 12.3 Route first-authenticated-screen to Caregiver Approvals when signalled
+  - [x] 12.3 Route first-authenticated-screen to Caregiver Approvals when signalled
     - When the redemption response's `has_pending_approval` is `true` (Task 5.7), the Success Screen's primary action links to `/caregiver-approvals` instead of the app root
+    - New `resolvePrimaryActionHref(hasPendingApproval, appUrl)` in `success-screen-logic.ts` returns `/caregiver-approvals` whenever pending, overriding even a branded `appUrl`; otherwise falls back to `appUrl` or `/login` as before. Wired into both `MatchingWelcome` and `GenericComplete` in `LiteLandingPage.tsx`. A caregiver who isn't logged in yet round-trips through the existing `ProtectedRoute`/`Login.tsx` `location.state.from.pathname` redirect-back mechanism, so no new redirect-preservation logic was needed.
     - _Requirements: 8.2_
-  - [ ]* 12.4 Write unit tests for the badge and redirect branch
+  - [x]* 12.4 Write unit tests for the badge and redirect branch
     - Cover badge count/colour rendering and the redirect-vs-normal branch
+    - No component-rendering harness exists in this codebase (same constraint as 10.6/11.3), so the pure decisions behind both are unit- and property-tested directly instead: `main-layout-logic.test.ts` covers `resolveApprovalsTab` (zero/one/several/negative/NaN/Infinity, plus the Property 12 fast-check test, `numRuns: 300`, asserting `visible === (count > 0)` and `badge === count`); `success-screen-logic.test.ts`'s `resolvePrimaryActionHref` block covers the pending-vs-appUrl-vs-login branch.
     - _Requirements: 8.2, 8.3_
 
 - [ ] 13. Final checkpoint - Ensure all tests pass

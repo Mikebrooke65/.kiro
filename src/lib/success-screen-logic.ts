@@ -36,6 +36,15 @@ export interface RedeemInviteResult {
   confirmation_email_sent?: boolean;
   /** Optional competition name associated with the invite (Req 1.3 / 1.10). */
   competition_name?: string | null;
+  /**
+   * Set only for a Caregiver-invite redemption: whether a pending
+   * `caregiver_approvals` row already exists for the invite's subject child.
+   * Redeeming the invite never auto-approves it (Requirement 4.7) — this
+   * flag is how the client knows to route the registrant straight to it
+   * instead of the app root (Requirement 8.2).
+   * `.kiro/specs/add-player-and-dob-age-model/` Requirement 8.2, Task 5.7.
+   */
+  has_pending_approval?: boolean;
 }
 
 /** Which of the three Success Screen layouts to render. */
@@ -119,4 +128,27 @@ export function isValidDateOfBirth(value: string, asOf: Date = new Date()): bool
     check.getFullYear() === year && check.getMonth() === month - 1 && check.getDate() === day;
 
   return isRealCalendarDate && check.getTime() <= asOf.getTime();
+}
+
+// ---------------------------------------------------------------------------
+// Post-redemption routing
+// `.kiro/specs/add-player-and-dob-age-model/` Requirement 8.2, task 12.3
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the Success Screen's primary action should send the registrant
+ * (Requirement 8.2). A pending Caregiver approval takes priority over the
+ * normal destination (the club's app link, or `/login` as a fallback) — it
+ * overrides even when a branded `appUrl` is present, since the approval
+ * lives in this app specifically, not wherever the club's app link points.
+ * Redeeming the invite never auto-approves it (Requirement 4.7), so this is
+ * the one chance to make sure the registrant actually finds their way to
+ * the still-pending request.
+ */
+export function resolvePrimaryActionHref(
+  hasPendingApproval: boolean | undefined,
+  appUrl: string | null
+): string {
+  if (hasPendingApproval) return '/caregiver-approvals';
+  return appUrl || '/login';
 }
