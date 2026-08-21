@@ -457,7 +457,7 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Where Things Stand (updated 2026-08-20)
+## V1 — Where Things Stand (updated 2026-08-21)
 
 One-line status per item. Detail is in the sections further down.
 
@@ -480,13 +480,50 @@ One-line status per item. Detail is in the sections further down.
 | V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample (Decision 6) |
 
-**Substantive build work left for V1**: the V1.4 add-junior RLS fix (Task 1),
-V1.6, the V1.7 caregiver multi-child RSVP design + build, V1.8, and the V1.R
-retention build. Everything else is hardware, accounts, or decisions.
-**V1.1 and V1.1a are now fully closed out; V1.7 RSVP is mostly built with one
-deferred design question (caregiver multi-child) left before it's complete.**
+**Substantive build work left for V1** (updated 2026-08-21): the V1.M
+"Send to Admins" messaging bug, V1.6 invite branding, the V1.7 caregiver
+multi-child RSVP build + reminder pushes, V1.8 feature flags, and the V1.R
+retention build. Everything else is hardware, an external export, or open
+decisions. **V1.1, V1.1a, V1.4, and the whole Add Player / DOB age model
+spec are now fully closed out** (the last of those pending only a live
+device smoke test, not further build work).
 
-### PLAN FOR NEXT SESSION (updated 2026-08-20)
+### PLAN FOR NEXT SESSION (updated 2026-08-21)
+
+**Do first — live-test the Add Player / DOB age model spec** (dedicated
+section near the top of this file). Built, applied, pushed, and deployed
+2026-08-21, but nobody has clicked through it on a real device yet: Add
+Player as both an adult and a junior, redeem both invite types, confirm DOB
+self-declaration and the under-16 rejection message, confirm the new
+Approvals nav tab appears with the right badge and clears after approving.
+
+**Then, in rough priority order:**
+1. **V1.M** — "Send to Admins" messaging bug (🔴, not yet root-caused).
+2. **V1.6** — invite landing-page branding. Independent, easy wiring now
+   that `club_settings` + `useClubBranding` exist.
+3. **V1.7 RSVP** — caregiver multi-child RSVP build (design already agreed
+   2026-08-20, see that section above) + RSVP reminder pushes. Resolve
+   Decision 5 first.
+4. **V1.8** — feature flags, once the trial group's needs are known.
+5. **V1.R** — data retention & deletion scoping — gates the privacy policy
+   (V1.9). Open decisions in `docs/data-retention-scoping.md`.
+6. **Loose ends**: V1.4's logo + 32 optional tests, V1.3's 3 follow-ups,
+   TASK 3's cheap modal sweep (below), and the Deny/Escalate paths on the
+   add-a-junior approval flow (noted as untested in TASK 1 below).
+
+**Blocked, not actionable next session:** V1.1b iOS testing (needs a
+borrowed Mac + Xcode), V1.T Friendly Manager import (waiting on a CSV
+export sample from the club, Decision 6).
+
+---
+
+### Historical — TASK 1/2/3 plan & write-up (2026-08-20, completed/superseded)
+
+*Kept below for the root-cause detail on the add-a-junior RLS fix. TASK 1
+is done and live-confirmed; TASK 2's post-registration/contact-display
+items and TASK 3's modal sweep were not revisited by the Add Player / DOB
+age model work, so treat them as still-open unless checked next session —
+they're folded into the "Loose ends" bullet above.*
 
 **Progress since this plan was written:** V1.4 + V1.5 smoke test is part-done.
 Confirmed working: per-role nav, Team page/roster, and the Add Junior **modal
