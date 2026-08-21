@@ -67,6 +67,15 @@ export function emailMatchesInvite(submittedEmail: unknown, recipientEmail: unkn
  * Machine-readable rejection reasons. The handler returns the reason so a caller
  * can branch on it; the human-facing text comes from
  * {@link VALIDATION_MESSAGES}.
+ *
+ * `missing_date_of_birth` (`add-player-and-dob-age-model` Requirement 3.4) is
+ * deliberately **not** enforced inside {@link validateRequest} below, unlike
+ * every other reason here — whether a date of birth is required depends on
+ * the invite's role, which is not known until after the invite is looked up
+ * (step 2 of the handler). `validateRequest` only normalises the field; the
+ * handler applies this reason once `effectiveRole` is resolved, before any
+ * write. It is defined here anyway so the message lives in one place with
+ * every other validation reason.
  */
 export type ValidationReason =
   | 'missing_code'
@@ -75,7 +84,8 @@ export type ValidationReason =
   | 'missing_last_name'
   | 'missing_email'
   | 'missing_password'
-  | 'password_too_short';
+  | 'password_too_short'
+  | 'missing_date_of_birth';
 
 /** Minimum password length enforced client-side today, and now server-side too. */
 export const MIN_PASSWORD_LENGTH = 6;
@@ -100,6 +110,7 @@ export const VALIDATION_MESSAGES: Record<ValidationReason, string> = {
   missing_email: 'All fields are required.',
   missing_password: 'All fields are required.',
   password_too_short: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+  missing_date_of_birth: 'Please enter your date of birth to complete registration.',
 };
 
 /** Raw request body as the function receives it — every field untrusted. */
@@ -110,6 +121,9 @@ export interface RedeemInviteRequestBody {
   first_name?: unknown;
   last_name?: unknown;
   privacy_consent?: unknown;
+  /** ISO `yyyy-mm-dd`. Required only for a non-caregiver invite — see
+   *  `ValidationReason`'s `missing_date_of_birth` doc comment. */
+  date_of_birth?: unknown;
 }
 
 /**
@@ -127,6 +141,14 @@ export interface NormalizedRegistration {
   first_name: string;
   last_name: string;
   privacy_consent: true;
+  /**
+   * The self-declared date of birth (`add-player-and-dob-age-model`
+   * Requirement 3.4), trimmed if a string was sent, or `null` if absent —
+   * `null` is valid at this stage (a caregiver redemption never sends one);
+   * whether it is *required* is decided by the handler once the invite's
+   * role is known.
+   */
+  date_of_birth: string | null;
 }
 
 export type ValidationResult =
@@ -188,9 +210,14 @@ export function validateRequest(body: unknown): ValidationResult {
   if (password === '') return reject('missing_password');
   if (password.length < MIN_PASSWORD_LENGTH) return reject('password_too_short');
 
+  // Normalised but not required here — see NormalizedRegistration's doc
+  // comment on date_of_birth and ValidationReason's on missing_date_of_birth.
+  const trimmedDob = requiredString(raw.date_of_birth);
+  const date_of_birth = trimmedDob === '' ? null : trimmedDob;
+
   return {
     ok: true,
-    value: { code, email, password, first_name, last_name, privacy_consent: true },
+    value: { code, email, password, first_name, last_name, privacy_consent: true, date_of_birth },
   };
 }
 
@@ -398,18 +425,34 @@ export interface TeamMemberEntry extends LedgerEntry {
 }
 
 /**
+ * `player_caregivers` link created by redeeming a Caregiver invite
+ * (`add-player-and-dob-age-model` Requirement 4.6). Mutually exclusive with
+ * {@link TeamMemberEntry} in practice — `requiresTeamMembership` gates
+ * exactly one of the two being written per invocation — but the ledger keeps
+ * them as separate optional fields rather than a union, so a bug in that
+ * gating would show up as two entries here instead of silently picking one.
+ */
+export interface CaregiverLinkEntry extends LedgerEntry {
+  playerId: string;
+  caregiverId: string;
+}
+
+/**
  * What this invocation created, in creation order: auth user → `users` row →
- * `team_members` row. Invite redemption is deliberately absent: it is the last
- * write, so nothing can fail after it and there is nothing to undo.
+ * `team_members` row (or, for a Caregiver invite, a `player_caregivers` link
+ * instead — never both). Invite redemption is deliberately absent: it is the
+ * last write, so nothing can fail after it and there is nothing to undo.
  */
 export interface CreationLedger {
   authUser?: AuthUserEntry | null;
   profileRow?: ProfileRowEntry | null;
   teamMember?: TeamMemberEntry | null;
+  caregiverLink?: CaregiverLinkEntry | null;
 }
 
 export type Compensation =
   | { action: 'delete_team_member'; teamId: string; userId: string }
+  | { action: 'delete_caregiver_link'; playerId: string; caregiverId: string }
   | { action: 'delete_profile_row'; userId: string }
   | { action: 'delete_auth_user'; userId: string };
 
@@ -421,7 +464,8 @@ export type Compensation =
  * membership references the profile row — undoing forwards would fight foreign
  * keys. Filtering on `createdByThisInvocation` is what keeps an existing user's
  * account and memberships safe when a later step fails (2.3, and preservation of
- * 3.1 / 3.2).
+ * 3.1 / 3.2). `caregiverLink` sits at the same position as `teamMember` — both
+ * are "step 5" writes, undone before the profile row and auth user.
  */
 export function plannedCompensations(created: CreationLedger | null | undefined): Compensation[] {
   const ledger = created ?? {};
@@ -432,6 +476,13 @@ export function plannedCompensations(created: CreationLedger | null | undefined)
       action: 'delete_team_member',
       teamId: ledger.teamMember.teamId,
       userId: ledger.teamMember.userId,
+    });
+  }
+  if (ledger.caregiverLink?.createdByThisInvocation) {
+    compensations.push({
+      action: 'delete_caregiver_link',
+      playerId: ledger.caregiverLink.playerId,
+      caregiverId: ledger.caregiverLink.caregiverId,
     });
   }
   if (ledger.profileRow?.createdByThisInvocation) {
@@ -571,3 +622,27 @@ function ageInWholeYears(
   if (!hasHadBirthdayThisYear) age -= 1;
   return age;
 }
+
+// ---------------------------------------------------------------------------
+// Known, structural rejections added by add-player-and-dob-age-model
+// ---------------------------------------------------------------------------
+
+/**
+ * Client-facing messages for the two new rejections this feature's handler
+ * changes introduce. Deliberately **not** part of {@link SAFE_ERROR_MESSAGES}:
+ * that dictionary is the vocabulary `classifyError` maps *opaque* raw
+ * database/auth failures onto by sniffing their text. These two are the
+ * opposite — outcomes the handler understands precisely from its own state
+ * (the resolved role; the subject lookup), never routed through
+ * `classifyError`/`mapError` at all, so folding them into that dictionary
+ * would require inventing text signatures for failures that never produce
+ * raw error text in the first place.
+ */
+export const ADD_PLAYER_MESSAGES = {
+  /** Requirement 3.5 — self-declared DOB at redemption indicates under 16. */
+  underage_self_registration:
+    'This invite is for an adult. Please ask your Manager to add you as a Junior instead.',
+  /** Requirement 5.4 — a Caregiver invite's subject_user_id no longer
+   *  resolves to a Junior users row (e.g. the child record was removed). */
+  caregiver_subject_missing: 'This invite is no longer valid. Please ask for a new one.',
+} as const;

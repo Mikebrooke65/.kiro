@@ -47,29 +47,29 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - Covers the pure-logic slice of Property 3 (well-under-16, just-under-16, exactly-16-today, just-over-16, well-over-16)
     - **Validates: Requirements 3.5**
 
-- [ ] 4. Checkpoint - Ensure all tests pass
+- [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. redeem-invite handler changes (`supabase/functions/redeem-invite/index.ts`)
-  - [ ] 5.1 Add `date_of_birth` to registration normalization and validation
+- [x] 5. redeem-invite handler changes (`supabase/functions/redeem-invite/index.ts`)
+  - [x] 5.1 Add `date_of_birth` to registration normalization and validation
     - Add `date_of_birth` to `NormalizedRegistration`/`validateRequest`; add `ValidationReason` value `missing_date_of_birth`; require it only when `effectiveRole !== 'caregiver'`
     - _Requirements: 3.4_
-  - [ ] 5.2 Reject an under-16 self-declared DOB before any write
+  - [x] 5.2 Reject an under-16 self-declared DOB before any write
     - Before step 4, call `isAdult(reg.date_of_birth)`; on `false`, return a new safe `RedeemError` (Requirement 3.5's rejection, no compensations needed since nothing has been written yet) directing the Manager to redo the addition as a Junior
     - _Requirements: 3.5_
-  - [ ] 5.3 Persist the self-declared date of birth on the Adult profile row
+  - [x] 5.3 Persist the self-declared date of birth on the Adult profile row
     - `profilePayload` gains `date_of_birth: reg.date_of_birth` for the Adult path; the Caregiver path never sets it
     - _Requirements: 3.4, 4.2_
-  - [ ] 5.4 Gate the team_members insert behind requiresTeamMembership
+  - [x] 5.4 Gate the team_members insert behind requiresTeamMembership
     - Wrap existing step 5 in `if (requiresTeamMembership(effectiveRole))`
     - _Requirements: 6.1, 6.2_
-  - [ ] 5.5 Validate subject_user_id and add step 5b (caregiver link)
+  - [x] 5.5 Validate subject_user_id and add step 5b (caregiver link)
     - When `effectiveRole === 'caregiver'`: validate `invite.subject_user_id` still resolves to a Junior `users` row (reject via `RedeemError` if not); upsert `player_caregivers` (`onConflict: 'player_id,caregiver_id', ignoreDuplicates: true`) so redeeming twice, or after an admin already linked the pair another way, is a no-op
     - _Requirements: 4.6, 5.1, 5.4_
-  - [ ] 5.6 Extend the compensating-transaction ledger for the caregiver link
+  - [x] 5.6 Extend the compensating-transaction ledger for the caregiver link
     - Add an optional `caregiverLink` entry to `CreationLedger` and a `delete_caregiver_link` case to `plannedCompensations()`, undone in the same reverse-order, created-by-this-invocation-only discipline as every other step
     - _Requirements: 4.6_
-  - [ ] 5.7 Add has_pending_approval to the response payload
+  - [x] 5.7 Add has_pending_approval to the response payload
     - When redemption succeeds for a Caregiver invite and a pending `caregiver_approvals` row exists for `subject_user_id`, set `has_pending_approval: true` on the response; omit/false otherwise
     - _Requirements: 8.2_
   - [ ]* 5.8 Write integration test for DOB-mismatch rejection with no writes

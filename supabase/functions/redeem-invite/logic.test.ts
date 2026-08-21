@@ -189,7 +189,26 @@ describe('validateRequest — explicit accept or one specific rejection (3.7)', 
       first_name: 'Ada',
       last_name: 'Lovelace',
       privacy_consent: true,
+      date_of_birth: null,
     });
+  });
+
+  it('normalises date_of_birth when present, and to null when absent (add-player-and-dob-age-model)', () => {
+    const withDob = validateRequest({ ...VALID_BODY, date_of_birth: '  2009-06-15 ' });
+    expect(withDob.ok && withDob.value.date_of_birth).toBe('2009-06-15');
+
+    const withoutDob = validateRequest(VALID_BODY);
+    expect(withoutDob.ok && withoutDob.value.date_of_birth).toBeNull();
+
+    const nonStringDob = validateRequest({ ...VALID_BODY, date_of_birth: 12345 });
+    expect(nonStringDob.ok && nonStringDob.value.date_of_birth).toBeNull();
+  });
+
+  it('never rejects on a missing date_of_birth — that check is role-aware and lives in the handler', () => {
+    // Confirms date_of_birth is deliberately absent from VALIDATION_PRECEDENCE:
+    // validateRequest cannot know the invite's role, so it must not reject here.
+    expect(validateRequest(VALID_BODY).ok).toBe(true);
+    expect(VALIDATION_PRECEDENCE).not.toContain('missing_date_of_birth');
   });
 
   it('trims the code but does not case-fold it (the lookup is an exact match)', () => {

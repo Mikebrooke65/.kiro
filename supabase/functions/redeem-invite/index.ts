@@ -43,14 +43,18 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
 import {
+  ADD_PLAYER_MESSAGES,
   deriveInviteStatus,
   emailMatchesInvite,
+  isAdult,
   mapError,
   messageForInviteStatus,
   normalizeEmail,
   plannedCompensations,
+  requiresTeamMembership,
   resolveEffectiveRole,
   SAFE_ERROR_MESSAGES,
+  VALIDATION_MESSAGES,
   validateRequest,
   type CreationLedger,
   type NormalizedRegistration,
@@ -180,6 +184,15 @@ async function runCompensations(
           if (error) throw error;
           break;
         }
+        case 'delete_caregiver_link': {
+          const { error } = await admin
+            .from('player_caregivers')
+            .delete()
+            .eq('player_id', compensation.playerId)
+            .eq('caregiver_id', compensation.caregiverId);
+          if (error) throw error;
+          break;
+        }
         case 'delete_profile_row': {
           const { error } = await admin.from('users').delete().eq('id', compensation.userId);
           if (error) throw error;
@@ -287,6 +300,38 @@ Deno.serve(async (req) => {
     // so a crafted invite can never confer an elevated role.
     const effectiveRole = resolveEffectiveRole(invite.intended_role);
 
+    // --- 2b. Adult self-declared date of birth (add-player-and-dob-age-model
+    // Requirement 3.4, 3.5) ------------------------------------------------
+    // Deliberately placed here — before step 3, before any write in this
+    // invocation — so a rejection has nothing to compensate (Property 3).
+    // A Caregiver invite never carries a date of birth (Requirement 4.1's DOB
+    // exception is the child's, recorded separately by caregivers-api, not
+    // here), so this check is skipped entirely for that one role.
+    //
+    // Deliberately keyed on `effectiveRole !== 'caregiver'` directly rather
+    // than reusing `requiresTeamMembership` — the two happen to share the
+    // same boolean today, but they are independent decisions (one about
+    // team_members, one about date_of_birth) and should not be coupled just
+    // because they currently agree.
+    if (effectiveRole !== 'caregiver') {
+      if (!reg.date_of_birth) {
+        throw new RedeemError(
+          VALIDATION_MESSAGES.missing_date_of_birth,
+          400,
+          'missing date_of_birth for a self-registering role',
+          'missing_date_of_birth'
+        );
+      }
+      if (!isAdult(reg.date_of_birth)) {
+        throw new RedeemError(
+          ADD_PLAYER_MESSAGES.underage_self_registration,
+          400,
+          'self-declared date of birth indicates under 16',
+          'underage_self_registration'
+        );
+      }
+    }
+
     // --- 3. Resolve the user --------------------------------------------
     // `public.users.id` references `auth.users(id)`, so every profile row has an
     // auth user. Looking the auth user up first therefore settles all three
@@ -376,6 +421,12 @@ Deno.serve(async (req) => {
         user_type: 'lite',
         active: true,
         privacy_consent_at: reg.privacy_consent ? nowIso : null,
+        // add-player-and-dob-age-model Requirement 3.4: the self-declared DOB
+        // confirmed at redemption, not the Manager's Add Player routing
+        // guess. Never set for a caregiver — this feature never asks one for
+        // their own date of birth (step 2b above only required it for the
+        // other three roles).
+        date_of_birth: effectiveRole === 'caregiver' ? null : reg.date_of_birth,
       };
 
       const { error: insertError } = await admin.from('users').insert(profilePayload);
@@ -407,45 +458,110 @@ Deno.serve(async (req) => {
       ledger.profileRow = { userId, createdByThisInvocation: true };
     }
 
-    // --- 5. Team membership (3.2) ---------------------------------------
-    const { data: existingMember, error: memberLookupError } = await admin
-      .from('team_members')
-      .select('id')
-      .eq('team_id', invite.team_id)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (memberLookupError) {
-      throw new RedeemError(
-        SAFE_ERROR_MESSAGES.unavailable,
-        500,
-        memberLookupError,
-        'member_lookup'
-      );
-    }
-
-    if (existingMember) {
-      // Already a member — leave the existing row alone, insert no duplicate.
-      ledger.teamMember = {
-        teamId: invite.team_id,
-        userId,
-        createdByThisInvocation: false,
-      };
-    } else {
-      const { error: memberInsertError } = await admin
+    // --- 5. Team membership (3.2), or 5b. Caregiver link -----------------
+    // add-player-and-dob-age-model Requirement 6.1/6.2: exactly one of these
+    // two runs, decided by `requiresTeamMembership` and never anything else
+    // (Property 9). `team_members.role` stays CHECK'd to
+    // player/coach/manager only (migration 048) — a caregiver never gets a
+    // row here, by design, not by omission.
+    if (requiresTeamMembership(effectiveRole)) {
+      const { data: existingMember, error: memberLookupError } = await admin
         .from('team_members')
-        .insert({ team_id: invite.team_id, user_id: userId, role: effectiveRole });
+        .select('id')
+        .eq('team_id', invite.team_id)
+        .eq('user_id', userId)
+        .maybeSingle();
 
-      if (memberInsertError) {
+      if (memberLookupError) {
         throw new RedeemError(
-          mapError(memberInsertError),
-          400,
-          memberInsertError,
-          'insert_team_member'
+          SAFE_ERROR_MESSAGES.unavailable,
+          500,
+          memberLookupError,
+          'member_lookup'
         );
       }
 
-      ledger.teamMember = { teamId: invite.team_id, userId, createdByThisInvocation: true };
+      if (existingMember) {
+        // Already a member — leave the existing row alone, insert no duplicate.
+        ledger.teamMember = {
+          teamId: invite.team_id,
+          userId,
+          createdByThisInvocation: false,
+        };
+      } else {
+        const { error: memberInsertError } = await admin
+          .from('team_members')
+          .insert({ team_id: invite.team_id, user_id: userId, role: effectiveRole });
+
+        if (memberInsertError) {
+          throw new RedeemError(
+            mapError(memberInsertError),
+            400,
+            memberInsertError,
+            'insert_team_member'
+          );
+        }
+
+        ledger.teamMember = { teamId: invite.team_id, userId, createdByThisInvocation: true };
+      }
+    } else {
+      // --- 5b. Caregiver link (Requirement 4.6, 5.1, 5.4) -----------------
+      // invite.subject_user_id is the child this Caregiver invite is about
+      // (set only for a 'caregiver'-intended invite, migration 053). It must
+      // still resolve to a Junior user at redemption time — Requirement 5.4
+      // guards against the child record having been removed since the
+      // invite was generated.
+      if (!invite.subject_user_id) {
+        throw new RedeemError(
+          ADD_PLAYER_MESSAGES.caregiver_subject_missing,
+          400,
+          'caregiver invite has no subject_user_id',
+          'subject_missing'
+        );
+      }
+
+      const { data: subjectUser, error: subjectError } = await admin
+        .from('users')
+        .select('id, is_child')
+        .eq('id', invite.subject_user_id)
+        .maybeSingle();
+
+      if (subjectError) {
+        throw new RedeemError(SAFE_ERROR_MESSAGES.unavailable, 500, subjectError, 'subject_lookup');
+      }
+      if (!subjectUser || !subjectUser.is_child) {
+        throw new RedeemError(
+          ADD_PLAYER_MESSAGES.caregiver_subject_missing,
+          400,
+          'subject_user_id no longer resolves to a Junior user',
+          'subject_missing'
+        );
+      }
+
+      // Dedupe: mirrors link-player-caregiver's own dedupe (Task 1) so
+      // redeeming twice, or redeeming after an admin already linked the pair
+      // some other way, is a no-op rather than an error. `.select()` after an
+      // `ignoreDuplicates` upsert returns only the row(s) actually inserted —
+      // empty when the link already existed — which is how
+      // `createdByThisInvocation` below is determined precisely, the same
+      // discipline every other ledger entry in this file follows.
+      const { data: linkResult, error: linkError } = await admin
+        .from('player_caregivers')
+        .upsert(
+          { player_id: invite.subject_user_id, caregiver_id: userId },
+          { onConflict: 'player_id,caregiver_id', ignoreDuplicates: true }
+        )
+        .select('player_id, caregiver_id');
+
+      if (linkError) {
+        throw new RedeemError(mapError(linkError), 400, linkError, 'insert_caregiver_link');
+      }
+
+      ledger.caregiverLink = {
+        playerId: invite.subject_user_id,
+        caregiverId: userId,
+        createdByThisInvocation: (linkResult?.length ?? 0) > 0,
+      };
     }
 
     // --- 6. Redemption, last ---------------------------------------------
@@ -484,6 +600,28 @@ Deno.serve(async (req) => {
       .select('*')
       .eq('id', invite.team_id)
       .maybeSingle();
+
+    // --- 7b. Pending-approval signal (add-player-and-dob-age-model
+    // Requirement 8.2) ------------------------------------------------------
+    // Only meaningful on the Caregiver path: does the child this invite was
+    // about (invite.subject_user_id) still have a pending caregiver_approvals
+    // row? If so the client routes the caregiver's first authenticated screen
+    // straight to Caregiver Approvals instead of Home. Redeeming the invite
+    // never touches this row itself (Property 7) — it is a read, not a write.
+    // `caregiver_approvals` has no caregiver_id column (migration 036); the
+    // player_id match alone is precise because Requirement 5.4's subject
+    // check above already confirmed this exact child.
+    let hasPendingApproval = false;
+    if (effectiveRole === 'caregiver' && invite.subject_user_id) {
+      const { data: pendingApproval } = await admin
+        .from('caregiver_approvals')
+        .select('id')
+        .eq('player_id', invite.subject_user_id)
+        .eq('status', 'pending')
+        .limit(1)
+        .maybeSingle();
+      hasPendingApproval = !!pendingApproval;
+    }
 
     // --- 8. Non-matching path: confirmation link (2.2, 2.9) --------------
     // On the non-matching-address path the account is held behind an email
@@ -530,6 +668,11 @@ Deno.serve(async (req) => {
       // email" without inspecting the auth user.
       email_confirmed: preConfirm,
       email_confirmation_required: !preConfirm,
+      // add-player-and-dob-age-model Requirement 8.2 — true only for a
+      // Caregiver-invite redemption whose child still has a pending
+      // caregiver_approvals row; false (not omitted) on every other path, so
+      // the client never needs to distinguish "false" from "not present".
+      has_pending_approval: hasPendingApproval,
       // Present only on the non-matching path: the server-generated link the
       // caller sends via `send-email`, and whether that email could be sent at
       // all. `confirmation_email_sent: false` is the "confirmation required but
