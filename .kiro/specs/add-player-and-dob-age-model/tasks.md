@@ -19,31 +19,31 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - Replace `invite_codes_intended_role_check` to allow `('player','coach','manager','caregiver')`
     - _Requirements: 5.1, 7.2, 7.3_
 
-- [ ] 2. Add Player routing pure logic (`src/lib/add-player-logic.ts`)
-  - [ ] 2.1 Implement `routeAddPlayer`
+- [x] 2. Add Player routing pure logic (`src/lib/add-player-logic.ts`)
+  - [x] 2.1 Implement `routeAddPlayer`
     - Implement `AddPlayerRoutingInput`/`AddPlayerRoute` and `routeAddPlayer` per the design interface — 16-or-over as of the reference date routes `'adult'`, under 16 routes `'junior'`, boundary (exactly 16 today) is `'adult'`
     - _Requirements: 1.5, 1.6, 2.1_
-  - [ ]* 2.2 Write property test for Add Player routing threshold
+  - [x]* 2.2 Write property test for Add Player routing threshold
     - **Property 1: Add Player routing threshold**
     - **Validates: Requirements 1.5, 1.6, 2.1**
 
-- [ ] 3. redeem-invite pure logic extensions (`supabase/functions/redeem-invite/logic.ts`)
-  - [ ] 3.1 Extend `resolveEffectiveRole`'s valid set to include `caregiver`
+- [x] 3. redeem-invite pure logic extensions (`supabase/functions/redeem-invite/logic.ts`)
+  - [x] 3.1 Extend `resolveEffectiveRole`'s valid set to include `caregiver`
     - Add `IntendedRole` type and `INTENDED_ROLES` (`player`, `coach`, `manager`, `caregiver`); widen `resolveEffectiveRole`'s valid-input set to match — behaviour otherwise unchanged (unknown/absent/`admin` still degrade to `player`)
     - _Requirements: 5.1_
-  - [ ] 3.2 Implement `requiresTeamMembership`
+  - [x] 3.2 Implement `requiresTeamMembership`
     - Implement `requiresTeamMembership(role: IntendedRole): boolean`, returning `false` only for `'caregiver'` — kept deliberately separate from `resolveEffectiveRole`
     - _Requirements: 6.1, 6.2_
-  - [ ] 3.3 Implement `isAdult`
+  - [x] 3.3 Implement `isAdult`
     - Implement `isAdult(dateOfBirth: string, asOf?: Date): boolean` using the same 16-year threshold as `routeAddPlayer`
     - _Requirements: 3.4, 3.5_
-  - [ ]* 3.4 Write property test for effective role resolution over the extended set
+  - [x]* 3.4 Write property test for effective role resolution over the extended set
     - **Property 8: intended_role still degrades unknown values safely**
     - **Validates: Requirements 5.1 (implicitly, via `INTENDED_ROLES`), and the prior spec's Requirement 6.2-6.5 (regression guard)**
-  - [ ]* 3.5 Write property test for requiresTeamMembership
+  - [x]* 3.5 Write property test for requiresTeamMembership
     - **Property 9: requiresTeamMembership is the single source of the branch**
     - **Validates: Requirements 6.1, 6.2**
-  - [ ]* 3.6 Write property test for the isAdult boundary
+  - [x]* 3.6 Write property test for the isAdult boundary
     - Covers the pure-logic slice of Property 3 (well-under-16, just-under-16, exactly-16-today, just-over-16, well-over-16)
     - **Validates: Requirements 3.5**
 

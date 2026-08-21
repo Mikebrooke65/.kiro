@@ -29,15 +29,20 @@ import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 
 import {
+  ADULT_AGE_THRESHOLD,
   classifyError,
   deriveInviteStatus,
   emailMatchesInvite,
   FORBIDDEN_ERROR_FRAGMENTS,
+  INTENDED_ROLES,
+  isAdult,
   MIN_PASSWORD_LENGTH,
   mapError,
   messageForInviteStatus,
   normalizeEmail,
   plannedCompensations,
+  requiresTeamMembership,
+  resolveEffectiveRole,
   SAFE_ERROR_MESSAGE_LIST,
   SAFE_ERROR_MESSAGES,
   VALIDATION_MESSAGES,
@@ -45,6 +50,7 @@ import {
   validateRequest,
   type Compensation,
   type CreationLedger,
+  type IntendedRole,
   type InviteStatus,
   type SafeErrorKey,
   type ValidationReason,
@@ -802,6 +808,137 @@ describe('Property 4 (Bug Condition): rollback undoes exactly what this invocati
         expect(plannedCompensations(ledger)).toEqual(plannedCompensations(ledger));
       }),
       { numRuns: 100 }
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// add-player-and-dob-age-model additions
+// ---------------------------------------------------------------------------
+
+describe('resolveEffectiveRole — degrades unknown values safely, extended set', () => {
+  it('accepts each of the four valid roles unchanged', () => {
+    for (const role of INTENDED_ROLES) {
+      expect(resolveEffectiveRole(role)).toBe(role);
+    }
+  });
+
+  it('degrades null, undefined, admin and arbitrary strings to player', () => {
+    expect(resolveEffectiveRole(null)).toBe('player');
+    expect(resolveEffectiveRole(undefined)).toBe('player');
+    expect(resolveEffectiveRole('admin')).toBe('player');
+    expect(resolveEffectiveRole('superuser')).toBe('player');
+    expect(resolveEffectiveRole('')).toBe('player');
+  });
+
+  it('INTENDED_ROLES is exactly the four-member set this feature extends to', () => {
+    expect([...INTENDED_ROLES].sort()).toEqual(['caregiver', 'coach', 'manager', 'player']);
+  });
+
+  // Property 8: intended_role still degrades unknown values safely
+  // Validates: Requirements 5.1 (implicitly, via INTENDED_ROLES), and the
+  // prior spec's Requirement 6.2-6.5 (regression guard)
+  it('Property 8: returns the value when valid, else player — over the four-member set', () => {
+    const validRole = fc.constantFrom(...INTENDED_ROLES);
+    const arbitraryInput = fc.oneof(
+      validRole,
+      fc.constant(null),
+      fc.constant(undefined),
+      fc.constant('admin'),
+      fc.string()
+    );
+
+    fc.assert(
+      fc.property(arbitraryInput, (input) => {
+        const result = resolveEffectiveRole(input as string | null | undefined);
+        expect(INTENDED_ROLES).toContain(result);
+        if (
+          (typeof input === 'string' && (INTENDED_ROLES as readonly string[]).includes(input))
+        ) {
+          expect(result).toBe(input);
+        } else {
+          expect(result).toBe('player');
+        }
+      }),
+      { numRuns: 300 }
+    );
+  });
+});
+
+describe('requiresTeamMembership — the one place caregiver is treated differently', () => {
+  it('is false for caregiver and true for the other three roles', () => {
+    expect(requiresTeamMembership('caregiver')).toBe(false);
+    expect(requiresTeamMembership('player')).toBe(true);
+    expect(requiresTeamMembership('coach')).toBe(true);
+    expect(requiresTeamMembership('manager')).toBe(true);
+  });
+
+  // Property 9: requiresTeamMembership is the single source of the branch
+  // Validates: Requirements 6.1, 6.2
+  it('Property 9: returns false if and only if the role is caregiver', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...INTENDED_ROLES), (role: IntendedRole) => {
+        expect(requiresTeamMembership(role)).toBe(role !== 'caregiver');
+      }),
+      { numRuns: 100 }
+    );
+  });
+});
+
+describe('isAdult — self-declared date-of-birth threshold (Requirement 3.4, 3.5)', () => {
+  const REFERENCE = new Date(2025, 5, 15); // 2025-06-15, fixed so tests are deterministic
+
+  it('is true well over the threshold and false well under it', () => {
+    expect(isAdult('2000-01-01', REFERENCE)).toBe(true);
+    expect(isAdult('2020-01-01', REFERENCE)).toBe(false);
+  });
+
+  it('classifies exactly-16-today as adult (the boundary)', () => {
+    expect(isAdult('2009-06-15', REFERENCE)).toBe(true);
+  });
+
+  it('classifies one day before the 16th birthday as not-adult', () => {
+    expect(isAdult('2009-06-16', REFERENCE)).toBe(false);
+  });
+
+  it('classifies one day after the 16th birthday as adult', () => {
+    expect(isAdult('2009-06-14', REFERENCE)).toBe(true);
+  });
+
+  it('treats an unparseable or malformed date of birth as not-adult, not a throw', () => {
+    expect(isAdult('not-a-date', REFERENCE)).toBe(false);
+    expect(isAdult('', REFERENCE)).toBe(false);
+    expect(isAdult('2009-13-40', REFERENCE)).toBe(false);
+  });
+
+  it('defaults asOf to now when omitted', () => {
+    // A date of birth 100 years ago is adult under any real-world "now".
+    expect(isAdult('1900-01-01')).toBe(true);
+  });
+
+  // Supports Property 3 (DOB mismatch is rejected, not reclassified) — this is
+  // the pure-logic slice; the full rejection-with-no-writes behaviour is
+  // covered by the redeem-invite integration tests (tasks.md 5.8).
+  // Validates: Requirements 3.5
+  it('boundary property: adult iff whole-years age >= ADULT_AGE_THRESHOLD', () => {
+    const dobYear = fc.integer({ min: 1990, max: 2024 });
+    const dobMonth = fc.integer({ min: 1, max: 12 });
+    const dobDay = fc.integer({ min: 1, max: 28 }); // 28 avoids month-length edge cases
+
+    fc.assert(
+      fc.property(dobYear, dobMonth, dobDay, (year, month, day) => {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const dob = `${year}-${pad(month)}-${pad(day)}`;
+
+        let expectedAge = REFERENCE.getFullYear() - year;
+        const hadBirthday =
+          REFERENCE.getMonth() + 1 > month ||
+          (REFERENCE.getMonth() + 1 === month && REFERENCE.getDate() >= day);
+        if (!hadBirthday) expectedAge -= 1;
+
+        expect(isAdult(dob, REFERENCE)).toBe(expectedAge >= ADULT_AGE_THRESHOLD);
+      }),
+      { numRuns: 300 }
     );
   });
 });
