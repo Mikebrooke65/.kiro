@@ -200,8 +200,11 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - No component-rendering harness exists in this codebase (same constraint as 10.6/11.3), so the pure decisions behind both are unit- and property-tested directly instead: `main-layout-logic.test.ts` covers `resolveApprovalsTab` (zero/one/several/negative/NaN/Infinity, plus the Property 12 fast-check test, `numRuns: 300`, asserting `visible === (count > 0)` and `badge === count`); `success-screen-logic.test.ts`'s `resolvePrimaryActionHref` block covers the pending-vs-appUrl-vs-login branch.
     - _Requirements: 8.2, 8.3_
 
-- [ ] 13. Final checkpoint - Ensure all tests pass
+- [x] 13. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
+  - All 13 tasks are now implemented and delivered as a chain of git-am-able patches (Tasks 1, 2-3, 5, 6-7, 9, 10, 11, 12), each verified independently via `git am` on a clean clone, `npm test`, and `npm run build`. The full realistic stack -- Task 1 -> Tasks 2-3 -> Tasks 6-7 -> Task 9 -> Task 10 -> Task 11 -> Task 12 -- was re-verified together on a fresh clone: all patches applied cleanly with `git am`, all 8 test files passed (156 passed, 2 pre-existing environment-only skips, 0 failures), and `npm run build` completed with no errors. Task 5 (the `redeem-invite` handler changes) was verified the same way when it was delivered but is a separate patch with its own Edge Function redeploy step, since it isn't a dependency of 6-7/9/10/11/12's frontend/API changes.
+  - Outstanding on your end before this is live: apply the patches in dependency order (5 is independent; 6-7 is independent; then 9 -> 10 -> 11 -> 12 as a chain), run the Task 1 Supabase migration if you haven't already, and redeploy the `create-auth-user` (Task 10) and `redeem-invite` (Task 5) Edge Functions -- everything else is a plain frontend/API deploy.
+  - No open questions came up during implementation that need your input; the deliberate scope decisions (self-declared DOB as the record of truth, no client-side 16-year threshold duplication, Approvals tab not gated by role, Requirement 9's out-of-scope items left untouched) are documented inline in this file and in each patch's commit message.
 
 ## Notes
 
