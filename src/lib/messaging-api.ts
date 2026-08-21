@@ -1,4 +1,5 @@
 import { ApiClient, ApiError } from './api-client';
+import { unionTeamAndCaregiverRecipients } from './messaging-logic';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type {
   Message,
@@ -328,7 +329,8 @@ export class MessagingApi extends ApiClient {
   /**
    * Resolve recipient user IDs based on targeting type.
    * - 'individual': returns [individualUserId]
-   * - 'whole_team': queries team_members for the team, returns all user_ids
+   * - 'whole_team': queries team_members for the team, plus every caregiver
+   *   derived-affiliated to it (Req 6.3 — see `unionTeamAndCaregiverRecipients`)
    * - 'management_team': queries team_members where role in ('coach', 'manager'), returns user_ids
    * - 'club_admin': queries users where role = 'admin', returns user_ids
    */
@@ -346,13 +348,47 @@ export class MessagingApi extends ApiClient {
       }
 
       case 'whole_team': {
-        const { data, error } = await this.supabase
+        const { data: members, error: membersError } = await this.supabase
           .from('team_members')
-          .select('user_id')
+          .select('user_id, user:users(active)')
           .eq('team_id', teamId);
 
-        if (error) throw new ApiError(error.message);
-        return (data || []).map((row: any) => row.user_id);
+        if (membersError) throw new ApiError(membersError.message);
+
+        const memberIds = (members || []).map((row: any) => row.user_id as string);
+
+        // add-player-and-dob-age-model Requirement 6.3: derived caregiver
+        // affiliation. No direct foreign key links player_caregivers to
+        // team_members (both reference users independently, not each
+        // other), so this is a second explicit query rather than a single
+        // embed — "active" here is `users.active` (team_members itself has
+        // no active column, migration 021), matching how a pending child's
+        // inactive status is read everywhere else in this app.
+        const activeMemberIds = (members || [])
+          .filter((row: any) => row.user?.active ?? true)
+          .map((row: any) => row.user_id as string);
+
+        let caregiverIds: string[] = [];
+        if (activeMemberIds.length > 0) {
+          const { data: caregiverLinks, error: linksError } = await this.supabase
+            .from('player_caregivers')
+            .select('caregiver_id')
+            .in('player_id', activeMemberIds);
+
+          if (linksError) {
+            // Error Handling (design.md): a caregiver being temporarily
+            // missing from one message is preferable to failing the whole
+            // send. Logged, not surfaced to the sender.
+            console.error(
+              'resolveRecipients: player_caregivers lookup failed, falling back to team_members only',
+              linksError
+            );
+          } else {
+            caregiverIds = (caregiverLinks || []).map((row: any) => row.caregiver_id as string);
+          }
+        }
+
+        return unionTeamAndCaregiverRecipients(memberIds, caregiverIds);
       }
 
       case 'management_team': {

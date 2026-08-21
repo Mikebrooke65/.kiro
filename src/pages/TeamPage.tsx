@@ -20,6 +20,7 @@ import type { TeamRole, TeamType, TeamMemberWithUser } from '../types/database';
 import {
   buildTeamSelection,
   deriveAgeBand,
+  deriveAgeBandForPerson,
   groupAndSortRoster,
   selectCaregiverContact,
   type AgeBand,
@@ -537,9 +538,27 @@ function ContactLine({ contact }: { contact: ContactDisplay }) {
  * Fetch and assemble the roster for a team: its members (with all roles merged
  * per user), the age-band-appropriate contact for each, any pending children
  * awaiting consent (Req 5.10), and the metadata needed for capability checks.
+ *
+ * Age band (`.kiro/specs/add-player-and-dob-age-model/` Requirement 2.1-2.5):
+ * each roster row's band now prefers that PERSON's own `date_of_birth`,
+ * falling back to the team's `age_group` only where they have none recorded
+ * — so one roster can legitimately mix DOB-derived and age_group-derived
+ * bands person by person (Req 2.5). `deriveAgeBand(team.age_group)` is kept
+ * only as that fallback and as a team-level summary on the returned
+ * `RosterData` (unused by this component's own render today).
+ *
+ * `date_of_birth` itself (Requirement 4.2 — visible only to that team's
+ * Coach/Manager/Admin) never appears on `RosterMember`/`RosterEntry`: it is
+ * read here only to compute the (non-sensitive) age band, then discarded —
+ * the same way `team.age_group`-derived classification was never itself
+ * treated as sensitive. No UI in this feature renders a raw date of birth;
+ * if a future feature (e.g. birthday reminders, Req 2.6) needs to actually
+ * display one, that display — not this fetch — is where real caller-role
+ * gating belongs, since `users` RLS (migration 004) permits any
+ * authenticated read and cannot enforce it at the column level.
  */
 async function fetchRoster(teamId: string, currentUserId: string): Promise<RosterData> {
-  // Team classification + age group drive editability and contact display.
+  // Team classification + age group drive editability and the fallback band.
   const { data: team, error: teamError } = await supabase
     .from('teams')
     .select('id, age_group, team_type')
@@ -547,11 +566,14 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     .single();
   if (teamError || !team) throw new Error(teamError?.message || 'Team not found');
 
-  const ageBand = deriveAgeBand(team.age_group as string);
+  const teamAgeGroup = team.age_group as string;
+  const ageBand = deriveAgeBand(teamAgeGroup); // team-level summary only — see doc comment above
   const teamType = (team.team_type as TeamType) ?? 'club_tournament';
 
   // Members (source of truth). Includes active + inactive.
   const memberRows = await rolesApi.getTeamMembers(teamId);
+  const ageBandFor = (dateOfBirth: string | null | undefined) =>
+    deriveAgeBandForPerson(dateOfBirth, teamAgeGroup);
 
   // Pending children awaiting caregiver consent are not yet team_members, so
   // they're read from their pending add-child approval records (Req 5.10).
@@ -567,23 +589,30 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     (row: { player_id: string }) => row.player_id
   );
 
-  // Resolve pending child user rows (name + active flag).
-  let pendingChildren: Array<{ id: string; first_name: string; last_name: string }> = [];
+  // Resolve pending child user rows (name, active flag, and their own DOB if
+  // Add Player's Junior path recorded one — Req 4.1).
+  let pendingChildren: Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+    date_of_birth: string | null;
+  }> = [];
   if (pendingChildIds.length > 0) {
     const { data: childUsers, error: childError } = await supabase
       .from('users')
-      .select('id, first_name, last_name')
+      .select('id, first_name, last_name, date_of_birth')
       .in('id', pendingChildIds);
     if (childError) throw new Error(childError.message);
     pendingChildren = childUsers ?? [];
   }
 
-  // For a child-band team, resolve every player's caregiver links so the
-  // contact of record can be chosen (primary, else most recently linked).
+  // Resolve every player's caregiver links so the contact of record can be
+  // chosen (primary, else most recently linked) — per person now (Req 2.5),
+  // not gated on a single team-wide band.
   const childCandidateIds = new Set<string>(pendingChildIds);
-  if (ageBand === 'child') {
-    for (const row of memberRows) {
-      if (row.role === 'player') childCandidateIds.add(row.user_id);
+  for (const row of memberRows) {
+    if (row.role === 'player' && ageBandFor(row.user?.date_of_birth) === 'child') {
+      childCandidateIds.add(row.user_id);
     }
   }
 
@@ -595,7 +624,12 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     displayName: displayName(row),
     role: row.role,
     active: row.user?.active ?? true,
-    contact: contactFor(ageBand, row.role, row.user?.cellphone ?? '', caregiverLinksByPlayer[row.user_id]),
+    contact: contactFor(
+      ageBandFor(row.user?.date_of_birth),
+      row.role,
+      row.user?.cellphone ?? '',
+      caregiverLinksByPlayer[row.user_id]
+    ),
     pending: false,
   }));
 
@@ -609,7 +643,7 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
       role: 'player',
       active: false,
       contact:
-        ageBand === 'child'
+        ageBandFor(child.date_of_birth) === 'child'
           ? selectCaregiverContact(caregiverLinksByPlayer[child.id] ?? [])
           : { kind: 'self', cellphone: '' },
       pending: true,

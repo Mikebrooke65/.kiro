@@ -128,6 +128,63 @@ export function deriveAgeBand(ageGroup: string): AgeBand {
 }
 
 /**
+ * Derive the age band from a person's own date of birth, falling back to the
+ * team-`age_group` rule when they have none recorded.
+ *
+ * Spec: `.kiro/specs/add-player-and-dob-age-model/` Requirement 2.1-2.3, 2.5 —
+ * classification moves from an approximation (the team someone plays for) to
+ * the person's own DOB, but only where one is recorded: an existing roster
+ * member added before this feature shipped has no `date_of_birth` and is
+ * unaffected (Req 2.3/2.4), so a single roster can legitimately mix
+ * DOB-derived and `age_group`-derived bands person by person (Req 2.5) — this
+ * function is what `TeamPage.tsx` calls per roster row, never once per team.
+ *
+ * The 16-year threshold here matches `routeAddPlayer`
+ * (`src/lib/add-player-logic.ts`) and `isAdult`
+ * (`supabase/functions/redeem-invite/logic.ts`) exactly. It is intentionally
+ * NOT the same line as `deriveAgeBand`'s existing U17-grade threshold — see
+ * this spec's design.md Data Models section ("Accepted, not resolved here")
+ * for why that discrepancy is left visible rather than silently reconciled.
+ *
+ * An unparseable date of birth is treated as "not recorded" (falls back to
+ * `deriveAgeBand`), the same safe-fallback direction `isAdult` and
+ * `routeAddPlayer` take on malformed input.
+ */
+export function deriveAgeBandForPerson(
+  dateOfBirth: string | null | undefined,
+  ageGroup: string
+): AgeBand {
+  const age = ageFromDateOfBirth(dateOfBirth);
+  if (age !== null) return age >= PERSONAL_ADULT_AGE_THRESHOLD ? 'adult' : 'child';
+  return deriveAgeBand(ageGroup);
+}
+
+/** Matches `add-player-logic.ts`'s `ADULT_AGE_THRESHOLD` / `isAdult`'s threshold. */
+const PERSONAL_ADULT_AGE_THRESHOLD = 16;
+
+/** Whole-years age as of today from a strict `yyyy-mm-dd` string, or `null`. */
+function ageFromDateOfBirth(dateOfBirth: string | null | undefined): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOfBirth ?? '');
+  if (!match) return null;
+
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+
+  const check = new Date(year, month - 1, day);
+  const isValidCalendarDate =
+    check.getFullYear() === year && check.getMonth() === month - 1 && check.getDate() === day;
+  if (!isValidCalendarDate) return null;
+
+  const now = new Date();
+  let age = now.getFullYear() - year;
+  const hasHadBirthdayThisYear =
+    now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return age;
+}
+
+/**
  * Choose the caregiver contact of record for a child player (Req 3.8 / 3.11).
  *
  * Selection order:

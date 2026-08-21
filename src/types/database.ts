@@ -36,6 +36,13 @@ export interface User {
   is_child?: boolean;
   /** Origin of a child record; null/undefined for ordinary users. */
   child_provenance?: ChildProvenance | null;
+  /**
+   * ISO `yyyy-mm-dd`. Self-declared (adult, at invite redemption) or
+   * Manager-entered (junior, via Add Player). `null`/undefined for every
+   * user added before `.kiro/specs/add-player-and-dob-age-model/` shipped —
+   * never backfilled (Requirement 2.3/2.4).
+   */
+  date_of_birth?: string | null;
 }
 
 // Team model

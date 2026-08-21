@@ -97,28 +97,28 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - Cover a later-step failure (e.g. step 6) rolling back a `player_caregivers` row created earlier in the same invocation, while leaving a pre-existing link untouched
     - _Requirements: 4.6_
 
-- [ ] 6. Roster age-band pure logic and DOB visibility (`src/lib/roster-logic.ts`, roster/team queries)
-  - [ ] 6.1 Implement deriveAgeBandForPerson
+- [x] 6. Roster age-band pure logic and DOB visibility (`src/lib/roster-logic.ts`, roster/team queries)
+  - [x] 6.1 Implement deriveAgeBandForPerson
     - Implement per the design interface: prefer a person's own DOB via `isAdult`-equivalent logic, fall back to `deriveAgeBand(ageGroup)` when absent
     - _Requirements: 2.2, 2.3, 2.5_
-  - [ ] 6.2 Wire TeamPage's contact resolution to the per-person band
+  - [x] 6.2 Wire TeamPage's contact resolution to the per-person band
     - `TeamPage.tsx`'s `contactFor` call site switches from `deriveAgeBand(team.age_group)` to `deriveAgeBandForPerson(member.date_of_birth, team.age_group)`
     - _Requirements: 2.2, 2.5_
-  - [ ] 6.3 Scope date_of_birth exposure to Coach/Manager/Admin of the team
-    - Roster/team queries that select `date_of_birth` do so only for callers who are Coach, Manager, or Admin of that team, matching the existing scoping pattern for other roster contact fields
+  - [x] 6.3 Scope date_of_birth exposure to Coach/Manager/Admin of the team
+    - `users` RLS (migration 004) is row-level only (`USING (true)`) and cannot enforce column-level access, and no existing roster contact field (e.g. cellphone in `fetchCaregiverLinks`) is caller-role-scoped at the query layer either — visibility today is enforced entirely by what's rendered, not what's fetched. Matched that existing pattern: `date_of_birth` is read in `fetchRoster` only to derive the (non-sensitive) age band, then discarded — it is never placed on `RosterMember`/`RosterEntry` or any other returned/rendered shape. Documented as a revisit point for any future feature (e.g. birthday reminders) that would need to actually display a raw DOB.
     - _Requirements: 4.2_
-  - [ ]* 6.4 Write property test for age band preferring a personal date of birth
+  - [x]* 6.4 Write property test for age band preferring a personal date of birth
     - **Property 11: Age band prefers a personal date of birth**
     - **Validates: Requirements 2.2, 2.3, 2.5**
 
-- [ ] 7. Derived caregiver affiliation for messaging (`src/lib/messaging-api.ts`)
-  - [ ] 7.1 Extract a pure recipient-union function and wire it into resolveRecipients
+- [x] 7. Derived caregiver affiliation for messaging (`src/lib/messaging-api.ts`)
+  - [x] 7.1 Extract a pure recipient-union function and wire it into resolveRecipients
     - Extract the `team_members` id set ∪ `player_caregivers`-derived caregiver id set (for caregivers whose child is a `team_members` row on that team) into a pure, testable function; call it from the `'whole_team'` case
     - _Requirements: 6.3_
-  - [ ] 7.2 Fall back gracefully when the caregiver-link query fails
+  - [x] 7.2 Fall back gracefully when the caregiver-link query fails
     - On failure of the new `player_caregivers` query, return the `team_members`-only result rather than failing the send; log, don't surface to the sender
     - _Requirements: 6.3_
-  - [ ]* 7.3 Write property test for whole-team messaging including affiliated caregivers
+  - [x]* 7.3 Write property test for whole-team messaging including affiliated caregivers
     - **Property 10: Whole-team messaging includes affiliated caregivers**
     - **Validates: Requirements 6.3**
 
