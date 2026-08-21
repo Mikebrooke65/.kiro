@@ -47,6 +47,13 @@ interface CreateAuthUserBody {
   is_child?: boolean;
   child_provenance?: string | null;
   can_sign_in: boolean;
+  // ISO `yyyy-mm-dd`. `.kiro/specs/add-player-and-dob-age-model/` Requirement
+  // 4.1 — the one exception to a child having no contact/DOB data collected;
+  // recorded as entered by the Manager in Add Player's Junior path. This
+  // function stays business-logic-free (see file header): it applies
+  // whatever value the caller sends, whichever kind of user is being
+  // created — deciding *when* to send one is `caregivers-api.addJunior`'s job.
+  date_of_birth?: string | null;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -173,6 +180,7 @@ Deno.serve(async (req) => {
     };
     if (body.is_child) profile.is_child = true;
     if (body.child_provenance) profile.child_provenance = body.child_provenance;
+    if (body.date_of_birth) profile.date_of_birth = body.date_of_birth;
 
     const createProfileResp = await fetch(`${SUPABASE_URL}/rest/v1/users`, {
       method: 'POST',

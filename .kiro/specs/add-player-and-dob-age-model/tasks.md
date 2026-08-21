@@ -144,25 +144,29 @@ Tasks marked with `*` are optional test tasks and are not required for a working
     - Cover the Adult path (`intended_role: 'player'`, no `subjectUserId`) and the Caregiver path (`intended_role: 'caregiver'`, `subjectUserId` set)
     - _Requirements: 3.1, 4.3_
 
-- [ ] 10. Add Player modal UI (`src/components/team/AddPlayerModal.tsx`, replaces `AddJuniorModal.tsx`)
-  - [ ] 10.1 Build the routed Add Player form
+- [x] 10. Add Player modal UI (`src/components/team/AddPlayerModal.tsx`, replaces `AddJuniorModal.tsx`)
+  - [x] 10.1 Build the routed Add Player form
     - Capture first name, last name, date of birth; use `routeAddPlayer` to reveal the email field (Adult) or the existing caregiver name/email/phone fields (Junior); no contact details or photo captured on either path
     - _Requirements: 1.2, 1.4, 1.5, 1.6_
-  - [ ] 10.2 Add per-field validation with retained values
+  - [x] 10.2 Add per-field validation with retained values
     - Reject submission on any invalid field, retain entered values, indicate which field failed
     - _Requirements: 1.3_
-  - [ ] 10.3 Add the routing confirmation step
+    - `validateAddPlayerForm` (`add-player-logic.ts`) — first/last name and DOB always checked; email checked only on the Adult route, caregiver fields only on the Junior route (reusing `validateAddJunior` for those, mapped back onto `firstName`/`lastName`). Unit-tested in `add-player-logic.test.ts`.
+  - [x] 10.3 Add the routing confirmation step
     - Before either submit fires, show a plain confirmation restating the entered DOB and which path (Adult invite vs. Junior/caregiver) it will take
     - _Requirements: 1.7_
-  - [ ] 10.4 Wire submit to the Adult and Junior paths
+  - [x] 10.4 Wire submit to the Adult and Junior paths
     - Adult: call `invitesApi.generateInviteCode(teamId, email, ..., 'player')` and send via the existing invite email pattern. Junior: call `caregivers-api.addJunior` (now routing through Task 9.2's invite-based caregiver creation)
     - _Requirements: 3.1, 3.2, 4.1_
-  - [ ] 10.5 Replace "Add Junior" with "Add Player" on the Team Page
+    - Also extended `caregivers-api.addJunior`'s signature with an optional `childDateOfBirth`, and `create-auth-user`'s body/profile-insert, so the Junior path's DOB (captured here for the first time, Requirement 4.1) actually reaches the child's `users` row — not explicitly called out under 9.2, but required for 10.4 to satisfy 4.1 and included here instead.
+  - [x] 10.5 Replace "Add Junior" with "Add Player" on the Team Page
     - Same permitted roles (Coach, Manager, Admin) and same Club-Tournament-only team-type restriction as the action it replaces
     - _Requirements: 1.1_
+    - Unchanged: `capabilities.canAddUser` already encodes exactly this rule (`permissions-logic.ts`) and gates the new button the same way it gated the old one — nothing to change there, only the label/icon and the modal it opens.
   - [ ]* 10.6 Write unit tests for routed-field visibility and gating
     - Cover Adult vs. Junior field sets, and that the action is hidden outside the permitted roles/team type
     - _Requirements: 1.1, 1.4, 1.5, 1.6_
+    - Skipped: this codebase has no component-rendering test infrastructure (no React Testing Library / jsdom harness anywhere in the repo — every existing test is pure-logic). Adding one is a real infrastructure decision outside an optional test task's scope. The field-set-by-route logic itself is covered where it's pure and testable: `validateAddPlayerForm`'s route-conditional field checks (10.2) and `routeAddPlayer`'s own Property 1 test (task 2.2). The role/team-type gating is `canAddUser`, already property/unit-tested by the prior spec and reused unchanged (10.5's note above).
 
 - [ ] 11. Adult self-declaration at invite redemption (registration/redemption screen)
   - [ ] 11.1 Add a DOB self-declaration step for player/coach/manager-intended invites

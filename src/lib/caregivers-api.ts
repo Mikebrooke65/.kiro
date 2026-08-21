@@ -256,7 +256,11 @@ class CaregiversApi extends ApiClient {
    *    it doesn't reference a caregiver id (that table has none), so it's
    *    created the same way regardless of which branch step 3 took.
    */
-  async addJunior(teamId: string, form: AddJuniorForm): Promise<AddJuniorResult> {
+  async addJunior(
+    teamId: string,
+    form: AddJuniorForm,
+    childDateOfBirth?: string
+  ): Promise<AddJuniorResult> {
     // 1. Validate (Req 5.3) — reuse the pure helper.
     const validation = validateAddJunior(form);
     if (!validation.ok) {
@@ -281,6 +285,10 @@ class CaregiversApi extends ApiClient {
     // 2. Create the inactive child row (Req 5.6, 5.16) — ahead of caregiver
     // resolution; see the ordering note in the doc comment above. The Edge
     // Function generates the synthetic email and withholds sign-in.
+    // `childDateOfBirth` (Req 4.1) is the one exception to a child having no
+    // DOB collected — captured by Add Player's routing field and passed
+    // straight through unvalidated here (Add Player's own form validation,
+    // task 10.2, is where an invalid value would already have been rejected).
     const childId = await this.createAuthUser({
       first_name: form.childFirstName.trim(),
       last_name: form.childLastName.trim(),
@@ -289,6 +297,7 @@ class CaregiversApi extends ApiClient {
       is_child: true,
       child_provenance: provenance,
       can_sign_in: false,
+      date_of_birth: childDateOfBirth,
     });
 
     // 3. Resolve the caregiver (Req 5.4/5.5, 4.3/4.4) — reuse the pure helper.
@@ -466,6 +475,8 @@ class CaregiversApi extends ApiClient {
     is_child?: boolean;
     child_provenance?: string;
     can_sign_in: boolean;
+    /** ISO `yyyy-mm-dd`. Req 4.1 — set only for a Junior's child row. */
+    date_of_birth?: string;
   }): Promise<string> {
     const { data: result, error } = await this.supabase.functions.invoke('create-auth-user', {
       body,

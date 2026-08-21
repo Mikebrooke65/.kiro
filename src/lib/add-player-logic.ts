@@ -1,16 +1,18 @@
-// Pure routing logic for the Add Player entry point.
+// Pure routing and validation logic for the Add Player entry point.
 //
-// Spec: `.kiro/specs/add-player-and-dob-age-model/` (task 2)
+// Spec: `.kiro/specs/add-player-and-dob-age-model/` (tasks 2, 10)
 //
-// This is a UI-only, provisional decision — it only picks which form fields to
-// show next (Requirement 1.5/1.6). It never decides anyone's record-of-truth
-// date of birth: an Adult's DOB is self-declared server-side at invite
-// redemption (`supabase/functions/redeem-invite/logic.ts`'s `isAdult`), and a
-// Junior's DOB is recorded as entered here only because Add Player is the one
-// place a Junior's DOB is captured at all (Requirement 4.1).
+// Routing is a UI-only, provisional decision — it only picks which form
+// fields to show next (Requirement 1.5/1.6). It never decides anyone's
+// record-of-truth date of birth: an Adult's DOB is self-declared server-side
+// at invite redemption (`supabase/functions/redeem-invite/logic.ts`'s
+// `isAdult`), and a Junior's DOB is recorded as entered here only because Add
+// Player is the one place a Junior's DOB is captured at all (Requirement 4.1).
 //
-// Kept free of React so the routing threshold can be unit- and
-// property-tested in isolation.
+// Kept free of React so the routing threshold and form validation can be
+// unit- and property-tested in isolation.
+
+import { validateAddJunior } from './add-junior-logic';
 
 /** A routing date of birth as typed into the Add Player form. */
 export interface AddPlayerRoutingInput {
@@ -47,8 +49,12 @@ export function routeAddPlayer(input: AddPlayerRoutingInput): AddPlayerRoute {
   return ageInWholeYears(dob, asOf) >= ADULT_AGE_THRESHOLD ? 'adult' : 'junior';
 }
 
-/** Parse a strict `yyyy-mm-dd` string into calendar-date parts, or `null`. */
-function parseIsoDate(value: string): { year: number; month: number; day: number } | null {
+/**
+ * Parse a strict `yyyy-mm-dd` string into calendar-date parts, or `null`.
+ * Exported so form validation (below) and any other caller share the exact
+ * same notion of "a valid date of birth" that routing already uses.
+ */
+export function parseIsoDate(value: string): { year: number; month: number; day: number } | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? '');
   if (!match) return null;
 
@@ -76,4 +82,126 @@ function ageInWholeYears(
     (asOf.getMonth() + 1 === dob.month && asOf.getDate() >= dob.day);
   if (!hasHadBirthdayThisYear) age -= 1;
   return age;
+}
+
+/** True when `dateOfBirth` is a real calendar date, not in the future as of `asOf`. */
+function isPlausibleDateOfBirth(dateOfBirth: string, asOf: Date): boolean {
+  const parsed = parseIsoDate(dateOfBirth);
+  if (!parsed) return false;
+  const check = new Date(parsed.year, parsed.month - 1, parsed.day);
+  return check.getTime() <= asOf.getTime();
+}
+
+// ---------------------------------------------------------------------------
+// Add Player form validation (Requirement 1.2, 1.3, 1.4)
+// ---------------------------------------------------------------------------
+
+/** True when the trimmed length of `value` falls within [min, max] inclusive. */
+function lengthInBounds(value: string, min: number, max: number): boolean {
+  const length = value.trim().length;
+  return length >= min && length <= max;
+}
+
+// Same pragmatic shape check `add-junior-logic.ts` uses for its email fields
+// — duplicated rather than imported, matching this codebase's convention of
+// small, independently-testable pure-logic files (see e.g. `isAdult` in
+// `redeem-invite/logic.ts` vs. `routeAddPlayer` above).
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmail(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length >= 1 && trimmed.length <= 254 && EMAIL_PATTERN.test(trimmed);
+}
+
+/**
+ * The unified Add Player form (Requirement 1.2): first name, last name, and
+ * a routing date of birth are always captured. `email` is used only on the
+ * Adult path (Requirement 1.5); `caregiverName`/`caregiverEmail`/
+ * `caregiverPhone` only on the Junior path (Requirement 1.6) — whichever
+ * fields the current route doesn't use are ignored by `validateAddPlayerForm`.
+ */
+export interface AddPlayerForm {
+  firstName: string;
+  lastName: string;
+  /** ISO `yyyy-mm-dd`, as typed by the Manager. */
+  dateOfBirth: string;
+  email: string;
+  caregiverName: string;
+  caregiverEmail: string;
+  caregiverPhone: string;
+}
+
+export type AddPlayerFieldError =
+  | 'firstName'
+  | 'lastName'
+  | 'dateOfBirth'
+  | 'email'
+  | 'caregiverName'
+  | 'caregiverEmail'
+  | 'caregiverPhone';
+
+export type ValidateAddPlayerResult =
+  | { ok: true }
+  | { ok: false; errors: AddPlayerFieldError[] };
+
+// Stable order fields are reported in, so the UI and tests see a predictable list.
+const ADULT_FIELD_ORDER: AddPlayerFieldError[] = ['firstName', 'lastName', 'dateOfBirth', 'email'];
+const JUNIOR_FIELD_ORDER: AddPlayerFieldError[] = [
+  'firstName',
+  'lastName',
+  'dateOfBirth',
+  'caregiverName',
+  'caregiverEmail',
+  'caregiverPhone',
+];
+
+/**
+ * Validate the Add Player form for the route its own date of birth resolves
+ * to (Requirement 1.3: reject, report every invalid field, retain values —
+ * the retaining itself is the caller's/component's job, this only decides
+ * what's invalid).
+ *
+ * `route` is passed in (rather than re-derived) so the caller and this
+ * function are guaranteed to agree on which field set applies — always
+ * `routeAddPlayer({ dateOfBirth: form.dateOfBirth, asOf })`.
+ */
+export function validateAddPlayerForm(
+  form: AddPlayerForm,
+  route: AddPlayerRoute,
+  asOf: Date = new Date()
+): ValidateAddPlayerResult {
+  const errors = new Set<AddPlayerFieldError>();
+
+  if (!lengthInBounds(form.firstName, 1, 50)) errors.add('firstName');
+  if (!lengthInBounds(form.lastName, 1, 50)) errors.add('lastName');
+  if (!isPlausibleDateOfBirth(form.dateOfBirth, asOf)) errors.add('dateOfBirth');
+
+  if (route === 'adult') {
+    if (!isValidEmail(form.email)) errors.add('email');
+  } else {
+    // Reuse the existing, tested caregiver/child validation unchanged
+    // (Requirement 1.6 — same fields the prior Add Junior form captured).
+    // firstName/lastName were already checked above; this call re-derives
+    // the same two field results, which is fine — they're mapped back onto
+    // the same 'firstName'/'lastName' error keys, not duplicated.
+    const juniorResult = validateAddJunior({
+      caregiverName: form.caregiverName,
+      caregiverEmail: form.caregiverEmail,
+      caregiverPhone: form.caregiverPhone,
+      childFirstName: form.firstName,
+      childLastName: form.lastName,
+    });
+    if (!juniorResult.ok) {
+      for (const field of juniorResult.errors) {
+        if (field === 'childFirstName') errors.add('firstName');
+        else if (field === 'childLastName') errors.add('lastName');
+        else errors.add(field);
+      }
+    }
+  }
+
+  const fieldOrder = route === 'adult' ? ADULT_FIELD_ORDER : JUNIOR_FIELD_ORDER;
+  const ordered = fieldOrder.filter((field) => errors.has(field));
+
+  return ordered.length === 0 ? { ok: true } : { ok: false, errors: ordered };
 }

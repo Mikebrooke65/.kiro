@@ -35,7 +35,7 @@ import {
   type ActionCapabilities,
   type PermissionRole,
 } from '../lib/permissions-logic';
-import { AddJuniorModal } from '../components/team/AddJuniorModal';
+import { AddPlayerModal, type AddPlayerOutcome } from '../components/team/AddPlayerModal';
 
 /** How long a roster fetch may run before the error state shows (Req 3.15). */
 const ROSTER_TIMEOUT_MS = 10_000;
@@ -91,7 +91,7 @@ export function TeamPage() {
 
   // Action feedback (e.g. manager-cap message, confirmation) and modal.
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [showAddJunior, setShowAddJunior] = useState(false);
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
 
   // Guards a roster response against a newer selection/retry superseding it.
   const loadTokenRef = useRef(0);
@@ -353,14 +353,14 @@ export function TeamPage() {
           {/* Loaded roster */}
           {selection.selectedTeamId && rosterStatus === 'loaded' && roster && capabilities && (
             <div className="px-4 space-y-4">
-              {/* Add-user action (Req 4.2, 5.1) — gated by capability */}
+              {/* Add-player action (Req 1.1, replaces Add Junior) — gated by capability */}
               {capabilities.canAddUser && (
                 <div className="flex justify-end">
                   <button
-                    onClick={() => setShowAddJunior(true)}
+                    onClick={() => setShowAddPlayer(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium hover:bg-[#1ea34d] transition-colors"
                   >
-                    <UserPlus className="w-4 h-4" /> Add Junior
+                    <UserPlus className="w-4 h-4" /> Add Player
                   </button>
                 </div>
               )}
@@ -400,16 +400,17 @@ export function TeamPage() {
         </>
       )}
 
-      {/* Add-a-Junior modal — only reachable when canAddUser is true */}
+      {/* Add Player modal — only reachable when canAddUser is true (Req 1.1) */}
       {selection.selectedTeamId && (
-        <AddJuniorModal
-          isOpen={showAddJunior}
-          onClose={() => setShowAddJunior(false)}
-          onSuccess={() => {
-            setActionMessage('Add-junior request sent to the caregiver for approval.');
+        <AddPlayerModal
+          isOpen={showAddPlayer}
+          onClose={() => setShowAddPlayer(false)}
+          onSuccess={(outcome: AddPlayerOutcome) => {
+            setActionMessage(addPlayerSuccessMessage(outcome));
             refreshRoster();
           }}
           teamId={selection.selectedTeamId}
+          teamLabel={selectedOption?.label ?? 'this team'}
         />
       )}
     </div>
@@ -706,6 +707,18 @@ async function fetchCaregiverLinks(
   }
 
   return byPlayer;
+}
+
+/** Feedback text for the roster page's action banner after Add Player succeeds. */
+function addPlayerSuccessMessage(outcome: AddPlayerOutcome): string {
+  if (outcome.route === 'adult') {
+    return outcome.emailFailed
+      ? "Adult invite created, but the invite email couldn't be sent — let them know directly."
+      : 'Adult self-registration invite sent.';
+  }
+  return outcome.caregiverInvited
+    ? 'Caregiver invited to create an account and confirm.'
+    : 'Add-player request sent to the caregiver for approval.';
 }
 
 function displayName(row: TeamMemberWithUser): string {

@@ -12,7 +12,12 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 
-import { ADULT_AGE_THRESHOLD, routeAddPlayer } from './add-player-logic';
+import {
+  ADULT_AGE_THRESHOLD,
+  routeAddPlayer,
+  validateAddPlayerForm,
+  type AddPlayerForm,
+} from './add-player-logic';
 
 describe('routeAddPlayer — Add Player routing threshold (Requirement 1.5/1.6, 2.1)', () => {
   const REFERENCE = new Date(2025, 5, 15); // 2025-06-15, fixed so tests are deterministic
@@ -68,5 +73,96 @@ describe('routeAddPlayer — Add Player routing threshold (Requirement 1.5/1.6, 
       }),
       { numRuns: 300 }
     );
+  });
+});
+
+describe('validateAddPlayerForm — per-field validation with route-specific fields (Requirement 1.2, 1.3, 1.6)', () => {
+  const REFERENCE = new Date(2025, 5, 15); // 2025-06-15, matches the routing tests above
+
+  const VALID_ADULT: AddPlayerForm = {
+    firstName: 'Alex',
+    lastName: 'Smith',
+    dateOfBirth: '2000-01-01', // routes adult as of REFERENCE
+    email: 'alex@example.com',
+    caregiverName: '',
+    caregiverEmail: '',
+    caregiverPhone: '',
+  };
+
+  const VALID_JUNIOR: AddPlayerForm = {
+    firstName: 'Sam',
+    lastName: 'Jones',
+    dateOfBirth: '2016-01-01', // routes junior as of REFERENCE
+    email: '',
+    caregiverName: 'Pat Jones',
+    caregiverEmail: 'pat@example.com',
+    caregiverPhone: '5551234567',
+  };
+
+  it('accepts a valid Adult-path submission', () => {
+    expect(validateAddPlayerForm(VALID_ADULT, 'adult', REFERENCE)).toEqual({ ok: true });
+  });
+
+  it('accepts a valid Junior-path submission', () => {
+    expect(validateAddPlayerForm(VALID_JUNIOR, 'junior', REFERENCE)).toEqual({ ok: true });
+  });
+
+  it('rejects a missing first/last name on either path', () => {
+    const result = validateAddPlayerForm({ ...VALID_ADULT, firstName: '' }, 'adult', REFERENCE);
+    expect(result).toEqual({ ok: false, errors: ['firstName'] });
+  });
+
+  it('rejects an empty, malformed, or future date of birth', () => {
+    expect(
+      validateAddPlayerForm({ ...VALID_ADULT, dateOfBirth: '' }, 'adult', REFERENCE)
+    ).toEqual({ ok: false, errors: ['dateOfBirth'] });
+    expect(
+      validateAddPlayerForm({ ...VALID_ADULT, dateOfBirth: '2025-13-40' }, 'adult', REFERENCE)
+    ).toEqual({ ok: false, errors: ['dateOfBirth'] });
+    expect(
+      validateAddPlayerForm({ ...VALID_ADULT, dateOfBirth: '2025-06-16' }, 'adult', REFERENCE)
+    ).toEqual({ ok: false, errors: ['dateOfBirth'] });
+  });
+
+  it('accepts a date of birth of exactly today', () => {
+    expect(
+      validateAddPlayerForm({ ...VALID_ADULT, dateOfBirth: '2025-06-15' }, 'adult', REFERENCE)
+    ).toEqual({ ok: true });
+  });
+
+  it('Adult path: requires a valid email and ignores caregiver fields (Req 1.4/1.5)', () => {
+    expect(
+      validateAddPlayerForm({ ...VALID_ADULT, email: 'not-an-email' }, 'adult', REFERENCE)
+    ).toEqual({ ok: false, errors: ['email'] });
+    // Caregiver fields left blank must not fail an Adult-path submission.
+    expect(
+      validateAddPlayerForm(
+        { ...VALID_ADULT, caregiverName: '', caregiverEmail: '', caregiverPhone: '' },
+        'adult',
+        REFERENCE
+      )
+    ).toEqual({ ok: true });
+  });
+
+  it('Junior path: requires the caregiver fields and ignores email (Req 1.4/1.6)', () => {
+    expect(
+      validateAddPlayerForm({ ...VALID_JUNIOR, caregiverEmail: 'nope' }, 'junior', REFERENCE)
+    ).toEqual({ ok: false, errors: ['caregiverEmail'] });
+    // The unused Adult-path email field left blank must not fail a Junior submission.
+    expect(
+      validateAddPlayerForm({ ...VALID_JUNIOR, email: '' }, 'junior', REFERENCE)
+    ).toEqual({ ok: true });
+  });
+
+  it('reports every invalid field at once, in the documented stable order', () => {
+    const result = validateAddPlayerForm(
+      { ...VALID_ADULT, firstName: '', lastName: '', dateOfBirth: '', email: '' },
+      'adult',
+      REFERENCE
+    );
+    expect(result).toEqual({
+      ok: false,
+      errors: ['firstName', 'lastName', 'dateOfBirth', 'email'],
+    });
   });
 });
