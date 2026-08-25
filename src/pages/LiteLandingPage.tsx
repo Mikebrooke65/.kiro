@@ -445,7 +445,10 @@ function MatchingWelcome({
         <p className="font-semibold text-gray-700">What you can do next</p>
         <ul className="list-disc pl-5 space-y-1">
           <li>On the Team page you'll see the teams you can manage.</li>
-          <li>You can add players to your team.</li>
+          <li>
+            You can add players to your team. You'll need their email
+            address, or for under-16s, their caregiver's email address.
+          </li>
           <li>
             You can promote one additional player to Manager, up to a maximum of
             two Managers per team.
