@@ -364,6 +364,16 @@ export interface InviteCode {
    * `.kiro/specs/add-player-and-dob-age-model/` Requirement 4.3/7.2 (migration 053).
    */
   subject_user_id: string | null;
+  /**
+   * First/last name the Manager entered for this invitee in Add Player
+   * (Requirement 1.2), captured so the registration page can prefill —
+   * editable, never locked — these fields instead of making the invitee
+   * retype a name that's already known. NULL for invites created before
+   * migration 054, and for any invite path that doesn't collect a name
+   * up front.
+   */
+  recipient_first_name: string | null;
+  recipient_last_name: string | null;
 }
 
 // Invite code validation result

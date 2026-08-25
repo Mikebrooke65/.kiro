@@ -102,6 +102,22 @@ export function LiteLandingPage() {
     if (code) {
       invitesApi.validateInviteCode(code).then(v => {
         setValidation(v);
+        // Prefill from whatever the inviter already typed (migration 054) so
+        // the registrant isn't asked to retype a name and address that are
+        // already known. Name stays fully editable — it's a convenience, not
+        // a verified value. Email is prefilled here and locked read-only in
+        // the JSX below, because unlike the name it IS verified: it's the
+        // exact address this invite was delivered to. Deliberately excludes
+        // date_of_birth — see the DOB field's own comment further down for
+        // why that must never be prefilled.
+        if (v.valid && v.invite) {
+          setForm(prev => ({
+            ...prev,
+            first_name: v.invite?.recipient_first_name || prev.first_name,
+            last_name: v.invite?.recipient_last_name || prev.last_name,
+            email: v.invite?.recipient_email || prev.email,
+          }));
+        }
         setLoading(false);
       });
     }
@@ -112,6 +128,13 @@ export function LiteLandingPage() {
   // (Requirement 4.6). `validation.invite` is only set once `valid` is true.
   const requiresDateOfBirth =
     validation?.valid === true && needsAdultSelfDeclaration(validation.invite?.intended_role);
+
+  // The email is locked whenever the invite carries a known recipient address
+  // (true for every invite — recipient_email is required) — it's already
+  // verified as the address this invite was sent to, so letting it be edited
+  // here would let a mistyped address quietly route the registrant onto the
+  // worse "non-matching address" confirmation path for no benefit.
+  const emailLocked = validation?.valid === true && !!validation.invite?.recipient_email;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,16 +241,31 @@ export function LiteLandingPage() {
               onChange={e => setForm({ ...form, last_name: e.target.value })}
               className="border rounded-lg px-3 py-2 text-sm" required />
           </div>
-          <input type="email" placeholder="Email address" value={form.email}
-            onChange={e => setForm({ ...form, email: e.target.value })}
-            className="w-full border rounded-lg px-3 py-2 text-sm" required />
+          <div>
+            <input type="email" placeholder="Email address" value={form.email}
+              onChange={e => setForm({ ...form, email: e.target.value })}
+              readOnly={emailLocked}
+              aria-readonly={emailLocked}
+              className={`w-full border rounded-lg px-3 py-2 text-sm ${
+                emailLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+              }`} required />
+            {emailLocked && (
+              <p className="mt-1 text-xs text-gray-500">
+                This is the address your invite was sent to.
+              </p>
+            )}
+          </div>
           <input type="password" placeholder="Create a password (min 6 characters)" value={form.password}
             onChange={e => setForm({ ...form, password: e.target.value })}
             className="w-full border rounded-lg px-3 py-2 text-sm" required minLength={6} />
 
           {/* Adult self-declaration (Req 3.4) — every intended role except
               Caregiver confirms their own date of birth here; this is the
-              record of truth, not the Manager's Add Player routing entry. */}
+              record of truth, not the Manager's Add Player routing entry.
+              Deliberately never prefilled from that entry, unlike name/email
+              above: the whole point of self-declaration is that a Manager's
+              mistaken or gamed DOB can't be rubber-stamped through a confirm
+              checkbox — it must be freshly, independently typed every time. */}
           {requiresDateOfBirth && (
             <div>
               <label htmlFor="lite-registration-dob" className="block text-xs text-gray-500 mb-1">

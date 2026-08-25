@@ -160,7 +160,10 @@ export function AddPlayerModal({
           email,
           undefined,
           undefined,
-          'player'
+          'player',
+          undefined,
+          form.firstName.trim(),
+          form.lastName.trim()
         );
         let emailFailed = false;
         try {

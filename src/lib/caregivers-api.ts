@@ -343,7 +343,9 @@ class CaregiversApi extends ApiClient {
         form.caregiverPhone.trim(),
         undefined,
         'caregiver',
-        childId
+        childId,
+        caregiverFirstName || undefined,
+        caregiverLastName || undefined
       );
       caregiverInvited = true;
 

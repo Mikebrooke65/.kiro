@@ -38,6 +38,14 @@ class InvitesApi extends ApiClient {
    * `subjectUserId` (Requirement 4.3/7.2) is populated only for a Caregiver
    * invite — the child `users.id` the invited caregiver will be linked to once
    * they redeem it. Left `undefined`/`null` for every other invite type.
+   *
+   * `recipientFirstName`/`recipientLastName` (migration 054) capture the name
+   * the inviter already typed (Add Player, or the caregiver name on the
+   * Junior path) so the registration page can prefill — editable, never
+   * locked — those fields instead of making the invitee retype a name that's
+   * already known. Deliberately no equivalent exists for date of birth: see
+   * migration 054's comment for why that must stay a fresh, self-declared
+   * value every time.
    */
   async generateInviteCode(
     teamId: string,
@@ -45,7 +53,9 @@ class InvitesApi extends ApiClient {
     recipientPhone?: string,
     competitionId?: string,
     intendedRole?: 'player' | 'coach' | 'manager' | 'caregiver',
-    subjectUserId?: string
+    subjectUserId?: string,
+    recipientFirstName?: string,
+    recipientLastName?: string
   ): Promise<InviteCode> {
     const { data: { user: authUser } } = await this.supabase.auth.getUser();
     if (!authUser) throw new ApiError('Not authenticated');
@@ -65,6 +75,8 @@ class InvitesApi extends ApiClient {
         expires_at: expiresAt.toISOString(),
         intended_role: intendedRole ?? null,
         subject_user_id: subjectUserId ?? null,
+        recipient_first_name: recipientFirstName ?? null,
+        recipient_last_name: recipientLastName ?? null,
       })
       .select()
       .single();
