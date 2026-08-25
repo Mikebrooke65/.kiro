@@ -2,6 +2,87 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-25] - Add Player / DOB age model — self-registration UX follow-up: prefill name, lock verified email
+
+Found while live-testing the Add Player / DOB age model spec (shipped
+2026-08-21, full detail in the entry below): the self-registration page
+asked the invitee to retype their name and email from scratch, even though
+the Manager already typed the name into Add Player and the email address is
+inherently verified — it's the exact address the invite was delivered to.
+Rubber-stamping it as editable meant a mistyped address could accidentally
+route the registrant onto the worse "non-matching address" confirmation-gate
+path for no reason.
+
+- **Migration 054** adds nullable `recipient_first_name`/`recipient_last_name`
+  to `invite_codes` (no backfill — older invites simply read NULL here).
+- **`generateInviteCode()`** (`invites-api.ts`) grows two trailing optional
+  params carrying the name already in scope at both call sites that create a
+  self-registration invite: the Add Player adult path
+  (`AddPlayerModal.tsx`) and the caregiver-invite path
+  (`caregivers-api.ts`, which already had `caregiverFirstName` in scope).
+- **`LiteLandingPage.tsx`** (self-registration) now prefills first/last name
+  — still fully editable — and locks the email field read-only (with a short
+  caption explaining why), both sourced from the invite record once
+  validated.
+- **Date of birth is deliberately untouched.** Self-declaration only works as
+  an integrity check if it's freshly typed every time; prefilling it from the
+  Manager's provisional routing entry would let a mistaken or deliberately
+  gamed DOB get rubber-stamped through a confirm click instead of caught.
+
+Verified via `git am` + `npm test` (158 passing) + `npm run build` on a
+clean clone of `prototype` before delivery. Applied via `git am` on the
+Snapdragon laptop and pushed to `origin/prototype`; migration run via the
+Supabase SQL Editor. No Edge Function changes needed — `redeem-invite`
+already just accepts whatever the client submits for name/email, so nothing
+server-side had to change.
+
+**Live-testing in progress** as part of the same Add Player / DOB smoke test
+called out as outstanding in the entry below.
+
+**Follow-up during testing:** added a short caption under the prefilled name
+fields ("Pre-filled from your invite — edit if it's not quite right"), shown
+only when the invite actually carries a name, so the prefill doesn't read as
+unexplained or like a mistake.
+
+## [2026-08-25] - Caregiver Approve/Deny now shows editable child name & DOB
+
+Second gap found in the same live-testing pass, on the Junior/caregiver
+path this time: the Approve/Deny screen only ever showed the child's name
+and let the caregiver blindly rubber-stamp a decision. It never showed the
+child's date of birth at all — the same value that decided Adult vs Junior
+routing back in Add Player — and neither the name nor DOB could be
+corrected by the one person in this flow who'd actually know if the Manager
+got either wrong. This is the mirror of the Adult path's self-declaration
+protection, exercised by the caregiver instead of the child (who, being a
+Junior, doesn't self-declare anything).
+
+- **`CaregiverApprovalPage.tsx`** now shows editable First name / Last name
+  / Date of birth fields for an `add_child` approval, seeded from the
+  child's current record, with inline validation (non-empty names, a real
+  non-future date) before Approve is allowed to proceed.
+- **`caregivers-api.ts`**: `getMyPendingApprovals` now also fetches the
+  child's `date_of_birth`; `approveJunior`/`respondToJuniorApproval` grow an
+  optional `correction` parameter, sent only on approve — deny/escalate are
+  completely unaffected.
+- **`respond-junior-approval` Edge Function** validates the correction
+  server-side and applies it to the child's `users` row as part of the same
+  atomic approve transaction that activates them and adds them to the
+  roster — nothing client-side is trusted as-is.
+
+Verified via `git am` (stacks on the entry above) + `npm test` (158
+passing) + `npm run build` on a clean clone before delivery. **Requires an
+Edge Function redeploy** (`supabase functions deploy
+respond-junior-approval`) in addition to the `git push` — this one doesn't
+touch the database at all, so no migration.
+
+**Deliberately parked, not forgotten:** no age-threshold check exists yet
+for a caregiver-corrected DOB — e.g. nothing stops a caregiver "correcting"
+the DOB to something that would actually make the child 16+, which would
+still go through as a Junior. This is a real process/design question (does
+it get rejected the way an under-16 Adult self-declaration is? Redirected to
+the Adult path instead? Something else?) that needs its own decision, not a
+silent addition. Flagged for a follow-up session.
+
 ## [2026-08-21] - Add Player / DOB age model — full spec built, applied & deployed
 
 All 13 tasks of the `.kiro/specs/add-player-and-dob-age-model/` spec, built

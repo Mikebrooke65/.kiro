@@ -1,5 +1,5 @@
 # Next Session Notes
-## Current State — 21 August 2026
+## Current State — 25 August 2026
 
 **Since this was last updated:** the Add Player / DOB age model Kiro spec
 (13 tasks) is now fully built, applied to `prototype`, pushed to GitHub, and
@@ -11,9 +11,32 @@ design decisions recorded further down — DOB is now collected. Historical
 sections are left in place with inline correction notes rather than deleted,
 so the "why" of the original decision isn't lost.
 
+**2026-08-25 follow-up, found while live-testing the above:** the
+self-registration page made the invitee retype their name and email from
+scratch even though the Manager already typed the name into Add Player and
+the email is inherently verified (it's the exact address the invite went
+to). Fixed and shipped same day — name now prefills (editable), email locks
+read-only, DOB stays untouched by design. Full detail: `CHANGELOG.md`,
+"2026-08-25 - Add Player / DOB age model — self-registration UX follow-up."
+Applied, pushed, and migration run; **live-testing this fix is what's
+happening right now** — see the dedicated section below for what to confirm.
+
+**Housekeeping pass (2026-08-25):** this file had accumulated three separate
+write-ups of the same completed work in different places (e.g. the Task 1
+add-a-junior RLS fix appeared in full three times), plus a few section
+headers that still said "NOT STARTED" for features that had shipped weeks
+ago. Cleaned up: **`CHANGELOG.md` is this project's permanent historical
+record — every shipped fix/feature has its own dated entry there with full
+technical detail.** This file only needs to say what's done (one line + a
+CHANGELOG pointer) and what's still open. No separate "archive" section was
+added here for that reason — CHANGELOG.md already *is* the archive. Where a
+section still holds genuinely reusable reference material (account IDs, a
+device-setup runbook, DNS gotchas, a design decision's rationale), that
+stayed — only the redundant blow-by-blow narrative was trimmed.
+
 ---
 
-## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21)
+## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21; UX follow-up 2026-08-25)
 
 All 13 tasks of the `.kiro/specs/add-player-and-dob-age-model/` spec are
 done. Built across a long autonomous session (delivered as a chain of 7
@@ -66,15 +89,69 @@ outstanding on this spec.**
 - Both changed Edge Functions redeployed: `create-auth-user` (gained
   `date_of_birth`) and `redeem-invite` (adult self-declaration + caregiver
   invite handling).
-- **Not yet live-tested end to end** — the patches are verified via
-  automated tests (158 passing, 2 environment-only skips, unrelated to this
-  feature) and a clean build, but nobody has clicked through the actual
-  Add Player → invite → redemption → approval flow on a real device yet.
-  Worth a live smoke test next session, the same way V1.4's add-a-junior
-  flow was smoke-tested 2026-08-20 (see "TASK 1" further down for that
-  playbook — same rough loop applies here: Add Player as adult and as
-  junior, redeem both invite types, confirm the Approvals tab appears with
-  the right badge count, confirm it disappears after approving).
+- **Live-testing started 2026-08-25 — both Adult and Junior paths confirmed
+  end to end, two real UX gaps found and fixed same day:**
+  1. Adult self-registration made the invitee retype name and email from
+     scratch even though the Manager already had both — fixed (name
+     prefills editable, email locks read-only, DOB deliberately untouched;
+     migration 054), then a small caption added mid-test explaining the
+     prefill. Confirmed live: name prefilled and was correctable (caught a
+     real typo — "Thimas" → "Thomas" — that the Manager had made), email
+     locked correctly, DOB stayed blank and had to be typed fresh, account
+     created successfully with the *corrected* name.
+  2. Junior/caregiver path: confirmed DOB-based routing to the caregiver
+     fields works, and confirmed the **existing-caregiver-account branch**
+     (caregiver email already has an account) links immediately and creates
+     a pending approval — no invite email in that branch, just a
+     notification, so the name-prefill fix doesn't apply there (only the
+     new-caregiver-invite branch generates an invite code). Testing this
+     surfaced a second, more important gap: the Approve/Deny screen never
+     showed the child's DOB and gave no way to correct the name or DOB the
+     Manager had entered — fixed same day, see the "Caregiver Approve/Deny"
+     entry in `CHANGELOG.md`.
+
+  Full detail on both fixes: `CHANGELOG.md`, the two 2026-08-25 entries.
+
+  **Two decisions deliberately parked, coming back to them soon — named so
+  they're easy to find again:**
+
+  **Parked Decision 1 — "Caregiver DOB Correction Threshold."** No
+  age-threshold check exists for a caregiver-corrected DOB on the Approve
+  screen — nothing currently stops a caregiver "correcting" a child's DOB to
+  something that would actually make them 16+, and it would still go
+  through as a Junior. Needs a real decision on what should happen then
+  (reject like the Adult under-16 case does, redirect to the Adult path,
+  something else) — not a silent addition.
+
+  **Parked Decision 2 — "Existing-User Invite Shortcut."** Found
+  2026-08-25 while testing a Club Admin setting up a new team and naming an
+  already-verified user as Manager: any invite path (Add Player adult,
+  competition team setup, a caregiver without an existing link) that emails
+  someone who **already has a real account** still sends them through the
+  full "Create your account" self-registration form — name, password, DOB,
+  privacy checkbox, all of it — even though every one of those values gets
+  silently discarded server-side once `redeem-invite` recognises the email
+  already belongs to a real account (confirmed in `redeem-invite/index.ts`,
+  step 3.1: it just adds them to the new team, nothing else). Not a data
+  risk or a security bug — the server-side behaviour is already correct and
+  safe — but it is pointless, confusing busywork for someone who's already
+  a verified member, and it's the same shape of gap the caregiver-reuse
+  branch (Requirement 4.4) already solves for its own path — just not
+  applied anywhere else.
+  Real fix needs: a small, code-scoped server check the redemption page can
+  call *before* rendering the form (today nothing tells the client "this
+  invite's email already has an account" until deep in server logic, way
+  past the point the form was already filled in), then a genuinely simpler
+  "You already have an account — click to join {team} as {role}" screen for
+  that case, with no name/password/DOB fields at all. Bigger than a
+  one-line tweak — a new server-side check plus a real UI branch in
+  `LiteLandingPage.tsx`.
+
+  **Do both before considering the Add Player / DOB spec fully closed.**
+
+  **Still to do this same session**: exercise the under-16 self-declaration
+  rejection message on the Adult path at least once, and test Deny (never
+  exercised in any session so far — only Approve has been).
 
 ---
 
@@ -417,12 +494,14 @@ updates. Working tree clean.
 **App URL**: https://clubfootball.app  *(live 2026-08-14 — the old
 `wcrfootball.netlify.app` still works but this is the one to use)*
 **Branch**: `prototype`
-**Single remote (`kiro`), push here every time**:
+**Single remote (`origin`), push here every time**:
 ```bash
-git push kiro prototype
+git push origin prototype
 ```
-*(As of 2026-08-13, the old dual-remote setup is retired — see
-`docs/deployment/DEPLOYMENT-GUIDE.md`.)*
+*(Corrected 2026-08-25 — this previously said remote `kiro`, which no
+longer exists; the checked-out repo only has `origin`, confirmed working
+all through the Add Player / DOB age model session. As of 2026-08-13, the
+old dual-remote setup is retired — see `docs/deployment/DEPLOYMENT-GUIDE.md`.)*
 
 **Deploys lag your browser cache.** After any push, hard-refresh
 (Ctrl+Shift+R) before concluding something is broken. This has already
@@ -457,7 +536,7 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Where Things Stand (updated 2026-08-21)
+## V1 — Where Things Stand (updated 2026-08-25)
 
 One-line status per item. Detail is in the sections further down.
 
@@ -471,12 +550,12 @@ One-line status per item. Detail is in the sections further down.
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
 | V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
-| Add Player / DOB age model | ✅ DONE, applied & deployed 2026-08-21 | All 13 tasks built, applied to `prototype`, pushed, both Edge Functions redeployed. Not yet live-tested end to end on a device — see the dedicated section near the top of this file |
+| Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **2 parked decisions open**: "Caregiver DOB Correction Threshold" and "Existing-User Invite Shortcut" — see the dedicated section near the top of this file |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
-| V1.9 Store + privacy policy | 🟡 Privacy draft in progress | Store accounts + assets need V1.1a/b. Privacy policy drafted (`docs/privacy-policy-draft.md`) — open flags to close |
+| V1.9 Store + privacy policy | 🟡 Privacy draft in progress | Store accounts + assets need V1.1a/b. Privacy policy drafted (`docs/privacy-policy-draft.md`) — open flags to close. **New (2026-08-25): `club_settings.app_url` needs updating to the real store listing at go-live** — see V1.9 section |
 | V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample (Decision 6) |
 
@@ -488,14 +567,29 @@ decisions. **V1.1, V1.1a, V1.4, and the whole Add Player / DOB age model
 spec are now fully closed out** (the last of those pending only a live
 device smoke test, not further build work).
 
-### PLAN FOR NEXT SESSION (updated 2026-08-21)
+### PLAN FOR NEXT SESSION (updated 2026-08-25)
 
-**Do first — live-test the Add Player / DOB age model spec** (dedicated
-section near the top of this file). Built, applied, pushed, and deployed
-2026-08-21, but nobody has clicked through it on a real device yet: Add
-Player as both an adult and a junior, redeem both invite types, confirm DOB
-self-declaration and the under-16 rejection message, confirm the new
-Approvals nav tab appears with the right badge and clears after approving.
+**Do first — decide and build the two parked decisions** (dedicated
+section near the top of this file):
+1. **"Caregiver DOB Correction Threshold"** — nothing today stops a
+   caregiver "correcting" a child's DOB to 16+ on the Approve screen and it
+   still going through as a Junior. Needs a real decision first: reject it
+   the way an under-16 Adult self-declaration is rejected server-side,
+   redirect the Manager to redo the person as an Adult, or something else —
+   then build it.
+2. **"Existing-User Invite Shortcut"** — any invite path (Add Player adult,
+   competition team setup, caregiver) that emails an already-verified
+   account still sends them through the full self-registration form for
+   nothing; the server already discards it all safely, but it's confusing
+   busywork. Needs a scoped "does this invite's email already have an
+   account" check the redemption page can call before rendering the form,
+   plus a proper simplified "just join" screen for that case.
+
+**Then — finish the last bits of Add Player / DOB live-testing**: exercise
+the under-16 self-declaration rejection message on the Adult path at least
+once, and test Deny on a Junior/caregiver request (never exercised in any
+session so far — only Approve has been, both for the original TASK 1 flow
+and for this spec).
 
 **Then, in rough priority order:**
 1. **V1.M** — "Send to Admins" messaging bug (🔴, not yet root-caused).
@@ -508,8 +602,9 @@ Approvals nav tab appears with the right badge and clears after approving.
 5. **V1.R** — data retention & deletion scoping — gates the privacy policy
    (V1.9). Open decisions in `docs/data-retention-scoping.md`.
 6. **Loose ends**: V1.4's logo + 32 optional tests, V1.3's 3 follow-ups,
-   TASK 3's cheap modal sweep (below), and the Deny/Escalate paths on the
-   add-a-junior approval flow (noted as untested in TASK 1 below).
+   TASK 3's cheap modal sweep (below), and the app_url → real store listing
+   swap noted under V1.9 (must happen before app-store go-live, easy to
+   forget since nothing breaks if it isn't done).
 
 **Blocked, not actionable next session:** V1.1b iOS testing (needs a
 borrowed Mac + Xcode), V1.T Friendly Manager import (waiting on a CSV
@@ -517,148 +612,28 @@ export sample from the club, Decision 6).
 
 ---
 
-### Historical — TASK 1/2/3 plan & write-up (2026-08-20, completed/superseded)
+### Historical items, resolved (kept as one-line pointers only)
 
-*Kept below for the root-cause detail on the add-a-junior RLS fix. TASK 1
-is done and live-confirmed; TASK 2's post-registration/contact-display
-items and TASK 3's modal sweep were not revisited by the Add Player / DOB
-age model work, so treat them as still-open unless checked next session —
-they're folded into the "Loose ends" bullet above.*
+*The detailed write-ups these used to be lived here in triplicate — once
+in a "plan," once in a "done" narrative, once in a "known issues"
+recap — with none of them updated as things got fixed. All of that detail
+already exists, correctly dated, in `CHANGELOG.md`. Pointers only, below.*
 
-**Progress since this plan was written:** V1.4 + V1.5 smoke test is part-done.
-Confirmed working: per-role nav, Team page/roster, and the Add Junior **modal
-layout** (fixed, commit `8d699de`). The add-a-junior flow was **blocked by an
-RLS bug** — Task 1 below is now written and built, pending deploy + a live
-re-test.
-
-**Also since this plan was written (2026-08-19/20): V1.1 + V1.1a are fully
-DONE** (confirmed live on the Oppo — sound, vibration, foreground toast,
-tap-to-navigate, safe-area, touch targets). **V1.7 RSVP is now mostly
-built** (RSVP UI, optimistic updates, past/upcoming split, attendee list,
-Create Event validation) — see the V1.7 section above.
-
-**TASK 1 (DONE & LIVE-CONFIRMED 2026-08-20) — Fix add-a-junior RLS failure
-and the bigger gap found behind it.**
-
-Investigating this properly (per plan) turned up more than the original
-symptom: the RLS error was real, but even with it fixed, an **approved**
-child would never have actually landed on the team roster. Full picture:
-
-1. **The reported bug — confirmed.** `caregiversApi.addJunior` step 4 inserts
-   into `player_caregivers` client-side as the coach/manager. The only
-   INSERT-capable policies on that table are admin-only (migrations 002, 036)
-   — no policy lets a coach/manager insert. Same class of defect as the V1.3
-   registration RLS failure.
-2. **Step 5 (`caregiver_approvals` insert) — checked, not broken.** Migration
-   036 already has a working "coaches/managers can create caregiver
-   approvals" INSERT policy. No fix needed there; the original notes'
-   suspicion that it "almost certainly" had the same problem was wrong.
-3. **The bigger gap — newly found.** No code path anywhere ever wrote a
-   `team_members` row for an add-a-junior child, pending *or* approved.
-   Pending children display via a separate `caregiver_approvals`-based query
-   in `TeamPage.tsx`'s `fetchRoster()` (by design — Req 5.10 — a pending
-   child isn't a team member yet), but nothing filled that gap once a
-   caregiver actually approved: `respondToJuniorApproval()` existed in
-   `caregivers-api.ts` with the right logic (activate the child, per Req
-   5.11) but was **never called by any UI**. The only reachable
-   Approve/Deny button (`CaregiverApprovalPage.tsx`) called the older,
-   generic `respondToApproval()`, which doesn't branch on `request_kind` and
-   has no path to activate a child or create its roster row at all — so an
-   approved add-a-junior child would have silently stayed invisible forever,
-   not just until the RLS bug was fixed.
-4. Also found: even the (unwired) `respondToJuniorApproval()` logic would
-   itself have hit RLS — activating a child means updating `users.active`,
-   and that table's UPDATE policy is admin-only or self-only (migrations
-   002/003/004); a caregiver is neither. Same for a client-side
-   `team_members` insert on their behalf (migrations 036/044 don't cover it).
-   All three of these writes need service role.
-- **Fix built (2026-08-20):** two new Edge Functions, kept single-purpose
-  like `create-auth-user` rather than one generic shared function (see the
-  note below on why the earlier "build it generically for RSVP too" idea was
-  dropped):
-  - **`link-player-caregiver`** — inserts the `player_caregivers` row. Gated
-    on the caller being admin, or coach/manager **of the specific `team_id`
-    passed in** (stricter than `create-auth-user`'s "any team" check, per the
-    original ask). Wired into `addJunior` step 4.
-  - **`respond-junior-approval`** — the real fix. Takes an approval id +
-    decision (approve/deny/escalate); verifies the caller is admin or the
-    linked caregiver; on `pending` status, does all three writes together
-    (approval row, `users.active`, and — on approve — the `team_members`
-    insert) so a decision can't land half-done. Wired into
-    `caregiversApi.respondToJuniorApproval()`.
-  - `CaregiverApprovalPage.tsx` now branches on `request_kind`: `add_child`
-    rows go through `approveJunior`/`denyJunior` (which call the new
-    function) with correct display text ("you've been listed as a caregiver
-    for **[child]**..."); `add_caregiver` rows keep the old behaviour
-    unchanged. `getMyPendingApprovals()` now embeds the child's name so the
-    UI can label the request correctly, and response errors are now shown in
-    the page instead of only logged to the console.
-  - Also corrected a factual error from the original write-up of the Round 2
-    attendee-list fix (CHANGELOG + a code comment in `events-api.ts`): it
-    blamed `team_members.role` for not allowing `'manager'` — migration 048
-    added that role back in V1.4, so that was never the actual cause. Fixed
-    the wording in both places; the underlying defensive fix was already
-    correct regardless.
-- **Deployed & live-tested end to end (2026-08-20):** both Edge Functions
-  deployed (`link-player-caregiver`, `respond-junior-approval`). Ran the
-  full flow as a coach/manager on a real team ("West Coast Rangers" /
-  "Open riverhead tests"): Add Junior submitted with no RLS error → child
-  created → caregiver approval email arrived, correctly naming the child
-  ("Davey Booo has been added to Open riverhead tests and listed you as
-  their caregiver") → Caregiver Approvals page showed a clear Approve/Deny
-  UI for the request → approved → page correctly emptied to "no pending
-  approvals" → Team page roster now shows the child as an active player.
-  **This closes the last unverified V1.4 path.**
-- **Found along the way — FIXED 2026-08-21:** there was no nav link,
-  button, or notification anywhere in the app pointing to
-  `/caregiver-approvals` (confirmed by grep at the time — the route
-  existed, `CaregiverApprovalPage.tsx`, but nothing linked to it), so
-  testing on 2026-08-20 only worked because the URL was typed in by hand.
-  Fixed by Task 12 of the Add Player / DOB age model spec: a bottom-nav
-  "Approvals" tab now appears (with a pending-count badge) whenever a user
-  has a pending approval, for any role. See the dedicated section near the
-  top of this file.
-- **Not yet tested:** the Deny path (child should stay inactive/off the
-  roster) and the Escalate path (used by the 7-day auto-timeout in
-  `escalateTimedOutApprovals()`, which has no UI trigger and runs
-  unattended — not exercised here). Worth a quick pass next time before
-  fully closing this out.
-- **On the "build it generically for RSVP too" idea (2026-08-19/20):** the
-  caregiver multi-child RSVP design (V1.7 section above) still needs its own
-  new Edge Function work later — it was **not** folded into
-  `link-player-caregiver` / `respond-junior-approval`, because those two
-  ended up narrowly shaped around the add-a-junior tables specifically
-  (`player_caregivers`, `caregiver_approvals`, and a `team_members` insert
-  keyed off an approval row) rather than a generic "write on behalf of a
-  child" primitive. When the RSVP piece is built, decide then whether a
-  shared helper is worth it or whether two more single-purpose functions
-  (matching the `create-auth-user` pattern used throughout) is simpler —
-  lean toward the latter unless real duplication shows up.
-
-**TASK 2 — Finish the V1.4/V1.5 run-through** (blocked behind Task 1 for the
-add-junior part). Remaining checklist items, hard-refresh / incognito first:
-- Post-registration success screen (do a fresh invite redemption).
-- Contact display by age band on the Team page; gated actions per role.
-
-**TASK 3 — Cheap modal sweep.** Align other mobile modals to the Schedule
-pattern (`z-[60]`, `max-h-[85vh]`, `flex flex-col`) so they don't sit behind the
-bottom nav. Known candidate: `src/components/SessionFeedbackModal.tsx`. Grep for
-`max-h-[90vh]` / `z-50` overlays on mobile routes. Low credit, do when convenient.
-
-**THEN — start V1.1a — Android device testing** — switch to the **other laptop**
-(has the disk/RAM for Android Studio), run Kiro on the web there, and work
-through V1.1a. Cheapest way to de-risk the WebView question and needs no Mac. See
-the V1.1a section below for the detail.
-
-**After that (not tomorrow, but the queue):**
-- **V1.7 RSVP / availability** — biggest remaining V1 feature / top Heja gap.
-  Resolve Decision 5 first.
-- **V1.6** invite landing-page branding — now easy wiring since `club_settings` +
-  `useClubBranding` exist.
-- **Privacy policy** (V1.9) — user-owned, longest lead time, start the club
-  conversation in parallel. Ties to Decisions 3/3b/3c.
-- Loose ends: V1.4 optional tests (task 10.6 first), set `club_settings.logo_url`
-  once the logo is hosted, V1.3 follow-ups.
+- **TASK 1 — add-a-junior RLS bug + the bigger roster gap behind it.**
+  DONE & live-confirmed 2026-08-20. Full root-cause writeup:
+  `CHANGELOG.md`, "2026-08-20 - Task 1: add-a-junior RLS fix, plus a bigger
+  gap found behind it." One thing from it is still genuinely open, carried
+  into "Loose ends" above: **the Deny and Escalate paths were never
+  exercised** (only Approve was tested). The "no nav link to Caregiver
+  Approvals" gap this surfaced is now fixed (Task 12 of Add Player / DOB,
+  2026-08-21).
+- **TASK 2 — finish the V1.4/V1.5 run-through** (post-registration success
+  screen, contact display by age band). Done — both shipped as part of the
+  V1.4 build itself (see the V1.4 section further down and its CHANGELOG
+  entry); this was never a separate follow-up in practice.
+- **TASK 3 — cheap modal sweep** (align other mobile modals to the
+  Schedule pattern so they don't sit behind the bottom nav). Still open,
+  low effort — carried into "Loose ends" above.
 
 ---
 
@@ -673,7 +648,7 @@ These block or shape work below. Listed here so they don't stay buried.
 | 8 | **Rate limiting on `redeem-invite`** — it's an unauthenticated endpoint that can create auth users; the invite code is the only authorization | Public launch, not the trial | Fine for a small trial. Needs a decision before wider release. See V1.3 |
 | 2 | **Which events trigger a push in V1?** Candidates: new message (built), new schedule event, event change/cancellation, RSVP reminder | V1.1 completion | Start with new message (done) + event change/cancellation. RSVP reminders once V1.7 exists |
 | 3 | **Privacy policy** — club has none to extend (confirmed 2026-08-17), so writing from scratch | V1.9 store submission | **User-owned, in progress.** Start from the Privacy Commissioner's Priv-o-matic generator — templates and the store questionnaires are listed in V1.9 |
-| 3b | **Play Console target-audience declaration** — is this an app for children, or an app about children used by adults? | V1.9, and whether Google's Families policy applies | Almost certainly adults-only audience (coaches/managers/caregivers are the users), which keeps it out of Families policy. Confirm deliberately — see V1.9 |
+| 3b | **Play Console target-audience declaration** — is this an app for children, or an app about children used by adults? | V1.9, and whether Google's Families policy applies | ⚠️ **Likely no longer "almost certainly adults-only"** — the 2026-08-25 child-account redesign gives children their own direct login and messaging. Re-examine, don't assume. See the "Privacy policy & audience declaration" note under V1.9 |
 | 3c | **Data retention & cleanup** — how long data is kept after a role/team ends, and what triggers removal | The privacy statement can't be finished without it; also a **future build** | ⏳ Mike scoping. Detailed thinking captured in **`docs/data-retention-scoping.md`** (3 data layers, per-competition clocks, open questions). Becomes its own build/spec once decisions lock — see "V1.R" below |
 | 4 | **Player/Caregiver nav — 2 undecided slots** | V1.5 | Options: Announcements, or fold Announcements into Home and leave 5 buttons |
 | 5 | **Does RSVP apply to Club Tournament teams, or only club teams?** | V1.7 scope | Probably club teams only for V1 — social/summer teams may just turn up |
@@ -710,82 +685,36 @@ touch-target tweaks), not per-feature rebuilds.
 
 ---
 
-### V1.1 Capacitor + Push Notifications — IN PROGRESS (hardware-gated)
+### V1.1 Capacitor + Push Notifications — ✅ DONE; V1.1a Android ✅ DONE; V1.1b iOS ⬜ Blocked
 
-**Goal**: App installable on iOS/Android, push notifications working.
+*(Header corrected 2026-08-25 — previously said "IN PROGRESS," stale since
+2026-08-19/20. V1.1 and V1.1a are both fully verified live on the Oppo —
+full record in `CHANGELOG.md`'s three 2026-08-19/20 V1.1a entries. The
+device-setup steps below stay — they're a reusable runbook, not history —
+but the "already done and verified" list right below this was folded into
+one line since CHANGELOG has the detail.)*
 
-**Done and verified as far as possible without a device:**
-- Capacitor initialized (`com.clubfootball.app`), Android + iOS platforms added
-- Firebase project `club-football-app` created, both apps registered
-- `device_tokens` table wired up (existing table from migration 033)
-- Push registration built into the app (`usePushNotifications.ts`)
-- Realtime reconnect-on-resume fix (Team Messaging won't freeze when backgrounded)
-- `send-message-push` Edge Function deployed and ACTIVE
-- FCM service account key stored in Supabase secrets
-- Database trigger (migration 042) **verified live** — sent a real message,
-  trigger called the Edge Function via `pg_net`, returned HTTP 200 with
-  `{"success":true,"devicesFound":0,"sent":0}`. Zero devices is correct
-  and expected: no tokens exist until the native app runs on hardware.
-  The pipeline is proven end-to-end up to that point.
-- Note: the dashboard's "Database Webhooks" feature is broken on this
-  Supabase project (missing internal `supabase_functions.http_request()`,
-  not fixable via ordinary SQL). Worked around with `pg_net` called
-  directly from a trigger — see migration 042 for the full explanation.
+**Done and verified, full detail in CHANGELOG:** Capacitor init, Firebase
+project, `device_tokens` table, push registration, the `send-message-push`
+Edge Function + DB trigger (`pg_net` workaround for broken Database
+Webhooks — see migration 042), and — on real Android hardware — sound,
+vibration, foreground toast, tap-to-navigate, safe-area insets, and
+touch-target sizing, all confirmed live on the Oppo (CPH2477).
 
-The remaining work splits into two independent hardware tracks. Doing
-**either** one answers the biggest open risk — "does the app actually work
-correctly wrapped in a native WebView?" — so whichever becomes available
-first is worth doing.
+**Machine decision (resolved 2026-08-14):** the original primary dev
+laptop was too tight on disk (1.4 GB free) to run Android Studio, so
+Android device testing moved to the Snapdragon laptop (341 GB free) —
+which is now also just the main working machine day to day. Not a live
+concern any more; kept only so nobody re-diagnoses it if disk pressure
+ever comes up again on the original machine.
 
-#### V1.1a — Android track (does NOT need a Mac)
-
-Android Studio runs on Windows, so this doesn't depend on borrowing
-anything. Doing this track first would de-risk the WebView question early,
-and FCM push works on Android emulators with Play Services — so this can
-prove `device_tokens` populates and `devicesFound` > 0 without any Apple
-involvement.
-
-**Step 0 — decide which machine (DO THIS FIRST)**
-
-Checked this laptop on 2026-08-14 and **it will not fit as it stands**:
-
-| Spec | This laptop | Android Studio needs |
-|------|------------|---------------------|
-| Disk free | **1.4 GB** (of 118 GB — 98.8% full) | ~8 GB min, realistically 20+ GB with SDK, emulator images, Gradle caches |
-| RAM | 7.9 GB | 8 GB bare minimum; 16 GB recommended for IDE + emulator together |
-| CPU | i5-8250U (2017 low-power, 4 cores) | Workable but emulator will be slow |
-
-Clearing this project won't rescue it — measured: `node_modules` 251 MB,
-`_archive` 9 MB, `dist`/`media`/`android`/`ios` ~2 MB each. Total
-reclaimable ≈ 260 MB against a ~20 GB need.
-
-**DECIDED (2026-08-14)**: use the **other laptop** — it has adequate
-disk/RAM to run Android Studio comfortably. This laptop stays as the
-main build machine.
-
-**Working on the other laptop**: user has previously logged into a
-browser-based Kiro, so that may be an option rather than a full desktop
-install. The thing to confirm on the day is whether that version can
-(a) read/write the local project files on that machine and (b) run local
-shell commands (`npm`, `npx cap`, `git`) — because driving an Android
-Studio build needs both. If it can't, fall back to installing Kiro
-desktop there, cloning the repo, and copying `.env.development` across
-(same as the Mac checklist in `docs/project/MAC-SESSION-CHECKLIST.md`,
-minus Xcode/CocoaPods).
-
-⚠️ **Separately and more urgently**: 1.4 GB free is low enough to cause
-problems in its own right — failed installs, slow performance, Windows
-update issues. This is plausibly behind the `npm install` /
-`TAR_ENTRY_ERROR` failures hit while installing `firebase-tools` on
-2026-08-13. Worth addressing regardless of Android Studio, since active
-development is happening on this machine.
+Below is the run sheet actually used to set up and execute V1.1a — kept
+as a reusable runbook (e.g. for setting up a fresh machine, or as a
+template for the still-open V1.1b iOS track), not because it's pending.
 
 ---
 
-### ▶ START HERE ON THE OTHER LAPTOP — V1.1a run sheet (self-contained)
-
-*Written 2026-08-19 so a fresh session can execute this cold. If Mike opens Kiro
-here and says "let's do 1.1a", follow this top to bottom.*
+### V1.1a run sheet (self-contained runbook, already executed 2026-08-19)
 
 **Pre-flight (assistant, first):** confirm this environment can (a) read/write the
 local project files and (b) run local shell (`node -v`, `npm -v`, `git --version`).
@@ -1303,7 +1232,15 @@ person, one account, multiple team memberships.
 
 ---
 
-### V1.4 Post-Registration Welcome & Team Page — NOT STARTED (V1.3 done, so UNBLOCKED)
+### V1.4 Post-Registration Welcome & Team Page — ✅ DONE (2026-08-18)
+
+*(Header corrected 2026-08-25 — this was the original spec, written before
+build, and never updated; it still said "NOT STARTED" weeks after shipping.
+Kept below as-is since it's a clean record of what was actually built —
+success screen copy, Team page layout, permissions table. Build/deploy
+record: `CHANGELOG.md`, "2026-08-18 - V1.4 Post-Registration Welcome, Team
+Page & Fixes." Still-open follow-ups: see the "✅ V1.4 + V1.5 — built &
+deployed" section further up.)*
 
 **Fold in V1.3 follow-up 2 here**: a registrant who used an address the
 invite was *not* sent to is left unconfirmed with no email from Supabase.
@@ -1394,7 +1331,12 @@ Should be (dynamic):
 
 ---
 
-### V1.5 Role-Aware Mobile Navigation — NOT STARTED (needs V1.4)
+### V1.5 Role-Aware Mobile Navigation — ✅ DONE (2026-08-18)
+
+*(Header corrected 2026-08-25 — same as V1.4 above: this was the original
+spec, stale-labeled "NOT STARTED" long after shipping. Build/deploy
+record: `CHANGELOG.md`, "2026-08-18 - V1.5 Role-Aware Navigation." Kept
+below since it's a clean record of the per-role tab design.)*
 
 **Hard constraint: maximum 6 nav buttons per role.** The six-button bottom
 nav is the app's primary mobile navigation — it works well visually and
@@ -1522,6 +1464,18 @@ Heja replacement.
   eligible identities" rather than baking that lookup into Schedule.tsx,
   and (2) the Edge Function itself built generically (subject/child id +
   action type) so Task 1 and the RSVP fix can both call it.
+
+  **Superseded 2026-08-20 — this generic-Edge-Function plan was NOT what
+  got built.** When Task 1 was actually implemented, it shipped as two
+  single-purpose Edge Functions (`link-player-caregiver`,
+  `respond-junior-approval`), narrowly shaped around the add-a-junior
+  tables specifically, matching the existing `create-auth-user`
+  single-purpose pattern — not the generic "subject/child id + action
+  type" function described above. The shared "eligible identities" helper
+  (point 1) is still a reasonable idea for whoever builds this RSVP piece,
+  but decide fresh whether it's worth it, rather than assuming a generic
+  Edge Function already exists to call into — it doesn't. Full detail:
+  `CHANGELOG.md`, "2026-08-20 - Task 1: add-a-junior RLS fix...".
 - Also ties into eligibility more broadly — RSVP should cover players,
   managers, and coaches of a team. Confirm this is actually correctly
   scoped once the caregiver build lands — not verified either way yet.
@@ -1552,6 +1506,42 @@ Do this near launch, once we know what the trial group actually needs.
 ---
 
 ### V1.9 Store Distribution & Privacy Policy — NOT STARTED (needs V1.1)
+
+**Found 2026-08-25 while live-testing Add Player registration — capture for
+go-live**: the post-registration Welcome screen's "Open the app" button
+(`MatchingWelcome` in `LiteLandingPage.tsx`) is driven by
+`club_settings.app_url`. Today that's just pointing back at
+`https://clubfootball.app` (the web app/PWA), so registrants tapping it stay
+in the browser. **Once this app is actually published to the App Store and
+Play Store, `app_url` needs to be updated** (in `club_settings`, no code
+change) to point at the real store listing — or a smart link that routes to
+the right store per platform — so new registrants get sent to install the
+real app instead of bouncing back into the web version. Easy to miss because
+nothing breaks if it's forgotten; it just quietly keeps sending everyone to
+the PWA forever. Add this as a concrete line item in the go-live checklist
+once one exists, and as a check in the V1.9 build itself.
+
+**Privacy policy & audience declaration — likely invalidated by the
+child-account redesign (flagged 2026-08-25).** Full detail: Section 9 of
+`.kiro/specs/streamlined-invites-and-child-access/requirements.md` — read
+that section before touching the privacy draft or Decision 3b below. Short
+version: the existing privacy draft and Decision 3b's "almost certainly
+adults-only audience" conclusion were both built on the old Model A
+assumption — no child DOB collected, no child login, minimal child data.
+The child-account redesign agreed 2026-08-25 directly breaks that
+assumption: children now get their own DOB on file, their own device-bound
+login, and the ability to message a coach directly. That means:
+- The privacy policy draft (`docs/privacy-policy-draft.md`) needs rewriting
+  to reflect what's actually collected and who actually uses the app
+  directly, once the child-account design is built.
+- Decision 3b (below) needs re-examining, not assumed — a real child
+  end-user population is a different conversation with Google/Apple than
+  "an app about children, used by adults."
+- The existing legal caveat (NZ Privacy Act, app-store children's policies)
+  is now more load-bearing than when it was first written.
+**Treat this as a hard gate before store submission** — easy to miss since
+the privacy work and the child-account build could easily happen on
+separate tracks without anyone connecting them back up.
 
 **Accounts**:
 - Google Play Console — **$25 one-time**, needed before distributing to
@@ -2016,6 +2006,36 @@ getting V1 in front of real users.
 - Images not yet uploaded to Supabase Storage
 - See `docs/lessons/ACADEMY-MIGRATION-PROGRESS.md` for full status
 
+### V2.7 Gant — AI Coaching Feedback Assistant (docs only, added 2026-08-25)
+**Status**: Requirements + guardrails-conversation guide written, no build started.
+
+Gant is a planned AI-assisted layer (Claude Sonnet 5 via a Supabase Edge
+Function) that helps coaches refine dictated feedback into structured,
+club-standard commentary — checked against an agreed phases-of-play list,
+feedback model, and tone guide — before the coach approves and posts it.
+Coach retains full editorial control throughout; Gant never posts
+unilaterally and is never disclosed to players/caregivers as the source of
+the wording. Two docs capture the design so far, added to `docs/`:
+
+- `docs/gant-ai-requirements.md` — full requirements draft: purpose, model
+  choice and why, live/reflective capture flows, the raw→refine→approve
+  data flow, offline/no-coverage handling (text-level queue preferred over
+  audio), privacy constraints (linked only to a User ID, no name/DOB/contact
+  passed to the AI layer), technical architecture (Edge Function holds the
+  Anthropic API key as a secret, prompt caching for the guardrails system
+  prompt), and open questions/decisions confirmed so far.
+- `docs/gant-coach-guardrails-conversation-guide.md` — a working doc for
+  running an actual conversation with 3-5 experienced coaches to produce
+  the three inputs Gant needs: an agreed phases-of-play list, a feedback
+  model (what "good feedback" contains structurally), and a tone/style
+  guide for phrasing "areas to work on" well (with real before/after
+  examples). Not a technical task — the next step here is a coach working
+  session, not code.
+
+**Not blocking V1.** No build task exists for this yet — the immediate next
+step (whenever this gets picked up) is running the coach guardrails
+conversation, not writing any Edge Function code.
+
 ### V2 Backlog (Future)
 - Notification preferences UI
 - Audit trail for role changes
@@ -2067,33 +2087,9 @@ docs/
 
 ---
 
-## Known issues found in V1.4 smoke test (2026-08-18/19)
+## Modal layout — TASK 3, still open (this is the detail behind that pointer)
 
-Two issues surfaced while verifying the add-a-junior flow. Recorded here as V1
-scope items.
-
-### 1. RLS blocks add-a-junior — FIXED, DEPLOYED & LIVE-CONFIRMED 2026-08-20
-
-**Symptom:** as a **manager** (not admin), submitting Add Junior returns the red
-error *"new row violates row-level security policy for table player_caregivers"*.
-The child row is created server-side, but the flow then dies at the caregiver link.
-
-Investigated in full on 2026-08-20 and turned out to be part of a bigger gap —
-see "TASK 1" in the PLAN FOR NEXT SESSION section above for the complete
-root-cause writeup and what was built (two new Edge Functions:
-`link-player-caregiver` and `respond-junior-approval`). The short version: the
-RLS error here was real and is fixed, and so is a second, more serious gap
-where even an *approved* child was never landing on the roster at all. Both
-deployed and confirmed working end to end on a real device the same day —
-see "TASK 1" above for the full test notes. One thing still not covered: the
-Deny/Escalate paths weren't exercised. The other follow-up noted here at the
-time — no nav link anywhere to the Caregiver Approvals page — is now FIXED
-(2026-08-21, Add Player / DOB age model spec, Task 12 — see the dedicated
-section near the top of this file).
-
-### 2. Modal layout — Add Junior FIXED, others may share the bug
-
-**Fixed (`8d699de`):** the Add Junior modal's buttons were hidden behind the
+**Fixed already (`8d699de`):** the Add Junior modal's buttons were hidden behind the
 bottom nav (equal `z-50`, nav painted on top) and the form couldn't scroll to
 them. Now uses the proven mobile modal pattern from `src/pages/Schedule.tsx`:
 `z-[60]`, `max-h-[85vh]`, `flex flex-col` with a pinned header, a
