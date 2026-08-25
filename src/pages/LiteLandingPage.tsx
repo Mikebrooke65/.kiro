@@ -136,6 +136,13 @@ export function LiteLandingPage() {
   // worse "non-matching address" confirmation path for no benefit.
   const emailLocked = validation?.valid === true && !!validation.invite?.recipient_email;
 
+  // Only shown when there's actually something prefilled to explain — an
+  // invite created before migration 054 has no name on file, and the fields
+  // just start blank as before, same as they always did.
+  const namePrefilled =
+    validation?.valid === true &&
+    !!(validation.invite?.recipient_first_name || validation.invite?.recipient_last_name);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
@@ -233,13 +240,20 @@ export function LiteLandingPage() {
         {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{formError}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <input type="text" placeholder="First name" value={form.first_name}
-              onChange={e => setForm({ ...form, first_name: e.target.value })}
-              className="border rounded-lg px-3 py-2 text-sm" required />
-            <input type="text" placeholder="Last name" value={form.last_name}
-              onChange={e => setForm({ ...form, last_name: e.target.value })}
-              className="border rounded-lg px-3 py-2 text-sm" required />
+          <div>
+            <div className="grid grid-cols-2 gap-3">
+              <input type="text" placeholder="First name" value={form.first_name}
+                onChange={e => setForm({ ...form, first_name: e.target.value })}
+                className="border rounded-lg px-3 py-2 text-sm" required />
+              <input type="text" placeholder="Last name" value={form.last_name}
+                onChange={e => setForm({ ...form, last_name: e.target.value })}
+                className="border rounded-lg px-3 py-2 text-sm" required />
+            </div>
+            {namePrefilled && (
+              <p className="mt-1 text-xs text-gray-500">
+                Pre-filled from your invite — edit if it's not quite right.
+              </p>
+            )}
           </div>
           <div>
             <input type="email" placeholder="Email address" value={form.email}
