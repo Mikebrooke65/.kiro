@@ -49,6 +49,20 @@ type ConsentDecision = 'approve' | 'deny' | 'escalate';
 interface RespondJuniorApprovalBody {
   approval_id: string;
   decision: ConsentDecision;
+  /**
+   * UX follow-up, 2026-08-25: the child's name/DOB on this request are
+   * whatever the Manager typed into Add Player — a routing guess nobody who
+   * actually knows the child has confirmed (unlike an Adult's own
+   * self-declared DOB at redemption). The caregiver approval screen now lets
+   * the caregiver confirm-or-correct these before the child is locked in.
+   * Optional and only applied on `decision: 'approve'` — omit entirely (as
+   * every `deny`/`escalate` call does) to leave the child's row untouched,
+   * matching this function's behaviour before this field existed.
+   */
+  first_name?: string;
+  last_name?: string;
+  /** ISO `yyyy-mm-dd`. */
+  date_of_birth?: string;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -56,6 +70,33 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+/** Trimmed length within [min, max] — mirrors `add-player-logic.ts`'s helper. */
+function lengthInBounds(value: string, min: number, max: number): boolean {
+  const length = value.trim().length;
+  return length >= min && length <= max;
+}
+
+/**
+ * True when `value` is a real calendar date in strict `yyyy-mm-dd` form and
+ * not in the future. Deliberately does NOT enforce an age threshold either
+ * way — a caregiver correcting this DOB is trusted the same way a Manager's
+ * original Add Player entry was; the only bar is "a real, non-future date."
+ * Mirrors `isValidDateOfBirth` in `src/lib/success-screen-logic.ts` (kept as
+ * a local copy — Edge Functions run in a separate Deno runtime and don't
+ * share an import graph with the client bundle).
+ */
+function isPlausibleDate(value: string, asOf: Date): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? '');
+  if (!match) return false;
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  const check = new Date(year, month - 1, day);
+  const isRealCalendarDate =
+    check.getFullYear() === year && check.getMonth() === month - 1 && check.getDate() === day;
+  return isRealCalendarDate && check.getTime() <= asOf.getTime();
 }
 
 /** Mirrors `applyConsentDecision` in src/lib/add-junior-logic.ts. */
@@ -102,6 +143,24 @@ Deno.serve(async (req) => {
     const body = (await req.json()) as RespondJuniorApprovalBody;
     if (!body?.approval_id || !['approve', 'deny', 'escalate'].includes(body?.decision)) {
       return json({ error: 'approval_id and a valid decision are required' }, 400);
+    }
+
+    // A correction is only ever meaningful on approve — deny/escalate never
+    // send one (see the field's own doc comment). Validate up front, before
+    // any write happens, so a bad correction never leaves the approval
+    // half-applied.
+    const hasCorrection =
+      body.first_name !== undefined || body.last_name !== undefined || body.date_of_birth !== undefined;
+    if (body.decision === 'approve' && hasCorrection) {
+      if (!body.first_name || !lengthInBounds(body.first_name, 1, 50)) {
+        return json({ error: 'Enter a first name of 1-50 characters.' }, 400);
+      }
+      if (!body.last_name || !lengthInBounds(body.last_name, 1, 50)) {
+        return json({ error: 'Enter a last name of 1-50 characters.' }, 400);
+      }
+      if (!body.date_of_birth || !isPlausibleDate(body.date_of_birth, new Date())) {
+        return json({ error: "Enter a valid date of birth that isn't in the future." }, 400);
+      }
     }
 
     // Load the approval row (service role — RLS is irrelevant here).
@@ -171,7 +230,16 @@ Deno.serve(async (req) => {
     const updatedRows = await updateApprovalResp.json();
     const updatedApproval = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
 
-    // 2. Activate (or keep inactive) the child.
+    // 2. Activate (or keep inactive) the child, applying the caregiver's
+    // confirmed-or-corrected name/DOB when this is an approval that sent one
+    // (validated above). deny/escalate never carry a correction, so this is
+    // a no-op addition to their existing PATCH.
+    const childUpdate: Record<string, unknown> = { active: outcome.childActive };
+    if (body.decision === 'approve' && hasCorrection) {
+      childUpdate.first_name = body.first_name!.trim();
+      childUpdate.last_name = body.last_name!.trim();
+      childUpdate.date_of_birth = body.date_of_birth;
+    }
     const updateUserResp = await fetch(
       `${SUPABASE_URL}/rest/v1/users?id=eq.${approval.player_id}`,
       {
@@ -182,7 +250,7 @@ Deno.serve(async (req) => {
           'Content-Type': 'application/json',
           Prefer: 'return=minimal',
         },
-        body: JSON.stringify({ active: outcome.childActive }),
+        body: JSON.stringify(childUpdate),
       }
     );
     if (!updateUserResp.ok) {

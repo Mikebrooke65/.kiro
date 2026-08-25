@@ -37,9 +37,16 @@ export type AddJuniorResult =
       approvalId: string;
     };
 
-/** A `caregiver_approvals` row with the linked player's name embedded. */
+/**
+ * A `caregiver_approvals` row with the linked player's identifying details
+ * embedded — name and date of birth. The DOB shown here is whatever the
+ * Manager typed into Add Player as a routing guess (Requirement 4.1); it was
+ * never independently confirmed by anyone who actually knows the child, so
+ * the caregiver approval screen lets the caregiver correct it (and the name)
+ * before it's locked in — see `CaregiverApprovalPage.tsx`.
+ */
 export type CaregiverApprovalWithPlayer = CaregiverApproval & {
-  player?: { first_name: string; last_name: string } | null;
+  player?: { first_name: string; last_name: string; date_of_birth: string | null } | null;
 };
 
 class CaregiversApi extends ApiClient {
@@ -178,7 +185,9 @@ class CaregiversApi extends ApiClient {
 
     const { data, error } = await this.supabase
       .from('caregiver_approvals')
-      .select('*, player:users!caregiver_approvals_player_id_fkey(first_name, last_name)')
+      .select(
+        '*, player:users!caregiver_approvals_player_id_fkey(first_name, last_name, date_of_birth)'
+      )
       .in('player_id', playerIds)
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
@@ -421,15 +430,33 @@ class CaregiversApi extends ApiClient {
    * other two. Doing all three server-side keeps the decision atomic —
    * `respondedBy` is taken from the caller's own auth session server-side,
    * so it's passed here only for the return type's sake.
+   *
+   * `correction` (UX follow-up, 2026-08-25): the child's name and date of
+   * birth on this request are whatever the Manager typed into Add Player —
+   * a routing guess nobody who actually knows the child has confirmed. Only
+   * meaningful on `approve` (the only decision that locks the child in);
+   * `deny`/`escalate` never send one. The Edge Function re-validates
+   * independently — nothing here is trusted as-is.
    */
   async respondToJuniorApproval(
     approvalId: string,
     decision: ConsentDecision,
-    _respondedBy: string
+    _respondedBy: string,
+    correction?: { firstName: string; lastName: string; dateOfBirth: string }
   ): Promise<CaregiverApproval> {
     const { data: result, error } = await this.supabase.functions.invoke(
       'respond-junior-approval',
-      { body: { approval_id: approvalId, decision } }
+      {
+        body: {
+          approval_id: approvalId,
+          decision,
+          ...(correction && {
+            first_name: correction.firstName,
+            last_name: correction.lastName,
+            date_of_birth: correction.dateOfBirth,
+          }),
+        },
+      }
     );
 
     if (error) {
@@ -446,9 +473,19 @@ class CaregiversApi extends ApiClient {
     return result.approval as CaregiverApproval;
   }
 
-  /** Approve a pending add-child request and activate the child (Req 5.11). */
-  async approveJunior(approvalId: string, respondedBy: string): Promise<CaregiverApproval> {
-    return this.respondToJuniorApproval(approvalId, 'approve', respondedBy);
+  /**
+   * Approve a pending add-child request and activate the child (Req 5.11).
+   *
+   * `correction` carries the caregiver's confirmed-or-corrected name/DOB for
+   * the child (2026-08-25 follow-up) — see `respondToJuniorApproval`'s doc
+   * comment for why this exists.
+   */
+  async approveJunior(
+    approvalId: string,
+    respondedBy: string,
+    correction?: { firstName: string; lastName: string; dateOfBirth: string }
+  ): Promise<CaregiverApproval> {
+    return this.respondToJuniorApproval(approvalId, 'approve', respondedBy, correction);
   }
 
   /** Deny a pending add-child request; the child stays inactive (Req 5.12). */
