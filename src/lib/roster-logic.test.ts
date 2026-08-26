@@ -12,7 +12,8 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 
-import { deriveAgeBand, deriveAgeBandForPerson } from './roster-logic';
+import { contactFor, deriveAgeBand, deriveAgeBandForPerson } from './roster-logic';
+import type { CaregiverLink } from './roster-logic';
 
 describe('deriveAgeBandForPerson — prefers a personal date of birth (Requirement 2.1-2.3, 2.5)', () => {
   it('uses the age_group fallback when no date of birth is recorded', () => {
@@ -76,4 +77,54 @@ describe('deriveAgeBandForPerson — prefers a personal date of birth (Requireme
       { numRuns: 300 }
     );
   });
+});
+
+describe('contactFor — no viewer-role gate on contact details (Req 3.7, 3.8, 3.11; streamlined-invites-and-child-access Requirement 7.2)', () => {
+  const CAREGIVER: CaregiverLink = {
+    name: 'Pat Caregiver',
+    cellphone: '0400000000',
+    isPrimary: true,
+    linkedAt: '2026-01-01T00:00:00Z',
+  };
+
+  it('shows an adult-band player their own cellphone', () => {
+    expect(contactFor('adult', 'player', '0411111111', undefined)).toEqual({
+      kind: 'self',
+      cellphone: '0411111111',
+    });
+  });
+
+  it("shows a child-band player — including a child's own account, which uses the identical 'player' team-role — their caregiver's contact, not their own", () => {
+    expect(contactFor('child', 'player', '', [CAREGIVER])).toEqual({
+      kind: 'caregiver',
+      name: 'Pat Caregiver',
+      cellphone: '0400000000',
+    });
+  });
+
+  it('shows a child-band player with no linked caregiver a "missing" indication (Req 3.11)', () => {
+    expect(contactFor('child', 'player', '', undefined)).toEqual({ kind: 'missing' });
+  });
+
+  it('shows a coach or manager their own cellphone even on a child-band team (adults, not routed through a caregiver)', () => {
+    expect(contactFor('child', 'coach', '0422222222', undefined)).toEqual({
+      kind: 'self',
+      cellphone: '0422222222',
+    });
+    expect(contactFor('child', 'manager', '0433333333', [CAREGIVER])).toEqual({
+      kind: 'self',
+      cellphone: '0433333333',
+    });
+  });
+
+  // This function takes no "viewer" parameter at all — deliberately. Every
+  // team member who can load the roster already sees this exact same
+  // contact for every row, regardless of their own role. There is no
+  // "Manager/Coach-only" contact tier in this codebase to test the absence
+  // of; this suite's own signature (no viewer argument, ever) is that
+  // documentation. See the docstring on `contactFor` for the full context —
+  // including why streamlined-invites-and-child-access/requirements.md
+  // Section 7.2 describes a gate that doesn't exist, and why that doesn't
+  // change what a child's account is allowed to see: it inherits exactly
+  // this function's `'player'`-role behaviour, same as any adult Player.
 });

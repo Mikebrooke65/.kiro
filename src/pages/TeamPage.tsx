@@ -19,6 +19,7 @@ import { UserRole } from '../types/database';
 import type { TeamRole, TeamType, TeamMemberWithUser } from '../types/database';
 import {
   buildTeamSelection,
+  contactFor,
   deriveAgeBand,
   deriveAgeBandForPerson,
   groupAndSortRoster,
@@ -838,21 +839,6 @@ function displayName(row: TeamMemberWithUser): string {
   return name || 'Unknown member';
 }
 
-/** Contact of record for a roster member by age band (Req 3.7, 3.8, 3.11). */
-function contactFor(
-  ageBand: AgeBand,
-  role: TeamRole,
-  cellphone: string,
-  caregiverLinks: CaregiverLink[] | undefined
-): ContactDisplay {
-  // Adult band: everyone shows their own cellphone (Req 3.7).
-  if (ageBand === 'adult') {
-    return { kind: 'self', cellphone };
-  }
-  // Child band: players route through a caregiver (Req 3.8/3.11); coaches and
-  // managers are adults and show their own number.
-  if (role === 'player') {
-    return selectCaregiverContact(caregiverLinks ?? []);
-  }
-  return { kind: 'self', cellphone };
-}
+// contactFor moved to roster-logic.ts (streamlined-invites-and-child-access,
+// Task 8) so it can be unit-tested — see that file for the full docstring,
+// including the documentation correction it prompted.

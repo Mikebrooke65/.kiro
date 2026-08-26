@@ -1,28 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
-import { UserRole } from '../types/database';
 import { LogoutButton } from '../components/LogoutButton';
 import { caregiversApi } from '../lib/caregivers-api';
-import { resolveApprovalsTab, type ApprovalsTabState } from '../lib/main-layout-logic';
+import { resolveApprovalsTab, tabsForRole, type TabKey } from '../lib/main-layout-logic';
 import gannetWhite from '../assets/e2b3da3f33b0748e111b306a15bee82b12f28232.png';
 
-// Bottom-nav tab definition. Visibility is driven purely by App_Role
-// (users.role), independent of user_type (a lite manager sees the same tabs as
-// a full manager). Page colours follow the project's semantic scheme; Team
-// adopts the (now-freed) Resources purple. Resources is no longer a bottom tab —
-// it lives as a second-level page reached from Home.
-interface TabDef {
-  to: string;
-  label: string;
-  color: string;
-  icon: JSX.Element;
-  end?: boolean;
-  /** Shown as a small numeric badge on the tab (Requirement 8.3, 8.4). */
-  badge?: number;
-}
+// Bottom-nav tab set (which tabs, in what order, for which role) is decided
+// by `tabsForRole` in `main-layout-logic.ts` — kept out of this component so
+// it's unit-testable without a component-rendering harness. This file only
+// owns presentation: mapping each tab's `key` to an icon and rendering it.
+// Page colours follow the project's semantic scheme; Team adopts the
+// (now-freed) Resources purple. Resources is no longer a bottom tab — it
+// lives as a second-level page reached from Home.
 
-const ICONS: Record<string, JSX.Element> = {
+const ICONS: Record<TabKey, JSX.Element> = {
   home: (
     <path
       strokeLinecap="round"
@@ -88,46 +80,6 @@ const ICONS: Record<string, JSX.Element> = {
     />
   ),
 };
-
-/**
- * Build the bottom-nav tabs for a given App_Role. Every role gets Home, Team,
- * Schedule and Messages. Coaching is Coach/Admin only; Games is
- * Manager/Coach/Admin (its coach-only sections are gated inside the page).
- * The result is <= 6 tabs, plus one more — Approvals — exactly when
- * `approvalsTab.visible` (Requirement 8.1/8.3/8.4). That one isn't gated by
- * role: a caregiver affiliation is derived, not stored (Requirement 6), so
- * anyone — Admin, Coach, Manager, Player — could also be a caregiver of
- * their own child and need to see it.
- */
-function tabsForRole(role: UserRole | undefined, approvalsTab: ApprovalsTabState): TabDef[] {
-  const showCoaching = role === UserRole.ADMIN || role === UserRole.COACH;
-  const showGames =
-    role === UserRole.ADMIN || role === UserRole.COACH || role === UserRole.MANAGER;
-
-  return [
-    { to: '/', label: 'Home', color: '#0091f3', icon: ICONS.home, end: true },
-    { to: '/team', label: 'Team', color: '#8b5cf6', icon: ICONS.team },
-    ...(showCoaching
-      ? [{ to: '/coaching', label: 'Coaching', color: '#22c55e', icon: ICONS.coaching }]
-      : []),
-    ...(showGames
-      ? [{ to: '/games', label: 'Games', color: '#ea7800', icon: ICONS.games }]
-      : []),
-    { to: '/schedule', label: 'Schedule', color: '#06b6d4', icon: ICONS.schedule },
-    { to: '/messaging', label: 'Messages', color: '#545859', icon: ICONS.messages },
-    ...(approvalsTab.visible
-      ? [
-          {
-            to: '/caregiver-approvals',
-            label: 'Approvals',
-            color: '#dc2626',
-            icon: ICONS.approvals,
-            badge: approvalsTab.badge,
-          },
-        ]
-      : []),
-  ];
-}
 
 export function MainLayout() {
   const { user } = useAuth();
@@ -222,7 +174,7 @@ export function MainLayout() {
             >
               <span className="relative">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  {tab.icon}
+                  {ICONS[tab.key]}
                 </svg>
                 {/* Badge (Requirement 8.3/8.4) — only ever present when the
                     tab itself is (tabsForRole only includes Approvals with a

@@ -185,6 +185,54 @@ function ageFromDateOfBirth(dateOfBirth: string | null | undefined): number | nu
 }
 
 /**
+ * Contact of record for a roster member, by age band (Req 3.7, 3.8, 3.11).
+ *
+ * Moved here from `TeamPage.tsx` (`.kiro/specs/streamlined-invites-and-
+ * child-access/`, Task 8) while confirming that spec's Requirement 7.2 —
+ * a child's Team tab must expose no more than an existing Player already
+ * does. That confirmation surfaced a documentation error worth recording
+ * here directly on the function it's about: **there is no viewer-role gate
+ * on contact details at all.** This function's only inputs are the target
+ * row's own age band and team-role — never who is looking. Any team member
+ * viewing the roster already sees every other member's contact (their own
+ * cellphone, or their caregiver's) today, regardless of the viewer's own
+ * role. `post-registration-welcome-and-team-page`'s requirements.md
+ * confirms this was the original, intentional design ("As any member of a
+ * team, I want to view the team roster... so that I can see who is on the
+ * team and how to contact them") — visibility is gated by the *target's*
+ * age band only, not a "Standard tier sees name/role only, Manager/Coach
+ * tier additionally sees contact" split. No such split exists in this
+ * codebase; `streamlined-invites-and-child-access/requirements.md`
+ * Section 7.2 describes one that was never built.
+ *
+ * That correction doesn't change what Task 8 needs to do here, because the
+ * requirement's actual conclusion still holds under the real mechanism: a
+ * child's account uses `role: 'player'` — the exact same team-role a full
+ * adult Player already has — so it runs through this exact function and
+ * gets exactly the adult-Player-or-caregiver-routed contact any existing
+ * Player already produces. No new gate is needed; this was already true
+ * before this spec, and giving a child their own login changes nothing
+ * about who can see what on the Team tab.
+ */
+export function contactFor(
+  ageBand: AgeBand,
+  role: TeamRole,
+  cellphone: string,
+  caregiverLinks: CaregiverLink[] | undefined
+): ContactDisplay {
+  // Adult band: everyone shows their own cellphone (Req 3.7).
+  if (ageBand === 'adult') {
+    return { kind: 'self', cellphone };
+  }
+  // Child band: players route through a caregiver (Req 3.8/3.11); coaches and
+  // managers are adults and show their own number.
+  if (role === 'player') {
+    return selectCaregiverContact(caregiverLinks ?? []);
+  }
+  return { kind: 'self', cellphone };
+}
+
+/**
  * Choose the caregiver contact of record for a child player (Req 3.8 / 3.11).
  *
  * Selection order:
