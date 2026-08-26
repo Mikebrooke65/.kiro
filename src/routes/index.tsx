@@ -51,6 +51,7 @@ import { GameFeedbackReport } from '../pages/desktop/GameFeedbackReport';
 
 // Public pages
 import { LiteLandingPage } from '../pages/LiteLandingPage';
+import { DeviceAccessLandingPage } from '../pages/DeviceAccessLandingPage';
 
 // In-app pages
 import { CaregiverApprovalPage } from '../pages/CaregiverApprovalPage';
@@ -68,6 +69,12 @@ export const router = createBrowserRouter([
   {
     path: '/invite/:code',
     element: <LiteLandingPage />,
+  },
+  {
+    // Requirement 7.4.4 — a child's device-code redemption. Public/anon,
+    // same as `/invite/:code`, for the same reason: no session exists yet.
+    path: '/device/:code',
+    element: <DeviceAccessLandingPage />,
   },
 
   // Mobile routes (all authenticated users)

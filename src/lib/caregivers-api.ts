@@ -601,6 +601,44 @@ class CaregiversApi extends ApiClient {
         .insert({ player_id: playerId, caregiver_id: caregiverId });
     }
   }
+
+  /**
+   * Requirement 7.4.1/7.4.2 — a caregiver, from their own account,
+   * deliberately triggers "give {child} their own access." A thin wrapper
+   * over the `generate-device-code` Edge Function: the actual authorization
+   * check (is the caller really a linked caregiver of this child?) and the
+   * session-revocation side effect (7.4.6) both have to run under service
+   * role, since `child_device_codes` has no direct authenticated INSERT
+   * policy (migration 055) and revoking a session needs the admin API —
+   * neither is possible from a plain client-side call.
+   *
+   * The caller builds the shareable link itself
+   * (`${window.location.origin}/device/{code}`), same as every other invite
+   * link in this app (see `CompetitionsPage.tsx`) — this method only
+   * returns the bare code and its expiry.
+   *
+   * DEPLOYMENT: Edge Functions do NOT ship with `git push`. This call fails
+   * until `supabase functions deploy generate-device-code` has been run.
+   */
+  async generateChildDeviceCode(childId: string): Promise<{ code: string; expiresAt: string }> {
+    const { data: result, error } = await this.supabase.functions.invoke('generate-device-code', {
+      body: { child_user_id: childId },
+    });
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+    if (result?.error) {
+      throw new ApiError(
+        typeof result.error === 'string' ? result.error : 'Could not create a device code.'
+      );
+    }
+    if (!result?.code || !result?.expires_at) {
+      throw new ApiError('Could not create a device code.');
+    }
+
+    return { code: result.code as string, expiresAt: result.expires_at as string };
+  }
 }
 
 /**

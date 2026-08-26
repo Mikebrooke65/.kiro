@@ -36,6 +36,8 @@ import {
   type PermissionRole,
 } from '../lib/permissions-logic';
 import { AddPlayerModal, type AddPlayerOutcome } from '../components/team/AddPlayerModal';
+import { caregiversApi } from '../lib/caregivers-api';
+import { ApiError } from '../lib/api-client';
 
 /** How long a roster fetch may run before the error state shows (Req 3.15). */
 const ROSTER_TIMEOUT_MS = 10_000;
@@ -52,6 +54,14 @@ interface RosterData {
   currentUserRoles: PermissionRole[];
   /** team_members row id of each user's player membership (for promotion). */
   playerMembershipIdByUser: Record<string, string>;
+  /**
+   * Requirement 7.4.1 — child user ids the CURRENT viewer is a linked
+   * caregiver for (`player_caregivers`), independent of this team's own
+   * roster/caregiver-contact data. Drives whether "Issue Device Access"
+   * shows on a given row — a Manager/Coach viewing the same roster is never
+   * a linked caregiver of these children, so they never see it.
+   */
+  myLinkedChildIds: Set<string>;
 }
 
 /** Reject if the wrapped promise does not settle within `ms` (Req 3.15). */
@@ -92,6 +102,15 @@ export function TeamPage() {
   // Action feedback (e.g. manager-cap message, confirmation) and modal.
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
+
+  // Requirement 7.4.1/7.4.2 — the most recently generated device-code link,
+  // shown inline (same pattern as CompetitionsPage's generated invite link)
+  // until the caregiver dismisses it or generates another one.
+  const [deviceCodeResult, setDeviceCodeResult] = useState<{
+    childName: string;
+    link: string;
+  } | null>(null);
+  const [issuingDeviceAccessFor, setIssuingDeviceAccessFor] = useState<string | null>(null);
 
   // Guards a roster response against a newer selection/retry superseding it.
   const loadTokenRef = useRef(0);
@@ -222,6 +241,33 @@ export function TeamPage() {
       } else {
         setActionMessage(message || 'Could not promote the member.');
       }
+    }
+  };
+
+  /**
+   * Requirement 7.4.1/7.4.2 — a linked caregiver deliberately triggers "give
+   * {child} their own access." Generates the code, then shows the shareable
+   * link the same way `CompetitionsPage.tsx` shows a generated invite link —
+   * this is the caregiver's one chance to see/copy it, so it stays visible
+   * until dismissed rather than folding into the plain-text `actionMessage`
+   * banner other actions use.
+   */
+  const handleIssueDeviceAccess = async (entry: RosterEntry) => {
+    setActionMessage(null);
+    setDeviceCodeResult(null);
+    setIssuingDeviceAccessFor(entry.userId);
+    try {
+      const { code } = await caregiversApi.generateChildDeviceCode(entry.userId);
+      setDeviceCodeResult({
+        childName: entry.displayName,
+        link: `${window.location.origin}/device/${code}`,
+      });
+    } catch (err) {
+      setActionMessage(
+        err instanceof ApiError ? err.message : 'Could not create a device code.'
+      );
+    } finally {
+      setIssuingDeviceAccessFor(null);
     }
   };
 
@@ -372,6 +418,32 @@ export function TeamPage() {
                 </div>
               )}
 
+              {/* Requirement 7.4.2/7.4.3 — the generated device-code link,
+                  shareable however suits the family (read aloud, copy-paste
+                  into a message). Stays visible until dismissed or replaced
+                  by generating another one, same pattern as
+                  CompetitionsPage's generated invite link. */}
+              {deviceCodeResult && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-2" role="status">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-green-800">
+                      Device link for <span className="font-medium">{deviceCodeResult.childName}</span> —
+                      share this with them once. They'll be signed in on that device from then on.
+                    </p>
+                    <button
+                      onClick={() => setDeviceCodeResult(null)}
+                      className="text-green-700 text-xs flex-shrink-0"
+                      aria-label="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-sm font-mono break-all bg-white rounded px-2 py-1 border border-green-200">
+                    {deviceCodeResult.link}
+                  </p>
+                </div>
+              )}
+
               {roster.entries.length === 0 ? (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
                   <p className="text-gray-500 text-sm">This team has no members yet.</p>
@@ -391,6 +463,9 @@ export function TeamPage() {
                         entry.roles.includes('player') &&
                         !entry.roles.includes('manager')
                       }
+                      canIssueDeviceAccess={roster.myLinkedChildIds.has(entry.userId)}
+                      issuingDeviceAccess={issuingDeviceAccessFor === entry.userId}
+                      onIssueDeviceAccess={() => handleIssueDeviceAccess(entry)}
                     />
                   ))}
                 </div>
@@ -432,6 +507,11 @@ interface RosterRowProps {
   onDeactivate: () => void;
   onReactivate: () => void;
   onPromote: () => void;
+  /** Requirement 7.4.1 — true when the current viewer is a linked caregiver
+   *  of this row's child, regardless of any team-level capability. */
+  canIssueDeviceAccess: boolean;
+  issuingDeviceAccess: boolean;
+  onIssueDeviceAccess: () => void;
 }
 
 function RosterRow({
@@ -441,6 +521,9 @@ function RosterRow({
   onDeactivate,
   onReactivate,
   onPromote,
+  canIssueDeviceAccess,
+  issuingDeviceAccess,
+  onIssueDeviceAccess,
 }: RosterRowProps) {
   // Inactive OR pending members are greyed (Req 3.6, 5.10).
   const greyed = !entry.active || entry.pending;
@@ -506,6 +589,19 @@ function RosterRow({
                 className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
               >
                 Reactivate
+              </button>
+            )}
+            {/* Requirement 7.4.1 — a linked caregiver's own right over their
+                child's record, independent of any team-level capability
+                above (a caregiver need not be a Coach/Manager/Admin to see
+                this on their own child's row). */}
+            {canIssueDeviceAccess && (
+              <button
+                onClick={onIssueDeviceAccess}
+                disabled={issuingDeviceAccess}
+                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                {issuingDeviceAccess ? 'Creating...' : 'Issue Device Access'}
               </button>
             )}
           </div>
@@ -669,6 +765,19 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     if (row.role === 'player') playerMembershipIdByUser[row.user_id] = row.id;
   }
 
+  // Requirement 7.4.1 — independent of this team's roster data: which
+  // children (on any team) is the current viewer a linked caregiver for.
+  // Best-effort: a lookup failure here should never break loading the
+  // roster itself, so it degrades to "show the button for nobody" rather
+  // than failing the whole page.
+  let myLinkedChildIds = new Set<string>();
+  try {
+    const myLinks = await caregiversApi.getCaregiverPlayers(currentUserId);
+    myLinkedChildIds = new Set(myLinks.map((link) => link.player_id));
+  } catch (err) {
+    console.error('Could not load linked-caregiver children:', err);
+  }
+
   return {
     entries,
     ageBand,
@@ -676,6 +785,7 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     managerCount,
     currentUserRoles,
     playerMembershipIdByUser,
+    myLinkedChildIds,
   };
 }
 
