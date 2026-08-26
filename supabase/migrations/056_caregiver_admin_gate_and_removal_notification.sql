@@ -16,10 +16,12 @@
 --    the UI, not someone calling either path directly:
 --      a. `invite_codes` INSERT with intended_role = 'caregiver' — for a
 --         caregiver who doesn't have an account yet. Gate added directly to
---         the existing "Allow coaches and managers to create invite codes
---         for their teams" policy (migration 036) via ALTER POLICY, so the
---         policy keeps its name and history; only its WITH CHECK expression
---         changes.
+--         the "Allow coaches and managers to create invite codes for their
+--         teams" policy migration 036's FILE defines — see the NOTE further
+--         down: that policy turned out to not actually exist on the live
+--         database despite being in migration 036, so this recreates it
+--         (same name) with the gate built in from the start, rather than
+--         altering an existing one.
 --      b. The `link-player-caregiver` Edge Function — for a caregiver who
 --         already has an account (used today by `caregiversApi.addJunior`'s
 --         existing-user branch, always a brand-new child with zero existing
@@ -52,10 +54,26 @@
 
 -- ---------------------------------------------------------------------------
 -- 1a. invite_codes: admin-only for a second-or-later caregiver invite
+--
+-- NOTE (discovered running this migration 2026-08-26, live project
+-- pikrxkxpizdezazlwxhb): the coach/manager INSERT policy migration 036's
+-- FILE defines was never actually present on the live database — `select
+-- policyname from pg_policies where tablename = 'invite_codes'` showed only
+-- the admin-FOR-ALL, anon-SELECT, and authenticated-SELECT policies, with
+-- RLS confirmed enabled (`relrowsecurity = true`). Consistent with this
+-- project's earlier "migration 036 recovery" history (see git log) — 036
+-- evidently didn't fully apply live. This statement was originally written
+-- as `ALTER POLICY ... WITH CHECK (...)`, assuming the policy existed;
+-- changed to `DROP POLICY IF EXISTS` + `CREATE POLICY` so it both restores
+-- the missing coach/manager invite-creation permission AND bakes in Task
+-- 9's gate from the start, in one idempotent step.
 -- ---------------------------------------------------------------------------
 
-ALTER POLICY "Allow coaches and managers to create invite codes for their teams"
-  ON public.invite_codes
+DROP POLICY IF EXISTS "Allow coaches and managers to create invite codes for their teams"
+  ON public.invite_codes;
+
+CREATE POLICY "Allow coaches and managers to create invite codes for their teams"
+  ON public.invite_codes FOR INSERT TO authenticated
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM public.users
