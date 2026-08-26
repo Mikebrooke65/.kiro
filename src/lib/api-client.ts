@@ -2,9 +2,21 @@ import { supabase } from './supabase';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export class ApiError extends Error {
-  constructor(message: string) {
+  /**
+   * Optional machine-readable code from the failing endpoint's response body
+   * (e.g. `redeem-invite`'s `reason` field), additive and backward
+   * compatible — every existing `new ApiError(message)` call site across the
+   * codebase still works unchanged with this left `undefined`. Lets a caller
+   * distinguish a specific, first-class outcome (like
+   * `.kiro/specs/streamlined-invites-and-child-access/` Requirement 6.1's
+   * "bounce to Manager") from a generic failure, without parsing message text.
+   */
+  readonly reason?: string;
+
+  constructor(message: string, reason?: string) {
     super(message);
     this.name = 'ApiError';
+    this.reason = reason;
   }
 }
 

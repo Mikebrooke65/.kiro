@@ -144,18 +144,26 @@ class InvitesApi extends ApiClient {
         // Self-declared at redemption (Req 3.4); absent/undefined for a
         // Caregiver invite, which `redeem-invite` never asks for one.
         date_of_birth: userData.date_of_birth,
+        // Caregiver-invite redemption only (Requirement 5.2/5.3); absent for
+        // every other intended role, which `redeem-invite` never asks for
+        // these. `undefined` fields are dropped, not sent as `null`.
+        subject_first_name: userData.subject_first_name,
+        subject_last_name: userData.subject_last_name,
+        subject_date_of_birth: userData.subject_date_of_birth,
       },
     });
 
     if (error) {
-      throw new ApiError(await extractFunctionError(error));
+      const extracted = await extractFunctionError(error);
+      throw new ApiError(extracted.message, extracted.reason);
     }
 
     // A 2xx response carrying an `error` field — shouldn't happen, but the
     // message is already safe to show if it does.
     if (result?.error) {
       throw new ApiError(
-        typeof result.error === 'string' ? result.error : REGISTRATION_FALLBACK_MESSAGE
+        typeof result.error === 'string' ? result.error : REGISTRATION_FALLBACK_MESSAGE,
+        typeof result.reason === 'string' ? result.reason : undefined
       );
     }
 
@@ -174,6 +182,14 @@ class InvitesApi extends ApiClient {
       email_confirmation_required: result.email_confirmation_required,
       confirmation_email_sent: result.confirmation_email_sent,
       competition_name: result.competition_name ?? null,
+      // add-player-and-dob-age-model Requirement 8.2 — was previously missing
+      // from this mapping (the Edge Function has always returned it; the
+      // Success Screen's `resolvePrimaryActionHref` has always read it — this
+      // is the copy step that lets it actually arrive), fixed in passing
+      // while wiring `converted_from_caregiver` alongside it below.
+      has_pending_approval: result.has_pending_approval,
+      // streamlined-invites-and-child-access Requirement 6.2.
+      converted_from_caregiver: result.converted_from_caregiver,
     };
 
     // Matching-address path (Req 2.1): the account is already confirmed, so send
@@ -326,14 +342,28 @@ const REGISTRATION_FALLBACK_MESSAGE =
  *
  * Same approach as `extractFunctionError` in `src/lib/email-api.ts`; kept local so
  * the fallback message suits registration rather than email sending.
+ *
+ * Also surfaces the response body's `reason` code (e.g. `redeem-invite`'s
+ * `bounce_to_manager`), added for
+ * `.kiro/specs/streamlined-invites-and-child-access/` Requirement 6.1 so the
+ * caller can treat that specific outcome as first-class UI, not a generic
+ * failure banner — without parsing message text. `reason` is `undefined`
+ * whenever the body has none, which every pre-existing caller can keep
+ * ignoring exactly as before.
  */
-async function extractFunctionError(error: unknown): Promise<string> {
+async function extractFunctionError(
+  error: unknown
+): Promise<{ message: string; reason?: string }> {
   const context = (error as { context?: Response })?.context;
   if (context && typeof context.json === 'function') {
     try {
       const body = await context.json();
+      const reason = typeof body?.reason === 'string' ? body.reason : undefined;
       if (body?.error) {
-        return typeof body.error === 'string' ? body.error : REGISTRATION_FALLBACK_MESSAGE;
+        return {
+          message: typeof body.error === 'string' ? body.error : REGISTRATION_FALLBACK_MESSAGE,
+          reason,
+        };
       }
     } catch {
       // Body wasn't JSON — fall through to the generic message.
@@ -341,7 +371,7 @@ async function extractFunctionError(error: unknown): Promise<string> {
   }
   // Deliberately not `error.message`: that is either the opaque invoke text or a
   // transport error, neither of which is useful to the person registering.
-  return REGISTRATION_FALLBACK_MESSAGE;
+  return { message: REGISTRATION_FALLBACK_MESSAGE };
 }
 
 export const invitesApi = new InvitesApi();

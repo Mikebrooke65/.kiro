@@ -1,27 +1,35 @@
 // Add Player modal (Requirement 1) — replaces `AddJuniorModal.tsx`.
 //
-// Spec: `.kiro/specs/add-player-and-dob-age-model/` (task 10)
+// Spec: `.kiro/specs/streamlined-invites-and-child-access/` (task 3e),
+// superseding `.kiro/specs/add-player-and-dob-age-model/`'s DOB-threshold
+// version of this same modal.
 //
-// Captures first name, last name, and a routing date of birth (Req 1.2), then
-// branches on `routeAddPlayer`: Adult reveals an email field and sends a
-// self-registration invite (Req 1.5, Requirement 3); Junior reveals the
-// existing caregiver name/email/phone fields and reuses `caregivers-api.
-// addJunior` (Req 1.6, Requirement 4). Neither path captures contact details
-// or a photo for the person being added (Req 1.4). A plain confirmation step
-// restates the entered DOB and which path it will take before either submit
-// actually fires (Req 1.7), so a Manager can catch a mis-typed DOB before an
-// invite goes out or a caregiver request is sent.
+// Captures first name, last name, and an explicit Adult/Child tick
+// (Requirement 1.2) — never an exact date of birth. A Manager rarely knows
+// one reliably; the tick is the judgement call they're actually equipped to
+// make. Branches on `routeAddPlayerFromTick`: Adult reveals an email field
+// and sends a self-registration invite (Requirement 1.4); Child reveals the
+// caregiver name/email/phone fields and reuses `caregivers-api.addJunior`
+// (Requirement 1.3). Neither path captures contact details, a photo, or a
+// date of birth for the person being added — the exact DOB is collected for
+// the first time at invite redemption, from whoever actually knows it
+// (Requirement 5), not guessed here. A plain confirmation step restates the
+// tick and which path it will take before either submit actually fires
+// (carried over from Requirement 1.7 of the superseded spec), so a Manager
+// can catch a wrong tick before an invite goes out or a caregiver request is
+// sent.
 
 import { useEffect, useState } from 'react';
 import { caregiversApi } from '../../lib/caregivers-api';
 import { invitesApi } from '../../lib/invites-api';
 import { emailApi } from '../../lib/email-api';
 import {
-  routeAddPlayer,
-  validateAddPlayerForm,
-  type AddPlayerForm,
-  type AddPlayerFieldError,
+  routeAddPlayerFromTick,
+  validateAddPlayerFormWithTick,
+  type AddPlayerFormWithTick,
+  type AddPlayerTickFieldError,
   type AddPlayerRoute,
+  type AddPlayerTick,
 } from '../../lib/add-player-logic';
 
 /** Outcome reported to the parent so it can show a tailored confirmation. */
@@ -40,30 +48,28 @@ interface AddPlayerModalProps {
   teamLabel: string;
 }
 
-const EMPTY_FORM: AddPlayerForm = {
+const EMPTY_FORM: AddPlayerFormWithTick = {
   firstName: '',
   lastName: '',
-  dateOfBirth: '',
+  tick: 'adult',
   email: '',
   caregiverName: '',
   caregiverEmail: '',
   caregiverPhone: '',
 };
 
-const FIELD_LABELS: Record<AddPlayerFieldError, string> = {
+const FIELD_LABELS: Record<AddPlayerTickFieldError, string> = {
   firstName: 'First name',
   lastName: 'Last name',
-  dateOfBirth: 'Date of birth',
   email: 'Email',
   caregiverName: 'Caregiver name',
   caregiverEmail: 'Caregiver email',
   caregiverPhone: 'Caregiver phone',
 };
 
-const FIELD_HINTS: Record<AddPlayerFieldError, string> = {
+const FIELD_HINTS: Record<AddPlayerTickFieldError, string> = {
   firstName: 'Enter a first name of 1–50 characters.',
   lastName: 'Enter a last name of 1–50 characters.',
-  dateOfBirth: "Enter a valid date of birth that isn't in the future.",
   email: 'Enter a valid email of 1–254 characters.',
   caregiverName: 'Enter a name of 1–100 characters.',
   caregiverEmail: 'Enter a valid email of 1–254 characters.',
@@ -72,15 +78,6 @@ const FIELD_HINTS: Record<AddPlayerFieldError, string> = {
 
 type Stage = 'form' | 'confirm';
 
-/** Today as `yyyy-mm-dd`, for the date input's `max` (a DOB can't be in the future). */
-function todayIso(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
 export function AddPlayerModal({
   isOpen,
   onClose,
@@ -88,8 +85,8 @@ export function AddPlayerModal({
   teamId,
   teamLabel,
 }: AddPlayerModalProps) {
-  const [form, setForm] = useState<AddPlayerForm>(EMPTY_FORM);
-  const [fieldErrors, setFieldErrors] = useState<AddPlayerFieldError[]>([]);
+  const [form, setForm] = useState<AddPlayerFormWithTick>(EMPTY_FORM);
+  const [fieldErrors, setFieldErrors] = useState<AddPlayerTickFieldError[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stage, setStage] = useState<Stage>('form');
@@ -107,22 +104,26 @@ export function AddPlayerModal({
 
   if (!isOpen) return null;
 
-  // Live routing preview (Req 1.5/1.6) — provisional only; re-derived from
-  // scratch at confirm-and-submit time too, so nothing here is trusted as
-  // the final decision.
-  const route: AddPlayerRoute = routeAddPlayer({ dateOfBirth: form.dateOfBirth });
+  // Live routing preview — provisional only; re-derived from scratch at
+  // confirm-and-submit time too, so nothing here is trusted as the final
+  // decision.
+  const route: AddPlayerRoute = routeAddPlayerFromTick(form.tick);
 
-  const updateField = (field: keyof AddPlayerForm, value: string) => {
+  const updateField = (field: keyof Omit<AddPlayerFormWithTick, 'tick'>, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setFieldErrors((prev) => prev.filter((f) => f !== field));
   };
 
-  const hasError = (field: AddPlayerFieldError) => fieldErrors.includes(field);
+  const updateTick = (tick: AddPlayerTick) => {
+    setForm((prev) => ({ ...prev, tick }));
+  };
 
-  /** Move from the form to the confirmation step (Req 1.7), or reject (Req 1.3). */
+  const hasError = (field: AddPlayerTickFieldError) => fieldErrors.includes(field);
+
+  /** Move from the form to the confirmation step, or reject (Req 1.3/1.4). */
   const handleContinue = () => {
     setSubmitError(null);
-    const validation = validateAddPlayerForm(form, route);
+    const validation = validateAddPlayerFormWithTick(form, route);
     if (!validation.ok) {
       setFieldErrors(validation.errors);
       return;
@@ -142,8 +143,8 @@ export function AddPlayerModal({
       // Re-validate and re-route from the current form state — the only
       // values trusted at submit time, regardless of what was true when
       // "Continue" was clicked.
-      const finalRoute = routeAddPlayer({ dateOfBirth: form.dateOfBirth });
-      const validation = validateAddPlayerForm(form, finalRoute);
+      const finalRoute = routeAddPlayerFromTick(form.tick);
+      const validation = validateAddPlayerFormWithTick(form, finalRoute);
       if (!validation.ok) {
         setFieldErrors(validation.errors);
         setStage('form');
@@ -152,8 +153,10 @@ export function AddPlayerModal({
       }
 
       if (finalRoute === 'adult') {
-        // Requirement 3.1/3.2 — reuses generateInviteCode exactly as the
-        // first-Manager flow does; no new invite mechanism.
+        // Requirement 1.4 — reuses generateInviteCode exactly as the
+        // first-Manager flow does; no new invite mechanism. The adult's own
+        // date of birth is collected for the first time at redemption
+        // (Requirement 5.1), not here.
         const email = form.email.trim().toLowerCase();
         const invite = await invitesApi.generateInviteCode(
           teamId,
@@ -182,22 +185,21 @@ export function AddPlayerModal({
         }
         onSuccess?.({ route: 'adult', emailFailed });
       } else {
-        const result = await caregiversApi.addJunior(
-          teamId,
-          {
-            caregiverName: form.caregiverName,
-            caregiverEmail: form.caregiverEmail,
-            caregiverPhone: form.caregiverPhone,
-            childFirstName: form.firstName,
-            childLastName: form.lastName,
-          },
-          form.dateOfBirth
-        );
+        // Requirement 1.3 — no date of birth passed through: the child's DOB
+        // and confirmed name are collected for the first time at redemption,
+        // from the caregiver (Requirement 5.2/5.3), not guessed here.
+        const result = await caregiversApi.addJunior(teamId, {
+          caregiverName: form.caregiverName,
+          caregiverEmail: form.caregiverEmail,
+          caregiverPhone: form.caregiverPhone,
+          childFirstName: form.firstName,
+          childLastName: form.lastName,
+        });
         if (!result.ok) {
           // Server-side validation disagreed with the client's (shouldn't
           // normally happen — defense in depth). Map back to the form stage.
           setFieldErrors(
-            result.errors.map((f): AddPlayerFieldError =>
+            result.errors.map((f): AddPlayerTickFieldError =>
               f === 'childFirstName' ? 'firstName' : f === 'childLastName' ? 'lastName' : f
             )
           );
@@ -217,14 +219,14 @@ export function AddPlayerModal({
     }
   };
 
-  const inputClass = (field: AddPlayerFieldError) =>
+  const inputClass = (field: AddPlayerTickFieldError) =>
     `w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#0091f3] focus:border-transparent ${
       hasError(field) ? 'border-red-500 bg-red-50' : 'border-gray-300'
     }`;
 
   const renderField = (
-    field: AddPlayerFieldError,
-    type: 'text' | 'email' | 'tel' | 'date',
+    field: AddPlayerTickFieldError,
+    type: 'text' | 'email' | 'tel',
     autoComplete?: string
   ) => (
     <div>
@@ -236,7 +238,6 @@ export function AddPlayerModal({
         type={type}
         value={form[field]}
         autoComplete={autoComplete}
-        max={type === 'date' ? todayIso() : undefined}
         aria-invalid={hasError(field)}
         aria-describedby={hasError(field) ? `add-player-${field}-error` : undefined}
         onChange={(e) => updateField(field, e.target.value)}
@@ -247,6 +248,36 @@ export function AddPlayerModal({
           {FIELD_HINTS[field]}
         </p>
       )}
+    </div>
+  );
+
+  /** The Adult/Child tick (Requirement 1.2) — a two-way toggle, not a text field. */
+  const renderTick = () => (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Adult or Child?</label>
+      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Adult or Child">
+        {(['adult', 'child'] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={form.tick === option}
+            onClick={() => updateTick(option)}
+            className={`px-3 py-2 border rounded-lg text-sm font-medium capitalize ${
+              form.tick === option
+                ? 'border-[#0091f3] bg-[#0091f3]/10 text-[#0091f3]'
+                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-sm text-gray-500">
+        {form.tick === 'adult'
+          ? "They'll set up their own account — no need to know their exact date of birth."
+          : "Their caregiver will confirm their date of birth and consent when they redeem the invite."}
+      </p>
     </div>
   );
 
@@ -267,8 +298,8 @@ export function AddPlayerModal({
           </h2>
           <p className="text-sm text-gray-500">
             {stage === 'form'
-              ? 'Age 16 or over sends a self-registration invite. Under 16 asks a caregiver to consent, same as before.'
-              : 'Review before this goes out — the date of birth decides which path is taken.'}
+              ? 'Adult sends a self-registration invite. Child asks a caregiver to consent and confirm their details.'
+              : 'Review before this goes out — the tick below decides which path is taken.'}
           </p>
         </div>
 
@@ -280,7 +311,7 @@ export function AddPlayerModal({
                 <legend className="text-sm font-semibold text-gray-900 mb-1">Player</legend>
                 {renderField('firstName', 'text')}
                 {renderField('lastName', 'text')}
-                {renderField('dateOfBirth', 'date')}
+                {renderTick()}
               </fieldset>
 
               {route === 'adult' ? (
@@ -302,8 +333,8 @@ export function AddPlayerModal({
           ) : (
             <div className="space-y-3 text-sm text-gray-700">
               <p>
-                <span className="font-semibold text-gray-900">{fullName}</span>, born{' '}
-                {form.dateOfBirth || '—'}.
+                <span className="font-semibold text-gray-900">{fullName}</span> —{' '}
+                <span className="font-semibold capitalize">{form.tick}</span>.
               </p>
               {route === 'adult' ? (
                 <p>
@@ -322,7 +353,8 @@ export function AddPlayerModal({
                 </p>
               )}
               <p className="text-gray-500">
-                Not right? Go back and check the date of birth — it's what decides the path above.
+                Not right? Go back and check the Adult/Child tick — it's what decides the path
+                above.
               </p>
             </div>
           )}

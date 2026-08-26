@@ -45,6 +45,16 @@ export interface RedeemInviteResult {
    * `.kiro/specs/add-player-and-dob-age-model/` Requirement 8.2, Task 5.7.
    */
   has_pending_approval?: boolean;
+  /**
+   * `.kiro/specs/streamlined-invites-and-child-access/` Requirement 6.2 —
+   * true only when this redemption converted in place from a Child-ticked
+   * caregiver invite into a normal adult self-registration, because the
+   * declared date of birth turned out to be 16 or older. `user.role`
+   * already reflects the converted role; this is the explicit signal the
+   * Success Screen uses to show "you were registered as yourself, not a
+   * caregiver" rather than inferring it from role alone.
+   */
+  converted_from_caregiver?: boolean;
 }
 
 /** Which of the three Success Screen layouts to render. */
@@ -108,6 +118,20 @@ export function formatTeamLabel(
  */
 export function needsAdultSelfDeclaration(intendedRole: string | null | undefined): boolean {
   return intendedRole !== 'caregiver';
+}
+
+/**
+ * Whether the redemption form must collect the *child's* name and date of
+ * birth instead (Requirement 5.2/5.3) — the exact opposite of
+ * {@link needsAdultSelfDeclaration}, kept as its own named function rather
+ * than a bare negation at each call site so the intent reads the same way
+ * it did there, and so this can be unit-tested independently if the two
+ * ever need to diverge (e.g. a future intended role that needs neither).
+ * Mirrors `redeem-invite/index.ts`'s step 2b: only `'caregiver'` collects
+ * `subject_first_name`/`subject_last_name`/`subject_date_of_birth`.
+ */
+export function needsCaregiverSubjectDetails(intendedRole: string | null | undefined): boolean {
+  return intendedRole === 'caregiver';
 }
 
 /**

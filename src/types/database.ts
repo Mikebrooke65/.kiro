@@ -434,6 +434,16 @@ export interface LiteRegistrationData {
    * `.kiro/specs/add-player-and-dob-age-model/` Requirement 3.4.
    */
   date_of_birth?: string;
+  /**
+   * Caregiver-invite redemption only (Requirement 5.2/5.3): the child's
+   * name and date of birth, as entered by the caregiver at redemption —
+   * never the Manager's Add Player guess. Omitted for every other intended
+   * role; `redeem-invite` never asks for these outside the caregiver path.
+   * `.kiro/specs/streamlined-invites-and-child-access/` Requirement 5.
+   */
+  subject_first_name?: string;
+  subject_last_name?: string;
+  subject_date_of_birth?: string;
 }
 
 // Invite player data (mid-season)

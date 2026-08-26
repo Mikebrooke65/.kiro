@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   needsAdultSelfDeclaration,
+  needsCaregiverSubjectDetails,
   isValidDateOfBirth,
   resolvePrimaryActionHref,
 } from './success-screen-logic';
@@ -32,6 +33,27 @@ describe('needsAdultSelfDeclaration (Requirement 3.4, 4.6)', () => {
     expect(needsAdultSelfDeclaration(undefined)).toBe(true);
     expect(needsAdultSelfDeclaration('admin')).toBe(true);
     expect(needsAdultSelfDeclaration('')).toBe(true);
+  });
+});
+
+describe('needsCaregiverSubjectDetails (streamlined-invites-and-child-access Requirement 5.2/5.3)', () => {
+  it('is true only for a caregiver intended role', () => {
+    expect(needsCaregiverSubjectDetails('caregiver')).toBe(true);
+  });
+
+  it('is false for player/coach/manager and for a null/undefined/unrecognized role', () => {
+    expect(needsCaregiverSubjectDetails('player')).toBe(false);
+    expect(needsCaregiverSubjectDetails('coach')).toBe(false);
+    expect(needsCaregiverSubjectDetails('manager')).toBe(false);
+    expect(needsCaregiverSubjectDetails(null)).toBe(false);
+    expect(needsCaregiverSubjectDetails(undefined)).toBe(false);
+    expect(needsCaregiverSubjectDetails('')).toBe(false);
+  });
+
+  it('is always the opposite of needsAdultSelfDeclaration', () => {
+    for (const role of ['player', 'coach', 'manager', 'caregiver', null, undefined, '', 'admin']) {
+      expect(needsCaregiverSubjectDetails(role)).toBe(!needsAdultSelfDeclaration(role));
+    }
   });
 });
 

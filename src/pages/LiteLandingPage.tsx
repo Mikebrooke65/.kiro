@@ -8,6 +8,7 @@ import {
   buildGreeting,
   formatTeamLabel,
   needsAdultSelfDeclaration,
+  needsCaregiverSubjectDetails,
   isValidDateOfBirth,
   resolvePrimaryActionHref,
   type RedeemInviteResult,
@@ -85,12 +86,27 @@ export function LiteLandingPage() {
   // (Req 1.1/1.6/1.8) — a plain boolean would lose the flags and team/user data.
   const [result, setResult] = useState<RedeemInviteResult | null>(null);
   const [formError, setFormError] = useState('');
+  // Requirement 6.1, RESOLVED: an Adult-ticked invite whose self-declared DOB
+  // says under 16 bounces back to the Manager rather than letting the minor
+  // name their own caregiver inline. `redeem-invite` reports this as an error
+  // response (`reason: 'bounce_to_manager'`), but design.md is explicit that
+  // the UI must treat it as a first-class outcome screen, not the generic red
+  // `formError` banner — hence its own state rather than folding into that one.
+  const [bounceToManager, setBounceToManager] = useState<string | null>(null);
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
     email: '',
     password: '',
     date_of_birth: '',
+    // Caregiver-invite redemption only (Requirement 5.2/5.3) — the child's
+    // name and date of birth, collected here for the first time and never
+    // prefilled from the Manager's Add Player entry (same reasoning as the
+    // adult self-declaration DOB above: it must be freshly, independently
+    // typed, not rubber-stamped from someone else's guess).
+    subject_first_name: '',
+    subject_last_name: '',
+    subject_date_of_birth: '',
     consent: false,
   });
 
@@ -129,6 +145,12 @@ export function LiteLandingPage() {
   const requiresDateOfBirth =
     validation?.valid === true && needsAdultSelfDeclaration(validation.invite?.intended_role);
 
+  // Requirement 5.2/5.3 — the mirror image: only a Caregiver invite collects
+  // the child's name and date of birth here, in place of (not in addition
+  // to) the adult self-declaration above.
+  const requiresSubjectDetails =
+    validation?.valid === true && needsCaregiverSubjectDetails(validation.invite?.intended_role);
+
   // The email is locked whenever the invite carries a known recipient address
   // (true for every invite — recipient_email is required) — it's already
   // verified as the address this invite was sent to, so letting it be edited
@@ -163,6 +185,16 @@ export function LiteLandingPage() {
       setFormError('Please enter a valid date of birth.');
       return;
     }
+    if (requiresSubjectDetails) {
+      if (!form.subject_first_name || !form.subject_last_name) {
+        setFormError("Please enter your child's first and last name.");
+        return;
+      }
+      if (!isValidDateOfBirth(form.subject_date_of_birth)) {
+        setFormError("Please enter your child's date of birth.");
+        return;
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -175,9 +207,21 @@ export function LiteLandingPage() {
         // Omitted entirely on a Caregiver invite — redeem-invite never asks
         // for one on that path (Requirement 4.6).
         date_of_birth: requiresDateOfBirth ? form.date_of_birth : undefined,
+        // Caregiver invite only (Requirement 5.2/5.3); omitted on every
+        // other path, which redeem-invite never asks for these.
+        subject_first_name: requiresSubjectDetails ? form.subject_first_name : undefined,
+        subject_last_name: requiresSubjectDetails ? form.subject_last_name : undefined,
+        subject_date_of_birth: requiresSubjectDetails ? form.subject_date_of_birth : undefined,
       });
       setResult(res);
     } catch (err) {
+      // Requirement 6.1, RESOLVED: the "bounce to Manager" outcome is a
+      // first-class screen, not the generic red banner below — checked by
+      // `reason`, a machine-readable code, never by matching message text.
+      if (err instanceof ApiError && err.reason === 'bounce_to_manager') {
+        setBounceToManager(safeRegistrationErrorMessage(err));
+        return;
+      }
       // Never `err.message` unconditionally — that is what put raw policy text
       // in front of registrants (2.4).
       setFormError(safeRegistrationErrorMessage(err));
@@ -226,6 +270,24 @@ export function LiteLandingPage() {
   // Success state — branded, path-aware Success Screen (Req 1.1-1.11).
   if (result) {
     return <SuccessScreen result={result} branding={branding} />;
+  }
+
+  // Requirement 6.1, RESOLVED — first-class outcome, not a form error: an
+  // Adult-ticked invite whose self-declared date of birth says under 16
+  // stops here and sends the person back to their team Manager rather than
+  // letting a minor name their own caregiver inline. Nothing was written
+  // server-side, so there is nothing to undo and nowhere further to go from
+  // this screen — nothing to retry until the Manager acts.
+  if (bounceToManager) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+          <div className="text-4xl mb-4">🧑‍🤝‍🧑</div>
+          <h1 className="text-xl font-bold mb-2">Let's get your Manager to help</h1>
+          <p className="text-gray-600">{bounceToManager}</p>
+        </div>
+      </div>
+    );
   }
 
   // Registration form
@@ -291,6 +353,43 @@ export function LiteLandingPage() {
                 value={form.date_of_birth}
                 max={todayIso()}
                 onChange={e => setForm({ ...form, date_of_birth: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                required
+              />
+            </div>
+          )}
+
+          {/* Caregiver-invite redemption only (Requirement 5.2/5.3) — the
+              child's name and date of birth, as the record of truth, never
+              prefilled from the Manager's Add Player entry (see the
+              caregiver name/email fields above for the equivalent adult
+              case: those ARE prefilled because they're just a convenience;
+              this is deliberately not, for the same reason the adult DOB
+              above isn't). If the declared date of birth turns out to be 16
+              or older, redemption converts in place into a normal adult
+              registration for the person filling this in (Requirement 6.2) —
+              handled entirely server-side; this form doesn't need to know
+              which outcome it'll get until the response comes back. */}
+          {requiresSubjectDetails && (
+            <div className="border-t pt-4 mt-1">
+              <p className="text-xs font-semibold text-gray-700 mb-2">Your child's details</p>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <input type="text" placeholder="Child's first name" value={form.subject_first_name}
+                  onChange={e => setForm({ ...form, subject_first_name: e.target.value })}
+                  className="border rounded-lg px-3 py-2 text-sm" required />
+                <input type="text" placeholder="Child's last name" value={form.subject_last_name}
+                  onChange={e => setForm({ ...form, subject_last_name: e.target.value })}
+                  className="border rounded-lg px-3 py-2 text-sm" required />
+              </div>
+              <label htmlFor="lite-registration-subject-dob" className="block text-xs text-gray-500 mb-1">
+                Child's date of birth
+              </label>
+              <input
+                id="lite-registration-subject-dob"
+                type="date"
+                value={form.subject_date_of_birth}
+                max={todayIso()}
+                onChange={e => setForm({ ...form, subject_date_of_birth: e.target.value })}
                 className="w-full border rounded-lg px-3 py-2 text-sm"
                 required
               />
@@ -365,6 +464,21 @@ function SuccessScreen({
             alt={branding.club_name ?? ''}
             className="h-16 mx-auto mb-4 object-contain"
           />
+        )}
+
+        {/* Requirement 6.2, RESOLVED — the redemption converted in place from
+            a Child-ticked caregiver invite into this person's own adult
+            registration, because the date of birth they entered for the
+            child said 16 or older. Shown above every variant below (any of
+            the three can follow a conversion, depending on whether this
+            address happens to match the invite) rather than duplicated in
+            each — the point stands regardless of which welcome layout
+            follows it. */}
+        {result.converted_from_caregiver && (
+          <div className="mb-4 p-3 bg-blue-50 text-blue-800 rounded-lg text-sm text-left">
+            The date of birth you entered says 16 or older, so you've been registered
+            as yourself — not as a caregiver.
+          </div>
         )}
 
         {variant === 'matching' && (
