@@ -15,8 +15,11 @@ import fc from 'fast-check';
 import {
   ADULT_AGE_THRESHOLD,
   routeAddPlayer,
+  routeAddPlayerFromTick,
   validateAddPlayerForm,
+  validateAddPlayerFormWithTick,
   type AddPlayerForm,
+  type AddPlayerFormWithTick,
 } from './add-player-logic';
 
 describe('routeAddPlayer — Add Player routing threshold (Requirement 1.5/1.6, 2.1)', () => {
@@ -164,5 +167,94 @@ describe('validateAddPlayerForm — per-field validation with route-specific fie
       ok: false,
       errors: ['firstName', 'lastName', 'dateOfBirth', 'email'],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tick-based routing and validation
+// (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 1.2,
+// task 3a)
+//
+// Not yet wired into `AddPlayerModal.tsx` (task 3e does that) — these test
+// the new functions in isolation, same as `routeAddPlayer`/
+// `validateAddPlayerForm` above are tested in isolation from the component
+// that calls them.
+// ---------------------------------------------------------------------------
+
+describe('routeAddPlayerFromTick — Add Player tick-based routing (streamlined-invites-and-child-access Requirement 1.2)', () => {
+  it('routes an adult tick to adult and a child tick to junior', () => {
+    expect(routeAddPlayerFromTick('adult')).toBe('adult');
+    expect(routeAddPlayerFromTick('child')).toBe('junior');
+  });
+});
+
+describe('validateAddPlayerFormWithTick — per-field validation with no date of birth (Requirement 1.2, 1.3, 1.4)', () => {
+  const VALID_ADULT: AddPlayerFormWithTick = {
+    firstName: 'Alex',
+    lastName: 'Smith',
+    tick: 'adult',
+    email: 'alex@example.com',
+    caregiverName: '',
+    caregiverEmail: '',
+    caregiverPhone: '',
+  };
+
+  const VALID_CHILD: AddPlayerFormWithTick = {
+    firstName: 'Sam',
+    lastName: 'Jones',
+    tick: 'child',
+    email: '',
+    caregiverName: 'Pat Jones',
+    caregiverEmail: 'pat@example.com',
+    caregiverPhone: '5551234567',
+  };
+
+  it('accepts a valid Adult-path submission', () => {
+    expect(validateAddPlayerFormWithTick(VALID_ADULT, 'adult')).toEqual({ ok: true });
+  });
+
+  it('accepts a valid Child-path submission', () => {
+    expect(validateAddPlayerFormWithTick(VALID_CHILD, 'junior')).toEqual({ ok: true });
+  });
+
+  it('rejects a missing first/last name on either path', () => {
+    expect(
+      validateAddPlayerFormWithTick({ ...VALID_ADULT, firstName: '' }, 'adult')
+    ).toEqual({ ok: false, errors: ['firstName'] });
+  });
+
+  it('has no date-of-birth field at all — an object without one still validates', () => {
+    // TypeScript already enforces this at compile time (AddPlayerFormWithTick
+    // has no dateOfBirth key); this just documents the behavioural intent.
+    expect(validateAddPlayerFormWithTick(VALID_ADULT, 'adult')).toEqual({ ok: true });
+  });
+
+  it('Adult path: requires a valid email and ignores caregiver fields', () => {
+    expect(
+      validateAddPlayerFormWithTick({ ...VALID_ADULT, email: 'not-an-email' }, 'adult')
+    ).toEqual({ ok: false, errors: ['email'] });
+    expect(
+      validateAddPlayerFormWithTick(
+        { ...VALID_ADULT, caregiverName: '', caregiverEmail: '', caregiverPhone: '' },
+        'adult'
+      )
+    ).toEqual({ ok: true });
+  });
+
+  it('Child path: requires the caregiver fields and ignores email', () => {
+    expect(
+      validateAddPlayerFormWithTick({ ...VALID_CHILD, caregiverEmail: 'nope' }, 'junior')
+    ).toEqual({ ok: false, errors: ['caregiverEmail'] });
+    expect(
+      validateAddPlayerFormWithTick({ ...VALID_CHILD, email: '' }, 'junior')
+    ).toEqual({ ok: true });
+  });
+
+  it('reports every invalid field at once, in the documented stable order', () => {
+    const result = validateAddPlayerFormWithTick(
+      { ...VALID_ADULT, firstName: '', lastName: '', email: '' },
+      'adult'
+    );
+    expect(result).toEqual({ ok: false, errors: ['firstName', 'lastName', 'email'] });
   });
 });

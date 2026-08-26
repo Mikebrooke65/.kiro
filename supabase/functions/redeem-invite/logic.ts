@@ -624,6 +624,89 @@ function ageInWholeYears(
 }
 
 // ---------------------------------------------------------------------------
+// Symmetric DOB validation + wrong-tick outcomes
+// (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 5, 6,
+// task 3a)
+//
+// Add Player no longer collects an exact DOB (Requirement 1) — a Manager's
+// Adult/Child tick decides which *kind* of invite gets generated instead
+// (an ordinary self-registration invite for Adult, a `caregiver`-intended
+// invite for Child; see `resolveEffectiveRole` above). So the tick is
+// already implicit in `effectiveRole` by the time redemption runs — this
+// section is what validates the self-declared DOB *against* that implied
+// tick, in whichever direction it needs to run, and reports a wrong-tick
+// mismatch as a first-class outcome rather than a flat rejection.
+//
+// Purely additive for task 3a: not called from `index.ts` yet (task 3c
+// wires it in). `isAdult` above is unchanged and still used as-is for the
+// existing Adult-path check until 3c replaces that call site.
+// ---------------------------------------------------------------------------
+
+/** What a self-declared date of birth resolves to, independent of any tick. */
+export type SelfDeclaredAgeBand = 'adult' | 'child' | 'invalid';
+
+/**
+ * Classify a self-declared date of birth on its own terms — 16 years or
+ * older is `'adult'`, under 16 is `'child'`, anything unparseable is
+ * `'invalid'`. Kept distinct from `isAdult` (which collapses `'invalid'`
+ * into `false`) because {@link resolveAgeTickOutcome} needs to tell "this
+ * confirms the person is a child" apart from "this DOB couldn't be read at
+ * all" — collapsing the two would let a malformed date silently pass as a
+ * confirmed-child outcome on the Requirement 5.2 branch below.
+ */
+export function classifySelfDeclaredDateOfBirth(
+  dateOfBirth: string,
+  asOf: Date = new Date()
+): SelfDeclaredAgeBand {
+  const dob = parseIsoDate(dateOfBirth);
+  if (!dob) return 'invalid';
+  return ageInWholeYears(dob, asOf) >= ADULT_AGE_THRESHOLD ? 'adult' : 'child';
+}
+
+/**
+ * The outcome of validating a self-declared date of birth against the
+ * effective role implied by the Manager's original Adult/Child tick:
+ *
+ * - `'ok'` — the DOB confirms the tick; proceed as normal.
+ * - `'bounce_to_manager'` — Adult was ticked (Requirement 6.1, RESOLVED:
+ *   bounces to the Manager) but the DOB says under 16. No inline
+ *   caregiver-naming — the redemption stops here and the person is
+ *   directed back to the original Manager to restart as a proper Junior
+ *   addition, because a named caregiver now carries ongoing authority
+ *   (device codes, message visibility) that shouldn't be handed out via
+ *   self-service.
+ * - `'convert_to_adult'` — Child was ticked (Requirement 6.2) but the DOB
+ *   says 16 or older; the flow converts the redemption in place into a
+ *   normal self-registering adult account rather than requiring the
+ *   person to act as their own caregiver.
+ * - `'invalid_date_of_birth'` — the DOB itself couldn't be parsed. Reported
+ *   distinctly from either wrong-tick outcome so the handler gives a plain
+ *   "enter a valid date" error rather than misreporting it as a tick
+ *   mismatch.
+ */
+export type AgeTickOutcome =
+  | 'ok'
+  | 'bounce_to_manager'
+  | 'convert_to_adult'
+  | 'invalid_date_of_birth';
+
+export function resolveAgeTickOutcome(
+  effectiveRole: IntendedRole,
+  dateOfBirth: string,
+  asOf: Date = new Date()
+): AgeTickOutcome {
+  const band = classifySelfDeclaredDateOfBirth(dateOfBirth, asOf);
+  if (band === 'invalid') return 'invalid_date_of_birth';
+
+  if (effectiveRole === 'caregiver') {
+    // Child-ticked path (Requirement 5.2): must resolve to under 16.
+    return band === 'child' ? 'ok' : 'convert_to_adult';
+  }
+  // Adult-ticked path (Requirement 5.1): must resolve to 16 or older.
+  return band === 'adult' ? 'ok' : 'bounce_to_manager';
+}
+
+// ---------------------------------------------------------------------------
 // Known, structural rejections added by add-player-and-dob-age-model
 // ---------------------------------------------------------------------------
 
@@ -645,4 +728,24 @@ export const ADD_PLAYER_MESSAGES = {
   /** Requirement 5.4 — a Caregiver invite's subject_user_id no longer
    *  resolves to a Junior users row (e.g. the child record was removed). */
   caregiver_subject_missing: 'This invite is no longer valid. Please ask for a new one.',
+} as const;
+
+/**
+ * Client-facing messages for {@link AgeTickOutcome}'s non-`'ok'` results
+ * (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 6, task
+ * 3a). Not yet wired into the handler (task 3c) — added here alongside the
+ * pure logic so the copy exists in one place before it's used.
+ */
+export const AGE_TICK_MESSAGES = {
+  /** 6.1 — Adult ticked, DOB says under 16: bounces to the Manager, no
+   *  inline caregiver-naming. */
+  bounce_to_manager:
+    "Your date of birth says you're under 16. Please ask your team Manager to add you as a Junior instead.",
+  /** 6.2 — Child ticked, DOB says 16 or older: converts in place to a
+   *  normal adult registration. */
+  convert_to_adult:
+    "This looks like an adult date of birth. You'll be registered as your own account, not as a caregiver.",
+  /** The DOB itself couldn't be parsed — a plain validation message, not a
+   *  tick-mismatch outcome. */
+  invalid_date_of_birth: "Enter a valid date of birth that isn't in the future.",
 } as const;

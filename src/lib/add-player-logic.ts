@@ -49,6 +49,125 @@ export function routeAddPlayer(input: AddPlayerRoutingInput): AddPlayerRoute {
   return ageInWholeYears(dob, asOf) >= ADULT_AGE_THRESHOLD ? 'adult' : 'junior';
 }
 
+// ---------------------------------------------------------------------------
+// Tick-based routing (`.kiro/specs/streamlined-invites-and-child-access/`
+// Requirement 1.2, task 3a)
+//
+// Replaces the DOB-threshold routing above: a Manager rarely knows an exact
+// birthdate for someone they're adding, so Add Player asks for an explicit
+// Adult/Child judgement call instead of an exact date. The exact date of
+// birth moves to invite redemption, collected from whoever actually knows it
+// (see `supabase/functions/redeem-invite/logic.ts`'s `resolveAgeTickOutcome`,
+// which also handles a tick that turns out not to match the self-declared
+// DOB at redemption).
+//
+// Deliberately kept alongside `routeAddPlayer`/`AddPlayerForm` above rather
+// than replacing them in this task: task 3a is pure-logic-only and must not
+// change what's wired into `AddPlayerModal.tsx` yet (task 3e does that, per
+// tasks.md's staged plan) — swapping the old exports out from under the
+// still-live UI would break the build immediately. Task 3e removes
+// `routeAddPlayer`, `AddPlayerForm`, and `validateAddPlayerForm` once nothing
+// calls them.
+// ---------------------------------------------------------------------------
+
+/** The judgement call a Manager makes about who they're adding. */
+export type AddPlayerTick = 'adult' | 'child';
+
+/**
+ * Route an Add Player submission from the Manager's Adult/Child tick
+ * (Requirement 1.2). Unlike the DOB-threshold version above, there's no
+ * invalid-input case to default away from — the tick is already one of
+ * exactly two values.
+ */
+export function routeAddPlayerFromTick(tick: AddPlayerTick): AddPlayerRoute {
+  return tick === 'adult' ? 'adult' : 'junior';
+}
+
+/**
+ * The tick-based Add Player form (Requirement 1.2): first name, last name,
+ * and the Adult/Child tick are always captured — no date of birth. `email`
+ * is used only on the Adult path (1.4); `caregiverName`/`caregiverEmail`/
+ * `caregiverPhone` only on the Child path (1.3).
+ */
+export interface AddPlayerFormWithTick {
+  firstName: string;
+  lastName: string;
+  tick: AddPlayerTick;
+  email: string;
+  caregiverName: string;
+  caregiverEmail: string;
+  caregiverPhone: string;
+}
+
+export type AddPlayerTickFieldError =
+  | 'firstName'
+  | 'lastName'
+  | 'email'
+  | 'caregiverName'
+  | 'caregiverEmail'
+  | 'caregiverPhone';
+
+export type ValidateAddPlayerTickResult =
+  | { ok: true }
+  | { ok: false; errors: AddPlayerTickFieldError[] };
+
+const TICK_ADULT_FIELD_ORDER: AddPlayerTickFieldError[] = ['firstName', 'lastName', 'email'];
+const TICK_JUNIOR_FIELD_ORDER: AddPlayerTickFieldError[] = [
+  'firstName',
+  'lastName',
+  'caregiverName',
+  'caregiverEmail',
+  'caregiverPhone',
+];
+
+/**
+ * Validate the tick-based Add Player form for the route its own tick
+ * resolves to (Requirement 1.3/1.4: reject, report every invalid field).
+ * No date-of-birth field exists on this form at all — that's the point of
+ * Requirement 1 — so there's nothing to validate there.
+ *
+ * `route` is passed in (rather than re-derived) so the caller and this
+ * function are guaranteed to agree on which field set applies — always
+ * `routeAddPlayerFromTick(form.tick)`.
+ */
+export function validateAddPlayerFormWithTick(
+  form: AddPlayerFormWithTick,
+  route: AddPlayerRoute
+): ValidateAddPlayerTickResult {
+  const errors = new Set<AddPlayerTickFieldError>();
+
+  if (!lengthInBounds(form.firstName, 1, 50)) errors.add('firstName');
+  if (!lengthInBounds(form.lastName, 1, 50)) errors.add('lastName');
+
+  if (route === 'adult') {
+    if (!isValidEmail(form.email)) errors.add('email');
+  } else {
+    // Reuse the existing, tested caregiver/child validation unchanged —
+    // firstName/lastName were already checked above; this call re-derives
+    // the same two field results, mapped back onto the same keys rather
+    // than duplicated.
+    const juniorResult = validateAddJunior({
+      caregiverName: form.caregiverName,
+      caregiverEmail: form.caregiverEmail,
+      caregiverPhone: form.caregiverPhone,
+      childFirstName: form.firstName,
+      childLastName: form.lastName,
+    });
+    if (!juniorResult.ok) {
+      for (const field of juniorResult.errors) {
+        if (field === 'childFirstName') errors.add('firstName');
+        else if (field === 'childLastName') errors.add('lastName');
+        else errors.add(field);
+      }
+    }
+  }
+
+  const fieldOrder = route === 'adult' ? TICK_ADULT_FIELD_ORDER : TICK_JUNIOR_FIELD_ORDER;
+  const ordered = fieldOrder.filter((field) => errors.has(field));
+
+  return ordered.length === 0 ? { ok: true } : { ok: false, errors: ordered };
+}
+
 /**
  * Parse a strict `yyyy-mm-dd` string into calendar-date parts, or `null`.
  * Exported so form validation (below) and any other caller share the exact

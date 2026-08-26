@@ -31,6 +31,7 @@ import fc from 'fast-check';
 import {
   ADULT_AGE_THRESHOLD,
   classifyError,
+  classifySelfDeclaredDateOfBirth,
   deriveInviteStatus,
   emailMatchesInvite,
   FORBIDDEN_ERROR_FRAGMENTS,
@@ -42,17 +43,20 @@ import {
   normalizeEmail,
   plannedCompensations,
   requiresTeamMembership,
+  resolveAgeTickOutcome,
   resolveEffectiveRole,
   SAFE_ERROR_MESSAGE_LIST,
   SAFE_ERROR_MESSAGES,
   VALIDATION_MESSAGES,
   VALIDATION_PRECEDENCE,
   validateRequest,
+  type AgeTickOutcome,
   type Compensation,
   type CreationLedger,
   type IntendedRole,
   type InviteStatus,
   type SafeErrorKey,
+  type SelfDeclaredAgeBand,
   type ValidationReason,
 } from './logic.ts';
 
@@ -956,6 +960,86 @@ describe('isAdult — self-declared date-of-birth threshold (Requirement 3.4, 3.
         if (!hadBirthday) expectedAge -= 1;
 
         expect(isAdult(dob, REFERENCE)).toBe(expectedAge >= ADULT_AGE_THRESHOLD);
+      }),
+      { numRuns: 300 }
+    );
+  });
+});
+
+describe('classifySelfDeclaredDateOfBirth — age band independent of any tick (streamlined-invites-and-child-access, task 3a)', () => {
+  const REFERENCE = new Date(2025, 5, 15); // 2025-06-15, matches isAdult's fixtures above
+
+  it('classifies well over 16 as adult and well under 16 as child', () => {
+    expect(classifySelfDeclaredDateOfBirth('2000-01-01', REFERENCE)).toBe('adult');
+    expect(classifySelfDeclaredDateOfBirth('2020-01-01', REFERENCE)).toBe('child');
+  });
+
+  it('classifies exactly-16-today as adult (the boundary)', () => {
+    expect(classifySelfDeclaredDateOfBirth('2009-06-15', REFERENCE)).toBe('adult');
+  });
+
+  it('classifies one day before the 16th birthday as child', () => {
+    expect(classifySelfDeclaredDateOfBirth('2009-06-16', REFERENCE)).toBe('child');
+  });
+
+  it('classifies an unparseable or malformed date as invalid, distinct from child', () => {
+    const cases: string[] = ['not-a-date', '', '2009-13-40'];
+    for (const dob of cases) {
+      const band: SelfDeclaredAgeBand = classifySelfDeclaredDateOfBirth(dob, REFERENCE);
+      expect(band).toBe('invalid');
+    }
+  });
+});
+
+describe('resolveAgeTickOutcome — symmetric validation + wrong-tick outcomes (streamlined-invites-and-child-access Requirement 5, 6, task 3a)', () => {
+  const REFERENCE = new Date(2025, 5, 15);
+  const ADULT_DOB = '2000-01-01'; // well over 16 as of REFERENCE
+  const CHILD_DOB = '2015-01-01'; // well under 16 as of REFERENCE
+
+  it('Adult-ticked role (player/coach/manager) + adult DOB → ok (Requirement 5.1)', () => {
+    for (const role of ['player', 'coach', 'manager'] as const) {
+      expect(resolveAgeTickOutcome(role, ADULT_DOB, REFERENCE)).toBe('ok');
+    }
+  });
+
+  it('Adult-ticked role + child DOB → bounces to the Manager (Requirement 6.1, RESOLVED)', () => {
+    const outcome: AgeTickOutcome = resolveAgeTickOutcome('player', CHILD_DOB, REFERENCE);
+    expect(outcome).toBe('bounce_to_manager');
+  });
+
+  it('caregiver role (Child-ticked) + child DOB → ok (Requirement 5.2)', () => {
+    expect(resolveAgeTickOutcome('caregiver', CHILD_DOB, REFERENCE)).toBe('ok');
+  });
+
+  it('caregiver role (Child-ticked) + adult DOB → converts in place to adult (Requirement 6.2, RESOLVED)', () => {
+    expect(resolveAgeTickOutcome('caregiver', ADULT_DOB, REFERENCE)).toBe('convert_to_adult');
+  });
+
+  it('an unparseable DOB is always invalid_date_of_birth, regardless of role — never silently treated as a confirmed child', () => {
+    for (const role of INTENDED_ROLES) {
+      expect(resolveAgeTickOutcome(role, 'not-a-date', REFERENCE)).toBe('invalid_date_of_birth');
+      expect(resolveAgeTickOutcome(role, '', REFERENCE)).toBe('invalid_date_of_birth');
+    }
+  });
+
+  it('boundary property: matches classifySelfDeclaredDateOfBirth composed with the role direction', () => {
+    const dobYear = fc.integer({ min: 1990, max: 2024 });
+    const dobMonth = fc.integer({ min: 1, max: 12 });
+    const dobDay = fc.integer({ min: 1, max: 28 });
+    const role = fc.constantFrom(...INTENDED_ROLES);
+
+    fc.assert(
+      fc.property(dobYear, dobMonth, dobDay, role, (year, month, day, effectiveRole) => {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const dob = `${year}-${pad(month)}-${pad(day)}`;
+        const band = classifySelfDeclaredDateOfBirth(dob, REFERENCE);
+        const outcome = resolveAgeTickOutcome(effectiveRole, dob, REFERENCE);
+
+        if (effectiveRole === 'caregiver') {
+          expect(outcome).toBe(band === 'child' ? 'ok' : 'convert_to_adult');
+        } else {
+          expect(outcome).toBe(band === 'adult' ? 'ok' : 'bounce_to_manager');
+        }
       }),
       { numRuns: 300 }
     );
