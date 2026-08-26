@@ -194,7 +194,27 @@ describe('validateRequest — explicit accept or one specific rejection (3.7)', 
       last_name: 'Lovelace',
       privacy_consent: true,
       date_of_birth: null,
+      subject_first_name: null,
+      subject_last_name: null,
+      subject_date_of_birth: null,
     });
+  });
+
+  it('normalises the subject (child) fields when present, and to null when absent (streamlined-invites-and-child-access Requirement 5.2/5.3)', () => {
+    const withSubject = validateRequest({
+      ...VALID_BODY,
+      subject_first_name: '  Sam ',
+      subject_last_name: ' Jones ',
+      subject_date_of_birth: '  2016-01-01 ',
+    });
+    expect(withSubject.ok && withSubject.value.subject_first_name).toBe('Sam');
+    expect(withSubject.ok && withSubject.value.subject_last_name).toBe('Jones');
+    expect(withSubject.ok && withSubject.value.subject_date_of_birth).toBe('2016-01-01');
+
+    const withoutSubject = validateRequest(VALID_BODY);
+    expect(withoutSubject.ok && withoutSubject.value.subject_first_name).toBeNull();
+    expect(withoutSubject.ok && withoutSubject.value.subject_last_name).toBeNull();
+    expect(withoutSubject.ok && withoutSubject.value.subject_date_of_birth).toBeNull();
   });
 
   it('normalises date_of_birth when present, and to null when absent (add-player-and-dob-age-model)', () => {

@@ -44,14 +44,15 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
 import {
   ADD_PLAYER_MESSAGES,
+  AGE_TICK_MESSAGES,
   deriveInviteStatus,
   emailMatchesInvite,
-  isAdult,
   mapError,
   messageForInviteStatus,
   normalizeEmail,
   plannedCompensations,
   requiresTeamMembership,
+  resolveAgeTickOutcome,
   resolveEffectiveRole,
   SAFE_ERROR_MESSAGES,
   VALIDATION_MESSAGES,
@@ -293,27 +294,32 @@ Deno.serve(async (req) => {
     // (2.7 / 2.8), and the only condition under which an orphan may be adopted.
     const preConfirm = emailMatchesInvite(reg.email, invite.recipient_email);
 
-    // The role granted by this redemption is decided server-side from the
-    // invite's intended role and applied identically to the profile row (6.2)
-    // and the membership row (6.3). `resolveEffectiveRole` degrades any absent,
-    // unknown, or privileged value (including 'admin') to 'player' (6.4 / 6.5),
-    // so a crafted invite can never confer an elevated role.
-    const effectiveRole = resolveEffectiveRole(invite.intended_role);
+    // The role implied by the invite itself — 'player'/'coach'/'manager' for
+    // an Adult-ticked Add Player submission, 'caregiver' for a Child-ticked
+    // one (Section 1's tick decides which kind of invite got generated in
+    // the first place, see add-player-logic.ts routeAddPlayerFromTick).
+    // `resolveEffectiveRole` degrades any absent, unknown, or privileged
+    // value (including 'admin') to 'player' (6.4 / 6.5 of the superseded
+    // spec), so a crafted invite can never confer an elevated role.
+    const invitedRole = resolveEffectiveRole(invite.intended_role);
 
-    // --- 2b. Adult self-declared date of birth (add-player-and-dob-age-model
-    // Requirement 3.4, 3.5) ------------------------------------------------
+    // --- 2b. Symmetric self-declared date of birth + wrong-tick outcomes
+    // (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 5, 6)
+    // ------------------------------------------------------------------
     // Deliberately placed here — before step 3, before any write in this
-    // invocation — so a rejection has nothing to compensate (Property 3).
-    // A Caregiver invite never carries a date of birth (Requirement 4.1's DOB
-    // exception is the child's, recorded separately by caregivers-api, not
-    // here), so this check is skipped entirely for that one role.
+    // invocation — so a rejection has nothing to compensate (Property 3,
+    // carried over from the superseded spec this replaces).
     //
-    // Deliberately keyed on `effectiveRole !== 'caregiver'` directly rather
-    // than reusing `requiresTeamMembership` — the two happen to share the
-    // same boolean today, but they are independent decisions (one about
-    // team_members, one about date_of_birth) and should not be coupled just
-    // because they currently agree.
-    if (effectiveRole !== 'caregiver') {
+    // `redemptionRole`/`finalDateOfBirth` are what every later step uses —
+    // never `invitedRole` directly — because Requirement 6.2's conversion
+    // changes which role and whose date of birth apply for the rest of this
+    // invocation, without changing what the invite itself originally said.
+    let redemptionRole = invitedRole;
+    let finalDateOfBirth: string | null = null;
+    let convertedFromCaregiver = false;
+
+    if (invitedRole !== 'caregiver') {
+      // Adult-ticked path (Requirement 5.1): the redeeming person's own DOB.
       if (!reg.date_of_birth) {
         throw new RedeemError(
           VALIDATION_MESSAGES.missing_date_of_birth,
@@ -322,13 +328,61 @@ Deno.serve(async (req) => {
           'missing_date_of_birth'
         );
       }
-      if (!isAdult(reg.date_of_birth)) {
+      const outcome = resolveAgeTickOutcome(invitedRole, reg.date_of_birth);
+      if (outcome === 'invalid_date_of_birth') {
         throw new RedeemError(
-          ADD_PLAYER_MESSAGES.underage_self_registration,
+          AGE_TICK_MESSAGES.invalid_date_of_birth,
           400,
-          'self-declared date of birth indicates under 16',
-          'underage_self_registration'
+          'self-declared date of birth could not be parsed',
+          'invalid_date_of_birth'
         );
+      }
+      if (outcome === 'bounce_to_manager') {
+        // 6.1, RESOLVED: no inline caregiver-naming — stop here and send the
+        // person back to their Manager. Nothing has been written yet.
+        throw new RedeemError(
+          AGE_TICK_MESSAGES.bounce_to_manager,
+          400,
+          'self-declared date of birth indicates under 16 — bounced to Manager per 6.1',
+          'bounce_to_manager'
+        );
+      }
+      // outcome === 'ok' — 'convert_to_adult' cannot occur for a non-caregiver
+      // invitedRole (resolveAgeTickOutcome only returns it for 'caregiver').
+      finalDateOfBirth = reg.date_of_birth;
+    } else {
+      // Child-ticked path (Requirement 5.2/5.3): the child's DOB and name,
+      // as entered by the caregiver — never a Manager's guess.
+      if (!reg.subject_date_of_birth || !reg.subject_first_name || !reg.subject_last_name) {
+        throw new RedeemError(
+          AGE_TICK_MESSAGES.missing_subject_details,
+          400,
+          "missing the child's name and/or date of birth for a caregiver redemption",
+          'missing_subject_details'
+        );
+      }
+      const outcome = resolveAgeTickOutcome('caregiver', reg.subject_date_of_birth);
+      if (outcome === 'invalid_date_of_birth') {
+        throw new RedeemError(
+          AGE_TICK_MESSAGES.invalid_date_of_birth,
+          400,
+          "child's self-declared date of birth could not be parsed",
+          'invalid_date_of_birth'
+        );
+      }
+      if (outcome === 'convert_to_adult') {
+        // 6.2, RESOLVED: convert in place. The person completing this form
+        // is an adult, not a caregiver — redeem as a normal self-registering
+        // adult instead of linking to the child record Add Player created.
+        // That child record is left exactly as it was (inactive, unlinked)
+        // — nothing here deletes or repurposes it; Requirement 8.4's
+        // consent-timeout job is what eventually clears a stale one.
+        redemptionRole = 'player';
+        finalDateOfBirth = reg.subject_date_of_birth;
+        convertedFromCaregiver = true;
+      } else {
+        // outcome === 'ok' — genuinely a child, as ticked.
+        finalDateOfBirth = null; // never set on a caregiver's own profile row
       }
     }
 
@@ -417,16 +471,17 @@ Deno.serve(async (req) => {
         first_name: reg.first_name,
         last_name: reg.last_name,
         cellphone: '',
-        role: effectiveRole,
+        role: redemptionRole,
         user_type: 'lite',
         active: true,
         privacy_consent_at: reg.privacy_consent ? nowIso : null,
-        // add-player-and-dob-age-model Requirement 3.4: the self-declared DOB
-        // confirmed at redemption, not the Manager's Add Player routing
-        // guess. Never set for a caregiver — this feature never asks one for
-        // their own date of birth (step 2b above only required it for the
-        // other three roles).
-        date_of_birth: effectiveRole === 'caregiver' ? null : reg.date_of_birth,
+        // streamlined-invites-and-child-access Requirement 5: the
+        // self-declared DOB confirmed at redemption, not a Manager's guess —
+        // `finalDateOfBirth` is already resolved by step 2b above to the
+        // right value for whichever path this redemption actually took
+        // (including a Requirement 6.2 conversion), so no role check is
+        // needed here.
+        date_of_birth: finalDateOfBirth,
       };
 
       const { error: insertError } = await admin.from('users').insert(profilePayload);
@@ -464,7 +519,7 @@ Deno.serve(async (req) => {
     // (Property 9). `team_members.role` stays CHECK'd to
     // player/coach/manager only (migration 048) — a caregiver never gets a
     // row here, by design, not by omission.
-    if (requiresTeamMembership(effectiveRole)) {
+    if (requiresTeamMembership(redemptionRole)) {
       const { data: existingMember, error: memberLookupError } = await admin
         .from('team_members')
         .select('id')
@@ -491,7 +546,7 @@ Deno.serve(async (req) => {
       } else {
         const { error: memberInsertError } = await admin
           .from('team_members')
-          .insert({ team_id: invite.team_id, user_id: userId, role: effectiveRole });
+          .insert({ team_id: invite.team_id, user_id: userId, role: redemptionRole });
 
         if (memberInsertError) {
           throw new RedeemError(
@@ -535,6 +590,32 @@ Deno.serve(async (req) => {
           400,
           'subject_user_id no longer resolves to a Junior user',
           'subject_missing'
+        );
+      }
+
+      // streamlined-invites-and-child-access Requirement 5.3: the child's
+      // name and date of birth, as just entered by the caregiver, are the
+      // record of truth — not whatever the Manager typed as a label in Add
+      // Player (Requirement 1.1). Written unconditionally here rather than
+      // only-if-blank: a caregiver correcting a name at this exact moment is
+      // exactly what Requirement 5.3 is for. `reg.subject_date_of_birth` is
+      // guaranteed non-null here — step 2b already required it and only
+      // reaches this branch on outcome 'ok'.
+      const { error: subjectUpdateError } = await admin
+        .from('users')
+        .update({
+          first_name: reg.subject_first_name,
+          last_name: reg.subject_last_name,
+          date_of_birth: reg.subject_date_of_birth,
+        })
+        .eq('id', invite.subject_user_id);
+
+      if (subjectUpdateError) {
+        throw new RedeemError(
+          mapError(subjectUpdateError),
+          400,
+          subjectUpdateError,
+          'update_subject'
         );
       }
 
@@ -611,8 +692,12 @@ Deno.serve(async (req) => {
     // `caregiver_approvals` has no caregiver_id column (migration 036); the
     // player_id match alone is precise because Requirement 5.4's subject
     // check above already confirmed this exact child.
+    // Deliberately `redemptionRole`, not `invitedRole`: a Requirement 6.2
+    // conversion means this person is not becoming a caregiver at all, so
+    // there is no "Caregiver Approvals" screen to route them to even though
+    // the invite was originally caregiver-intended.
     let hasPendingApproval = false;
-    if (effectiveRole === 'caregiver' && invite.subject_user_id) {
+    if (redemptionRole === 'caregiver' && invite.subject_user_id) {
       const { data: pendingApproval } = await admin
         .from('caregiver_approvals')
         .select('id')
@@ -673,6 +758,13 @@ Deno.serve(async (req) => {
       // caregiver_approvals row; false (not omitted) on every other path, so
       // the client never needs to distinguish "false" from "not present".
       has_pending_approval: hasPendingApproval,
+      // streamlined-invites-and-child-access Requirement 6.2 — true only
+      // when this redemption converted from a Child-ticked caregiver invite
+      // into a normal adult registration. `user.role` already reflects the
+      // converted role ('player'); this is an explicit signal so the client
+      // can show the "you were registered as yourself, not a caregiver"
+      // messaging without inferring it from role alone.
+      converted_from_caregiver: convertedFromCaregiver,
       // Present only on the non-matching path: the server-generated link the
       // caller sends via `send-email`, and whether that email could be sent at
       // all. `confirmation_email_sent: false` is the "confirmation required but

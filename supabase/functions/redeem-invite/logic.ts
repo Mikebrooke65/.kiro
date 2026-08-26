@@ -124,6 +124,20 @@ export interface RedeemInviteRequestBody {
   /** ISO `yyyy-mm-dd`. Required only for a non-caregiver invite — see
    *  `ValidationReason`'s `missing_date_of_birth` doc comment. */
   date_of_birth?: unknown;
+  /**
+   * The child this invite is about, as entered by the caregiver at
+   * redemption — `.kiro/specs/streamlined-invites-and-child-access/`
+   * Requirement 5.2/5.3. Named `subject_*` to match `invite.subject_user_id`
+   * (both mean "who this invite is about," distinct from `first_name`/
+   * `last_name`/`date_of_birth` above, which are always the *redeeming*
+   * person's own values). Required only for a `caregiver`-intended invite;
+   * absent/ignored for every other role.
+   */
+  subject_first_name?: unknown;
+  subject_last_name?: unknown;
+  /** ISO `yyyy-mm-dd`, the child's date of birth — collected here for the
+   *  first time under this spec, never a Manager's guess (Requirement 5). */
+  subject_date_of_birth?: unknown;
 }
 
 /**
@@ -149,6 +163,16 @@ export interface NormalizedRegistration {
    * role is known.
    */
   date_of_birth: string | null;
+  /**
+   * The child this invite is about, as entered by the caregiver
+   * (`.kiro/specs/streamlined-invites-and-child-access/` Requirement
+   * 5.2/5.3) — trimmed if sent, `null` if absent. Whether these three are
+   * *required* is decided by the handler once the invite's role is known,
+   * same as `date_of_birth` above.
+   */
+  subject_first_name: string | null;
+  subject_last_name: string | null;
+  subject_date_of_birth: string | null;
 }
 
 export type ValidationResult =
@@ -215,9 +239,30 @@ export function validateRequest(body: unknown): ValidationResult {
   const trimmedDob = requiredString(raw.date_of_birth);
   const date_of_birth = trimmedDob === '' ? null : trimmedDob;
 
+  // Same treatment for the child's details on a caregiver redemption — see
+  // NormalizedRegistration's doc comment. Requiredness (only for a
+  // 'caregiver'-intended invite) is the handler's job, not this function's.
+  const trimmedSubjectFirstName = requiredString(raw.subject_first_name);
+  const subject_first_name = trimmedSubjectFirstName === '' ? null : trimmedSubjectFirstName;
+  const trimmedSubjectLastName = requiredString(raw.subject_last_name);
+  const subject_last_name = trimmedSubjectLastName === '' ? null : trimmedSubjectLastName;
+  const trimmedSubjectDob = requiredString(raw.subject_date_of_birth);
+  const subject_date_of_birth = trimmedSubjectDob === '' ? null : trimmedSubjectDob;
+
   return {
     ok: true,
-    value: { code, email, password, first_name, last_name, privacy_consent: true, date_of_birth },
+    value: {
+      code,
+      email,
+      password,
+      first_name,
+      last_name,
+      privacy_consent: true,
+      date_of_birth,
+      subject_first_name,
+      subject_last_name,
+      subject_date_of_birth,
+    },
   };
 }
 
@@ -732,9 +777,8 @@ export const ADD_PLAYER_MESSAGES = {
 
 /**
  * Client-facing messages for {@link AgeTickOutcome}'s non-`'ok'` results
- * (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 6, task
- * 3a). Not yet wired into the handler (task 3c) — added here alongside the
- * pure logic so the copy exists in one place before it's used.
+ * (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 6).
+ * Wired into the handler at task 3c.
  */
 export const AGE_TICK_MESSAGES = {
   /** 6.1 — Adult ticked, DOB says under 16: bounces to the Manager, no
@@ -748,4 +792,7 @@ export const AGE_TICK_MESSAGES = {
   /** The DOB itself couldn't be parsed — a plain validation message, not a
    *  tick-mismatch outcome. */
   invalid_date_of_birth: "Enter a valid date of birth that isn't in the future.",
+  /** Requirement 5.3 — a caregiver redemption is missing the child's name
+   *  and/or date of birth, collected here for the first time. */
+  missing_subject_details: "Please enter your child's name and date of birth.",
 } as const;
