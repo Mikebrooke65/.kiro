@@ -135,6 +135,27 @@ export function needsCaregiverSubjectDetails(intendedRole: string | null | undef
 }
 
 /**
+ * Display label for an invite's intended role, for the existing-user bypass
+ * confirmation (Requirement 2.2's "join {team} as {role}?"). Matches
+ * `redeem-invite/logic.ts`'s `resolveEffectiveRole` default: a null,
+ * absent, or unrecognized role reads as "Player", the same value the server
+ * would actually assign, so this copy never promises a role the backend
+ * won't grant. Mirrors `TeamPage.tsx`'s `ROLE_LABELS` capitalization.
+ */
+export function describeIntendedRole(intendedRole: string | null | undefined): string {
+  switch (intendedRole) {
+    case 'coach':
+      return 'Coach';
+    case 'manager':
+      return 'Manager';
+    case 'caregiver':
+      return 'Caregiver';
+    default:
+      return 'Player';
+  }
+}
+
+/**
  * True when `value` is a real `yyyy-mm-dd` calendar date, not in the future
  * as of `asOf`. Client-side form hygiene only — whether it indicates 16 or
  * over is enforced server-side (Requirement 3.5), not duplicated here.

@@ -303,12 +303,45 @@ Deno.serve(async (req) => {
     // spec), so a crafted invite can never confer an elevated role.
     const invitedRole = resolveEffectiveRole(invite.intended_role);
 
+    // --- 2a. Resolve identity — read-only, moved ahead of the DOB/tick gate
+    // (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 2)
+    // ------------------------------------------------------------------
+    // `public.users.id` references `auth.users(id)`, so every profile row has an
+    // auth user. Looking the auth user up first therefore settles all three
+    // cases, and does it case-insensitively, which a `users.email` equality
+    // lookup would not.
+    //
+    // This used to run as part of step 3, after 2b's DOB/tick gate. It moved
+    // here — still read-only, no ledger entries yet, nothing written — so 2b
+    // can know `profileAlreadyExisted` before deciding whether to run at all.
+    // Requirement 2.2's existing-user bypass sends a "join {team}" request
+    // with no name/password/DOB fields; 2b would otherwise reject that
+    // request as `missing_date_of_birth`/`missing_subject_details` for an
+    // account that isn't declaring anything new — it already went through
+    // whatever registration gate applied when it was first created,
+    // elsewhere. `existingAuthUser`/`existingProfile` are reused verbatim in
+    // step 3 below rather than re-queried.
+    const existingAuthUser = await findAuthUserByEmail(supabaseUrl, serviceKey, reg.email);
+    let existingProfile: { id: string } | null = null;
+    if (existingAuthUser) {
+      const { data: profile, error: profileError } = await admin
+        .from('users')
+        .select('id')
+        .eq('id', existingAuthUser.id)
+        .maybeSingle();
+      if (profileError) {
+        throw new RedeemError(SAFE_ERROR_MESSAGES.unavailable, 500, profileError, 'profile_lookup');
+      }
+      existingProfile = profile;
+    }
+    const profileAlreadyExisted = !!existingProfile;
+
     // --- 2b. Symmetric self-declared date of birth + wrong-tick outcomes
     // (`.kiro/specs/streamlined-invites-and-child-access/` Requirement 5, 6)
     // ------------------------------------------------------------------
-    // Deliberately placed here — before step 3, before any write in this
-    // invocation — so a rejection has nothing to compensate (Property 3,
-    // carried over from the superseded spec this replaces).
+    // Deliberately placed here — before step 3's writes — so a rejection has
+    // nothing to compensate (Property 3, carried over from the superseded
+    // spec this replaces).
     //
     // `redemptionRole`/`finalDateOfBirth` are what every later step uses —
     // never `invitedRole` directly — because Requirement 6.2's conversion
@@ -318,7 +351,14 @@ Deno.serve(async (req) => {
     let finalDateOfBirth: string | null = null;
     let convertedFromCaregiver = false;
 
-    if (invitedRole !== 'caregiver') {
+    if (profileAlreadyExisted) {
+      // Requirement 2.2 — an existing account joining a further team (or
+      // becoming caregiver for a further child) is not a new registration:
+      // nothing is being self-declared for the first time, so there is no
+      // DOB/tick outcome to resolve. `redemptionRole` stays exactly what the
+      // invite said; `finalDateOfBirth` stays null and is never read again —
+      // step 4's profile insert is skipped for an existing profile too.
+    } else if (invitedRole !== 'caregiver') {
       // Adult-ticked path (Requirement 5.1): the redeeming person's own DOB.
       if (!reg.date_of_birth) {
         throw new RedeemError(
@@ -386,25 +426,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- 3. Resolve the user --------------------------------------------
-    // `public.users.id` references `auth.users(id)`, so every profile row has an
-    // auth user. Looking the auth user up first therefore settles all three
-    // cases, and does it case-insensitively, which a `users.email` equality
-    // lookup would not.
-    const existingAuthUser = await findAuthUserByEmail(supabaseUrl, serviceKey, reg.email);
+    // --- 3. Resolve the user (writes) ------------------------------------
+    // `existingAuthUser`/`existingProfile` were already looked up in step 2a
+    // above; nothing here re-queries them.
     let userId: string;
-    let profileAlreadyExisted = false;
 
     if (existingAuthUser) {
-      const { data: profile, error: profileError } = await admin
-        .from('users')
-        .select('id')
-        .eq('id', existingAuthUser.id)
-        .maybeSingle();
-
-      if (profileError) {
-        throw new RedeemError(SAFE_ERROR_MESSAGES.unavailable, 500, profileError, 'profile_lookup');
-      }
+      const profile = existingProfile;
 
       // Whatever happens below, this auth user pre-existed. Recording it as not
       // created by this invocation is what stops rollback deleting a real
@@ -414,7 +442,8 @@ Deno.serve(async (req) => {
 
       if (profile) {
         // 3.1 — existing user: create nothing, they just gain the membership.
-        profileAlreadyExisted = true;
+        // (`profileAlreadyExisted` was already derived from this same
+        // `profile` lookup back in step 2a.)
         ledger.profileRow = { userId, createdByThisInvocation: false };
       } else if (preConfirm) {
         // Pre-fix orphan (defect 1.2) for the invited address: adopt it, setting
@@ -601,22 +630,33 @@ Deno.serve(async (req) => {
       // exactly what Requirement 5.3 is for. `reg.subject_date_of_birth` is
       // guaranteed non-null here — step 2b already required it and only
       // reaches this branch on outcome 'ok'.
-      const { error: subjectUpdateError } = await admin
-        .from('users')
-        .update({
-          first_name: reg.subject_first_name,
-          last_name: reg.subject_last_name,
-          date_of_birth: reg.subject_date_of_birth,
-        })
-        .eq('id', invite.subject_user_id);
+      //
+      // Requirement 2.2, guarded: skipped entirely for an existing caregiver
+      // account linking to a further child (the existing-user bypass sends
+      // no subject fields at all — none of `reg.subject_*` is guaranteed
+      // non-null in that case). Writing `null`s here would blank out a
+      // child's already-recorded name/DOB purely because the *caregiver's*
+      // account happened to already exist; the child record this invite
+      // points at is untouched instead, exactly like step 4's profile
+      // insert is skipped for the same reason.
+      if (!profileAlreadyExisted) {
+        const { error: subjectUpdateError } = await admin
+          .from('users')
+          .update({
+            first_name: reg.subject_first_name,
+            last_name: reg.subject_last_name,
+            date_of_birth: reg.subject_date_of_birth,
+          })
+          .eq('id', invite.subject_user_id);
 
-      if (subjectUpdateError) {
-        throw new RedeemError(
-          mapError(subjectUpdateError),
-          400,
-          subjectUpdateError,
-          'update_subject'
-        );
+        if (subjectUpdateError) {
+          throw new RedeemError(
+            mapError(subjectUpdateError),
+            400,
+            subjectUpdateError,
+            'update_subject'
+          );
+        }
       }
 
       // Dedupe: mirrors link-player-caregiver's own dedupe (Task 1) so

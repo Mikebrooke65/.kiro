@@ -9,6 +9,7 @@ import {
   formatTeamLabel,
   needsAdultSelfDeclaration,
   needsCaregiverSubjectDetails,
+  describeIntendedRole,
   isValidDateOfBirth,
   resolvePrimaryActionHref,
   type RedeemInviteResult,
@@ -93,6 +94,13 @@ export function LiteLandingPage() {
   // the UI must treat it as a first-class outcome screen, not the generic red
   // `formError` banner — hence its own state rather than folding into that one.
   const [bounceToManager, setBounceToManager] = useState<string | null>(null);
+  // Requirement 2.1/2.2 — whether the invite's recipient email already
+  // belongs to a real account. `null` while still checking (folded into the
+  // same loading spinner as `validateInviteCode`, so the full form never
+  // flashes before this resolves); `false` is both "checked, no account" and
+  // the safe fallback for a check that itself failed.
+  const [recipientExists, setRecipientExists] = useState<boolean | null>(null);
+  const [joining, setJoining] = useState(false);
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
@@ -116,7 +124,7 @@ export function LiteLandingPage() {
 
   useEffect(() => {
     if (code) {
-      invitesApi.validateInviteCode(code).then(v => {
+      invitesApi.validateInviteCode(code).then(async v => {
         setValidation(v);
         // Prefill from whatever the inviter already typed (migration 054) so
         // the registrant isn't asked to retype a name and address that are
@@ -133,11 +141,36 @@ export function LiteLandingPage() {
             last_name: v.invite?.recipient_last_name || prev.last_name,
             email: v.invite?.recipient_email || prev.email,
           }));
+
+          // Requirement 2.1 — checked here, before the form ever renders, so
+          // an existing-account registrant never sees the full form flash
+          // before the bypass confirmation replaces it. Kept inside this
+          // same `loading` gate rather than a separate spinner state.
+          const exists = await invitesApi.checkInviteRecipient(code);
+          setRecipientExists(exists);
         }
         setLoading(false);
       });
     }
   }, [code]);
+
+  /** Requirement 2.2's single "join" action — no form fields to gather. */
+  const handleJoinExisting = async () => {
+    if (!validation?.valid || !validation.invite?.recipient_email) return;
+    setFormError('');
+    setJoining(true);
+    try {
+      const res = await invitesApi.joinExistingAccount(code!, validation.invite.recipient_email, {
+        firstName: validation.invite.recipient_first_name,
+        lastName: validation.invite.recipient_last_name,
+      });
+      setResult(res);
+    } catch (err) {
+      setFormError(safeRegistrationErrorMessage(err));
+    } finally {
+      setJoining(false);
+    }
+  };
 
   // Requirement 3.4 — every intended role except Caregiver self-declares
   // their own date of birth here; a Caregiver invite is never asked for one
@@ -285,6 +318,38 @@ export function LiteLandingPage() {
           <div className="text-4xl mb-4">🧑‍🤝‍🧑</div>
           <h1 className="text-xl font-bold mb-2">Let's get your Manager to help</h1>
           <p className="text-gray-600">{bounceToManager}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Requirement 2.2 — the existing-user bypass: skip the full registration
+  // form entirely and show a single confirmation action instead. No name,
+  // password, or DOB field appears anywhere on this screen because none of
+  // them are needed — `joinExistingAccount` sends only what `redeem-invite`
+  // still requires as placeholders, never anything the person typed here.
+  if (validation.valid && recipientExists) {
+    const roleLabel = describeIntendedRole(validation.invite?.intended_role);
+    const teamLabel = `${validation.team?.age_group ?? ''} ${validation.team?.name ?? ''}`.trim();
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+          <h1 className="text-xl font-bold mb-2">You already have an account</h1>
+          <p className="text-gray-600 mb-6">
+            Join {teamLabel || 'this team'} as {roleLabel}?
+          </p>
+          {formError && (
+            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm text-left">
+              {formError}
+            </div>
+          )}
+          <button
+            onClick={handleJoinExisting}
+            disabled={joining}
+            className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {joining ? 'Joining...' : 'Join'}
+          </button>
         </div>
       </div>
     );

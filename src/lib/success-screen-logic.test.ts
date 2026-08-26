@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   needsAdultSelfDeclaration,
   needsCaregiverSubjectDetails,
+  describeIntendedRole,
   isValidDateOfBirth,
   resolvePrimaryActionHref,
 } from './success-screen-logic';
@@ -54,6 +55,22 @@ describe('needsCaregiverSubjectDetails (streamlined-invites-and-child-access Req
     for (const role of ['player', 'coach', 'manager', 'caregiver', null, undefined, '', 'admin']) {
       expect(needsCaregiverSubjectDetails(role)).toBe(!needsAdultSelfDeclaration(role));
     }
+  });
+});
+
+describe('describeIntendedRole (Requirement 2.2)', () => {
+  it('labels the three team roles and caregiver', () => {
+    expect(describeIntendedRole('coach')).toBe('Coach');
+    expect(describeIntendedRole('manager')).toBe('Manager');
+    expect(describeIntendedRole('player')).toBe('Player');
+    expect(describeIntendedRole('caregiver')).toBe('Caregiver');
+  });
+
+  it('defaults to "Player" for a null/undefined/unrecognized role, matching the server default', () => {
+    expect(describeIntendedRole(null)).toBe('Player');
+    expect(describeIntendedRole(undefined)).toBe('Player');
+    expect(describeIntendedRole('admin')).toBe('Player');
+    expect(describeIntendedRole('')).toBe('Player');
   });
 });
 

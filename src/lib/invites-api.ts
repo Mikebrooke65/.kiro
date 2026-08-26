@@ -111,6 +111,44 @@ class InvitesApi extends ApiClient {
   }
 
   /**
+   * Requirement 2.1/2.2 — does the address this invite was sent to already
+   * belong to a real account? `LiteLandingPage` calls this once,
+   * immediately after `validateInviteCode` succeeds, and shows the short
+   * "you already have an account — join {team}?" confirmation instead of
+   * the full registration form when this resolves `true`.
+   *
+   * A thin wrapper over the `check-invite-recipient` Edge Function — see its
+   * own header comment for why this has to be server-side (the client can
+   * never itself answer "does this email have an account") and why it is
+   * scoped to one already-known invite `code` rather than a bare email
+   * (closes the enumeration risk, requirements.md Section 2).
+   *
+   * Fails closed to `false` on any error — a transport failure, a missing
+   * deployment, an unexpected response shape — because the safe fallback is
+   * always "show the full registration form", never blocking registration
+   * on this check succeeding.
+   *
+   * DEPLOYMENT: Edge Functions do NOT ship with `git push`. This call
+   * silently falls back to `false` (not an error) until
+   * `supabase functions deploy check-invite-recipient` has been run.
+   */
+  async checkInviteRecipient(code: string): Promise<boolean> {
+    try {
+      const { data, error } = await this.supabase.functions.invoke('check-invite-recipient', {
+        body: { code },
+      });
+      if (error) {
+        console.warn('checkInviteRecipient failed (falling back to full form):', error);
+        return false;
+      }
+      return data?.recipientExists === true;
+    } catch (error) {
+      console.warn('checkInviteRecipient failed (falling back to full form):', error);
+      return false;
+    }
+  }
+
+  /**
    * Redeem an invite code — creates a lite user or adds an existing user to the team.
    *
    * Spec: `.kiro/specs/lite-user-registration-fix/` (task 3.3)
@@ -201,6 +239,46 @@ class InvitesApi extends ApiClient {
     }
 
     return typed;
+  }
+
+  /**
+   * Requirement 2.2's "join {team} as {role}?" single action — the whole
+   * point of the existing-user bypass is that this call shows the person no
+   * name/password/DOB fields at all, so there is nothing on the form to
+   * collect them from. Still goes through the exact same `redeem-invite`
+   * endpoint as a full registration (design.md, Component 2: "never touches
+   * the server-side redemption logic" beyond what Requirement 2.2 itself
+   * needed there — see `redeem-invite/index.ts` step 2a/2b for the one
+   * change: the DOB/tick gate is skipped for an account that already has a
+   * profile, which is exactly this path).
+   *
+   * `first_name`/`last_name`/`password` are placeholders `redeem-invite`
+   * requires on every request but never uses for an existing profile (its
+   * `profileAlreadyExisted` branch neither reads nor writes them — see that
+   * file). Reusing the invite's own prefill (`recipientFirstName`/
+   * `recipientLastName`, migration 054) rather than a hardcoded string keeps
+   * a stray log line looking like a name instead of a sentinel; `email` is
+   * always the invite's own recipient address, never user-entered, since
+   * this path shows no editable email field either. No `date_of_birth` or
+   * `subject_*` fields are sent — none are required for this path (step 2a's
+   * gate), and for a caregiver invite sending them would incorrectly try to
+   * overwrite the child's already-recorded details (see the guard on that
+   * update in `redeem-invite/index.ts`).
+   */
+  async joinExistingAccount(
+    code: string,
+    recipientEmail: string,
+    recipientName?: { firstName?: string | null; lastName?: string | null }
+  ): Promise<RedeemInviteResult> {
+    return this.redeemInviteCode(code, {
+      first_name: recipientName?.firstName?.trim() || 'Existing',
+      last_name: recipientName?.lastName?.trim() || 'Member',
+      email: recipientEmail,
+      // Never shown, never usable to sign in as anyone — this account
+      // already has its own real password, which this call never touches.
+      password: generateCode(24),
+      privacy_consent: true,
+    });
   }
 
   /**
