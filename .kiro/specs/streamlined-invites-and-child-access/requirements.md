@@ -234,22 +234,34 @@ the current, displayed answer. No conflict-surfacing, no locking, no
 disagree about attendance, that's a family conversation to have between
 themselves, not something the app arbitrates.
 
-**RESOLVED — Team tab visibility:** the Team tab already has a standing,
-role-based visibility model, and a child's account simply inherits it —
-no new rule is needed:
+**RESOLVED — Team tab visibility, corrected 2026-08-26 (Task 8):** the Team
+tab already has a standing visibility model, and a child's account simply
+inherits it — no new rule is needed. The model itself was mis-described
+below in an earlier pass of this document and has been corrected against
+the actual code (`contactFor` in `src/lib/roster-logic.ts`) and against
+`post-registration-welcome-and-team-page/requirements.md`, the spec that
+Team tab was actually built against:
 
-- **Standard tier** — everyone on the Team tab sees names and role only
-  (Manager / Coach / Player / Caregiver). This is what a child sees, same
-  as any Player or Caregiver already sees today.
-- **Manager/Coach tier** — Managers and Coaches additionally see contact
-  details (email and cell phone, where on file). A child's account is never
-  a Manager or Coach, so it never reaches this tier — a child's Team tab
-  carries no new contact-detail exposure beyond what any existing Player
-  already sees.
+- There is no Manager/Coach-only viewer tier for contact details. Every
+  team member who can view the roster already sees every row's contact
+  today — that was this feature's original, intentional design ("As any
+  member of a team, I want to view the team roster... so that I can see
+  who is on the team and how to contact them").
+- What's actually gated is *whose* number is shown for a given row, based
+  on that row's own age band: an adult-band player, coach, or manager
+  shows their own cellphone; a child-band player's row shows their linked
+  caregiver's name and cellphone instead (never the child's own, since a
+  child under this feature still has no cellphone on file).
+- A child's account uses `role: 'player'` — the same team-role an adult
+  Player already has, not a distinct role — so it runs through this exact
+  same age-band logic and produces exactly what any existing Player's row
+  already shows.
 
 This closes the open question raised above: extending the Team tab to a
-child doesn't expose anything new, because the existing role-gate already
-excludes non-Manager/Coach viewers from contact details.
+child doesn't expose anything new, because a child's row runs through the
+identical, already-shipped `contactFor` logic every other Player's row
+already does — not because of a Manager/Coach viewer restriction, which
+doesn't exist in this codebase.
 
 ### 7.3 Safeguarding — direction resolved, mechanism still needs thinking
 
@@ -498,10 +510,22 @@ place:
 7. **RESOLVED** — all caregivers linked to a child have equal rights; any
    caregiver beyond the first must be added by a club admin (Section 7.5 /
    8.5).
-8. **RESOLVED** — a child's Team tab inherits the existing standard/
-   Manager-Coach tiered visibility model: names + role for everyone,
-   contact details for Manager/Coach only. No new exposure from adding the
-   Team tab to a child's view (Section 7.2).
+8. **RESOLVED, corrected 2026-08-26 against the actual codebase (Task
+   8):** the "standard/Manager-Coach tiered visibility" described here and
+   in Section 7.2 does not exist as a viewer-role gate — verified by
+   reading `contactFor` in `src/lib/roster-logic.ts` (moved there from
+   `TeamPage.tsx` while confirming this item) and by
+   `post-registration-welcome-and-team-page/requirements.md`, which
+   documents contact-detail visibility to any team member as the original,
+   intentional design. What's actually true, and still sufficient: contact
+   visibility is gated only by the *viewed* row's age band (own cellphone
+   for adult-band players/coaches/managers; the linked caregiver's contact
+   for child-band players), never by who's looking. A child's account uses
+   `role: 'player'` — the same team-role an adult Player already has — so
+   it runs through the identical, already-shipped logic and produces
+   exactly what any existing Player's row already shows. No new exposure
+   from adding the Team tab to a child's view; the reasoning is just
+   "same code path as any Player," not a Manager/Coach viewer tier.
 9. **RESOLVED** — see item 2: last-write-wins, no separate conflict
    handling.
 10. **RESOLVED** — generating a new device code for a child automatically
