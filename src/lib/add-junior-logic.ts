@@ -75,6 +75,54 @@ export function validateAddJunior(form: AddJuniorForm): ValidateAddJuniorResult 
 }
 
 // ---------------------------------------------------------------------------
+// Caregiver-only contact validation (Requirement 7.5,
+// streamlined-invites-and-child-access Task 9)
+// ---------------------------------------------------------------------------
+
+/**
+ * A caregiver's own contact details, with no accompanying child fields —
+ * what `AddCaregiverModal.tsx` collects when an admin (or, for a child's
+ * first caregiver, a Coach/Manager) adds an ADDITIONAL caregiver to a child
+ * that already exists, as opposed to `AddJuniorForm` above, which always
+ * pairs a caregiver with a brand-new child being created at the same time.
+ */
+export interface CaregiverContactFields {
+  name: string; // 1-100 characters
+  email: string; // valid email format, 1-254 characters
+  phone: string; // 7-20 characters
+}
+
+export type CaregiverContactFieldError = keyof CaregiverContactFields;
+
+export type ValidateCaregiverContactResult =
+  | { ok: true }
+  | { ok: false; errors: CaregiverContactFieldError[] };
+
+const CAREGIVER_CONTACT_FIELD_ORDER: CaregiverContactFieldError[] = ['name', 'email', 'phone'];
+
+/**
+ * Validate a caregiver's contact fields in isolation, using the exact same
+ * bounds `validateAddJunior` applies to its `caregiverName`/`caregiverEmail`/
+ * `caregiverPhone` fields (same `lengthInBounds`/`isValidEmail` helpers,
+ * same limits) — kept as a separate function rather than changing
+ * `validateAddJunior` itself, since that function is an already-shipped,
+ * untested flow this task has no reason to touch.
+ */
+export function validateCaregiverContactFields(
+  form: CaregiverContactFields
+): ValidateCaregiverContactResult {
+  const invalid: Record<CaregiverContactFieldError, boolean> = {
+    name: !lengthInBounds(form.name, 1, 100),
+    email: !isValidEmail(form.email),
+    phone: !lengthInBounds(form.phone, 7, 20),
+  };
+
+  const errors = CAREGIVER_CONTACT_FIELD_ORDER.filter((field) => invalid[field]);
+
+  return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
+
+// ---------------------------------------------------------------------------
 // Caregiver reuse / idempotency (Req 5.5, 5.7)
 // ---------------------------------------------------------------------------
 

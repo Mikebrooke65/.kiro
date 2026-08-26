@@ -21,6 +21,18 @@
 // add-a-junior design: a coach on Team A must not be able to link a
 // caregiver to a child on Team B.
 //
+// Requirement 7.5 (streamlined-invites-and-child-access, Task 9) adds one
+// more restriction on top of that: a Coach/Manager may create a child's
+// FIRST caregiver link (the only case this function was used for before
+// Task 9 — always a brand-new child via `addJunior`, with zero existing
+// caregivers, so that call site is unaffected), but a SECOND-OR-LATER
+// caregiver for the same child requires club-wide admin — checked below,
+// after the dedupe check, so re-submitting an already-existing link never
+// needs escalation. This is the "caregiver already has an account" path;
+// the "caregiver has no account yet" path gets the equivalent gate added
+// directly to the `invite_codes` RLS policy (migration 056), since that
+// path never reaches this function at all.
+//
 // Requires (set via `supabase secrets set`): SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY (both are provided to Edge Functions by default).
 //
@@ -102,7 +114,9 @@ Deno.serve(async (req) => {
       return json({ error: 'Coach, Manager, or Admin access required for this team' }, 403);
     }
 
-    // Dedupe (Req 5.7) — skip the insert if the link already exists.
+    // Dedupe (Req 5.7) — skip the insert if the link already exists. Checked
+    // before the second-or-later gate below: re-submitting an existing link
+    // is a no-op, not "adding a caregiver," so it never needs escalation.
     const existingResp = await fetch(
       `${SUPABASE_URL}/rest/v1/player_caregivers?player_id=eq.${body.player_id}&caregiver_id=eq.${body.caregiver_id}&select=player_id&limit=1`,
       { headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY } }
@@ -110,6 +124,26 @@ Deno.serve(async (req) => {
     const existing = await existingResp.json();
     if (Array.isArray(existing) && existing.length > 0) {
       return json({ success: true, created: false });
+    }
+
+    // Requirement 7.5 — a SECOND-OR-LATER caregiver for this child requires
+    // club-wide admin, judged on the current linked-caregiver count (not a
+    // historical "was there ever a first" count — a child back down to zero
+    // caregivers, e.g. after an admin's removal-driven revocation, can have
+    // a new first caregiver added by a Coach/Manager again).
+    if (!isAdmin) {
+      const countResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/player_caregivers?player_id=eq.${body.player_id}&select=player_id&limit=1`,
+        { headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY } }
+      );
+      const countData = await countResp.json();
+      const childAlreadyHasACaregiver = Array.isArray(countData) && countData.length > 0;
+      if (childAlreadyHasACaregiver) {
+        return json(
+          { error: 'Admin access required to add an additional caregiver for this child' },
+          403
+        );
+      }
     }
 
     const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/player_caregivers`, {

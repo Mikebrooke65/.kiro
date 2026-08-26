@@ -33,10 +33,12 @@ import {
 } from '../lib/roster-logic';
 import {
   resolveCapabilities,
+  canAddCaregiver,
   type ActionCapabilities,
   type PermissionRole,
 } from '../lib/permissions-logic';
 import { AddPlayerModal, type AddPlayerOutcome } from '../components/team/AddPlayerModal';
+import { AddCaregiverModal } from '../components/team/AddCaregiverModal';
 import { caregiversApi } from '../lib/caregivers-api';
 import { ApiError } from '../lib/api-client';
 
@@ -63,7 +65,44 @@ interface RosterData {
    * a linked caregiver of these children, so they never see it.
    */
   myLinkedChildIds: Set<string>;
+  /**
+   * Requirement 7.5 (Task 9) — how many caregivers each child-band player
+   * currently has linked, keyed by user id. Drives `canAddCaregiver`: a
+   * Coach/Manager may add a child's FIRST caregiver only; an admin-only
+   * gate applies once this count is 1 or more (enforced again at the data
+   * layer regardless — this is only what decides whether the UI offers the
+   * action). Absent/zero for an adult-band row, which never has caregivers.
+   */
+  caregiverCountByPlayer: Record<string, number>;
 }
+
+/** One caregiver, as shown in the "manage caregivers" expandable list (Task 9). */
+interface CaregiverManageEntry {
+  id: string;
+  name: string;
+  email: string;
+}
+
+/**
+ * State of one child row's "manage caregivers" disclosure (Requirement 7.5,
+ * Task 9) — collapsed by default; loaded on demand the first time an admin
+ * expands it, not fetched for every child-band row up front.
+ */
+interface CaregiverManagementState {
+  expanded: boolean;
+  loading: boolean;
+  removingId: string | null;
+  caregivers: CaregiverManageEntry[] | null;
+  error: string | null;
+}
+
+const COLLAPSED_CAREGIVER_MANAGEMENT: CaregiverManagementState = {
+  expanded: false,
+  loading: false,
+  removingId: null,
+  caregivers: null,
+  error: null,
+};
 
 /** Reject if the wrapped promise does not settle within `ms` (Req 3.15). */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -112,6 +151,15 @@ export function TeamPage() {
     link: string;
   } | null>(null);
   const [issuingDeviceAccessFor, setIssuingDeviceAccessFor] = useState<string | null>(null);
+
+  // Requirement 7.5 (Task 9) — "Add Caregiver" modal target, and the
+  // per-child "manage caregivers" expandable-list state, keyed by child
+  // user id so several rows could in principle be expanded independently
+  // (though only one row's modal can be open at a time).
+  const [addCaregiverFor, setAddCaregiverFor] = useState<RosterEntry | null>(null);
+  const [caregiverManagement, setCaregiverManagement] = useState<
+    Record<string, CaregiverManagementState>
+  >({});
 
   // Guards a roster response against a newer selection/retry superseding it.
   const loadTokenRef = useRef(0);
@@ -270,6 +318,88 @@ export function TeamPage() {
     } finally {
       setIssuingDeviceAccessFor(null);
     }
+  };
+
+  /**
+   * Fetch (or re-fetch) a child's caregiver list for the "manage
+   * caregivers" disclosure (Requirement 7.5, Task 9). Kept separate from
+   * the toggle handler below so a post-removal refresh can reuse it without
+   * re-deriving the open/closed decision.
+   */
+  const loadCaregiverManageList = async (childId: string) => {
+    setCaregiverManagement((prev) => ({
+      ...prev,
+      [childId]: { ...COLLAPSED_CAREGIVER_MANAGEMENT, expanded: true, loading: true },
+    }));
+    try {
+      const links = await caregiversApi.getPlayerCaregivers(childId);
+      const caregivers: CaregiverManageEntry[] = links.map((link) => ({
+        id: link.caregiver_id,
+        name: `${link.caregiver?.first_name ?? ''} ${link.caregiver?.last_name ?? ''}`.trim() || 'Unknown',
+        email: link.caregiver?.email ?? '',
+      }));
+      setCaregiverManagement((prev) => ({
+        ...prev,
+        [childId]: { expanded: true, loading: false, removingId: null, caregivers, error: null },
+      }));
+    } catch (err) {
+      setCaregiverManagement((prev) => ({
+        ...prev,
+        [childId]: {
+          expanded: true,
+          loading: false,
+          removingId: null,
+          caregivers: null,
+          error: err instanceof Error ? err.message : 'Could not load caregivers.',
+        },
+      }));
+    }
+  };
+
+  const handleToggleManageCaregivers = (childId: string) => {
+    const current = caregiverManagement[childId];
+    if (current?.expanded) {
+      setCaregiverManagement((prev) => ({ ...prev, [childId]: { ...current, expanded: false } }));
+      return;
+    }
+    loadCaregiverManageList(childId);
+  };
+
+  /**
+   * Requirement 7.5's last bullet — removing a caregiver does NOT itself
+   * revoke the child's device access; it only queues an `admin_action_items`
+   * row for an admin to review (migration 056's trigger, fired regardless of
+   * which UI path calls this — nothing to do here beyond the removal
+   * itself). `unlinkCaregiverFromPlayer` already existed in `caregivers-api`
+   * but had no caller anywhere in the app before this — see tasks.md's own
+   * note on the scope gap this closes.
+   */
+  const handleRemoveCaregiver = async (childId: string, caregiverId: string) => {
+    setCaregiverManagement((prev) => ({
+      ...prev,
+      [childId]: { ...(prev[childId] ?? COLLAPSED_CAREGIVER_MANAGEMENT), removingId: caregiverId },
+    }));
+    try {
+      await caregiversApi.unlinkCaregiverFromPlayer(caregiverId, childId);
+      setActionMessage('Caregiver removed. An admin has been notified to review device access.');
+      await loadCaregiverManageList(childId);
+      refreshRoster(); // updates the row's own chosen contact + caregiver count
+    } catch (err) {
+      setCaregiverManagement((prev) => ({
+        ...prev,
+        [childId]: { ...(prev[childId] ?? COLLAPSED_CAREGIVER_MANAGEMENT), removingId: null },
+      }));
+      setActionMessage(err instanceof ApiError ? err.message : 'Could not remove this caregiver.');
+    }
+  };
+
+  const handleAddCaregiverSuccess = (childName: string, outcome: { invited: boolean }) => {
+    setActionMessage(
+      outcome.invited
+        ? `Invited a caregiver for ${childName}.`
+        : `Linked an existing account as a caregiver for ${childName}.`
+    );
+    refreshRoster();
   };
 
   // ---- Render ---------------------------------------------------------------
@@ -451,24 +581,52 @@ export function TeamPage() {
                 </div>
               ) : (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-100 overflow-hidden">
-                  {roster.entries.map((entry) => (
-                    <RosterRow
-                      key={entry.userId}
-                      entry={entry}
-                      capabilities={capabilities}
-                      onDeactivate={() => handleDeactivate(entry)}
-                      onReactivate={() => handleReactivate(entry)}
-                      onPromote={() => handlePromoteToManager(entry)}
-                      canPromoteThisMember={
-                        !!roster.playerMembershipIdByUser[entry.userId] &&
-                        entry.roles.includes('player') &&
-                        !entry.roles.includes('manager')
-                      }
-                      canIssueDeviceAccess={roster.myLinkedChildIds.has(entry.userId)}
-                      issuingDeviceAccess={issuingDeviceAccessFor === entry.userId}
-                      onIssueDeviceAccess={() => handleIssueDeviceAccess(entry)}
-                    />
-                  ))}
+                  {roster.entries.map((entry) => {
+                    // Requirement 7.5 (Task 9) — only a child-band player row
+                    // ever has caregivers to add or manage; an adult-band
+                    // player, or any coach/manager row, never does.
+                    const isChildBandPlayerRow =
+                      roster.ageBand === 'child' && entry.roles.includes('player');
+                    const existingCaregiverCount =
+                      roster.caregiverCountByPlayer[entry.userId] ?? 0;
+
+                    return (
+                      <RosterRow
+                        key={entry.userId}
+                        entry={entry}
+                        capabilities={capabilities}
+                        onDeactivate={() => handleDeactivate(entry)}
+                        onReactivate={() => handleReactivate(entry)}
+                        onPromote={() => handlePromoteToManager(entry)}
+                        canPromoteThisMember={
+                          !!roster.playerMembershipIdByUser[entry.userId] &&
+                          entry.roles.includes('player') &&
+                          !entry.roles.includes('manager')
+                        }
+                        canIssueDeviceAccess={roster.myLinkedChildIds.has(entry.userId)}
+                        issuingDeviceAccess={issuingDeviceAccessFor === entry.userId}
+                        onIssueDeviceAccess={() => handleIssueDeviceAccess(entry)}
+                        canAddCaregiver={
+                          isChildBandPlayerRow &&
+                          canAddCaregiver({
+                            isClubAdmin,
+                            teamRoles: roster.currentUserRoles,
+                            teamType: roster.teamType,
+                            existingCaregiverCount,
+                          })
+                        }
+                        onAddCaregiver={() => setAddCaregiverFor(entry)}
+                        canManageCaregivers={isChildBandPlayerRow && isClubAdmin}
+                        caregiverManagement={
+                          caregiverManagement[entry.userId] ?? COLLAPSED_CAREGIVER_MANAGEMENT
+                        }
+                        onToggleManageCaregivers={() => handleToggleManageCaregivers(entry.userId)}
+                        onRemoveCaregiver={(caregiverId) =>
+                          handleRemoveCaregiver(entry.userId, caregiverId)
+                        }
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -487,6 +645,19 @@ export function TeamPage() {
           }}
           teamId={selection.selectedTeamId}
           teamLabel={selectedOption?.label ?? 'this team'}
+        />
+      )}
+
+      {/* Add Caregiver modal (Requirement 7.5, Task 9) — only reachable via
+          a row's own "Add Caregiver" button, itself gated by canAddCaregiver
+          above; the actual write is re-checked at the data layer regardless. */}
+      {selection.selectedTeamId && addCaregiverFor && (
+        <AddCaregiverModal
+          teamId={selection.selectedTeamId}
+          childId={addCaregiverFor.userId}
+          childName={addCaregiverFor.displayName}
+          onClose={() => setAddCaregiverFor(null)}
+          onSuccess={(outcome) => handleAddCaregiverSuccess(addCaregiverFor.displayName, outcome)}
         />
       )}
     </div>
@@ -513,6 +684,18 @@ interface RosterRowProps {
   canIssueDeviceAccess: boolean;
   issuingDeviceAccess: boolean;
   onIssueDeviceAccess: () => void;
+  /** Requirement 7.5 (Task 9) — see `canAddCaregiver` (`permissions-logic.ts`)
+   *  for the exact rule; already resolved by the parent before this prop. */
+  canAddCaregiver: boolean;
+  onAddCaregiver: () => void;
+  /** Requirement 7.5 (Task 9) — only ever true for an admin on a child-band
+   *  player row; unlike `canAddCaregiver`, a Coach/Manager never sees this,
+   *  since removal (`player_caregivers` DELETE) is admin-only at the data
+   *  layer regardless (migrations 002/036) — no point offering it otherwise. */
+  canManageCaregivers: boolean;
+  caregiverManagement: CaregiverManagementState;
+  onToggleManageCaregivers: () => void;
+  onRemoveCaregiver: (caregiverId: string) => void;
 }
 
 function RosterRow({
@@ -525,6 +708,12 @@ function RosterRow({
   canIssueDeviceAccess,
   issuingDeviceAccess,
   onIssueDeviceAccess,
+  canAddCaregiver,
+  onAddCaregiver,
+  canManageCaregivers,
+  caregiverManagement,
+  onToggleManageCaregivers,
+  onRemoveCaregiver,
 }: RosterRowProps) {
   // Inactive OR pending members are greyed (Req 3.6, 5.10).
   const greyed = !entry.active || entry.pending;
@@ -605,9 +794,62 @@ function RosterRow({
                 {issuingDeviceAccess ? 'Creating...' : 'Issue Device Access'}
               </button>
             )}
+            {/* Requirement 7.5 (Task 9) — visibility already resolved by the
+                parent via `canAddCaregiver`; a non-admin Coach/Manager only
+                ever sees this for a child with zero caregivers today. */}
+            {canAddCaregiver && (
+              <button
+                onClick={onAddCaregiver}
+                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Add Caregiver
+              </button>
+            )}
+            {canManageCaregivers && (
+              <button
+                onClick={onToggleManageCaregivers}
+                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                {caregiverManagement.expanded ? 'Hide Caregivers' : 'Manage Caregivers'}
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Requirement 7.5 (Task 9) — admin-only expandable caregiver list.
+          Removing one fires migration 056's trigger (an admin_action_items
+          notification) regardless of who removes it — never an immediate
+          device-access revocation, which stays a separate, explicit admin
+          decision (the new admin screen). */}
+      {canManageCaregivers && caregiverManagement.expanded && (
+        <div className="mt-2 ml-0 pl-3 border-l-2 border-gray-100 space-y-1.5">
+          {caregiverManagement.loading && (
+            <p className="text-xs text-gray-400">Loading caregivers...</p>
+          )}
+          {caregiverManagement.error && (
+            <p className="text-xs text-red-600">{caregiverManagement.error}</p>
+          )}
+          {caregiverManagement.caregivers?.length === 0 && (
+            <p className="text-xs text-gray-400">No caregivers linked.</p>
+          )}
+          {caregiverManagement.caregivers?.map((caregiver) => (
+            <div key={caregiver.id} className="flex items-center justify-between gap-2">
+              <p className="text-xs text-gray-600 truncate">
+                {caregiver.name}
+                {caregiver.email ? ` · ${caregiver.email}` : ''}
+              </p>
+              <button
+                onClick={() => onRemoveCaregiver(caregiver.id)}
+                disabled={caregiverManagement.removingId === caregiver.id}
+                className="text-xs text-red-600 hover:underline disabled:opacity-40 flex-shrink-0"
+              >
+                {caregiverManagement.removingId === caregiver.id ? 'Removing...' : 'Remove'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -779,6 +1021,15 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     console.error('Could not load linked-caregiver children:', err);
   }
 
+  // Requirement 7.5 (Task 9) — caregiver count per child, derived from the
+  // same `caregiverLinksByPlayer` lookup already fetched above for contact
+  // display. Only a count is kept here (not the links themselves) — this
+  // just drives whether "Add Caregiver" shows, not who the caregivers are.
+  const caregiverCountByPlayer: Record<string, number> = {};
+  for (const childId of childCandidateIds) {
+    caregiverCountByPlayer[childId] = (caregiverLinksByPlayer[childId] ?? []).length;
+  }
+
   return {
     entries,
     ageBand,
@@ -787,6 +1038,7 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     currentUserRoles,
     playerMembershipIdByUser,
     myLinkedChildIds,
+    caregiverCountByPlayer,
   };
 }
 

@@ -33,6 +33,7 @@ import { DesktopSchedule } from '../pages/desktop/DesktopSchedule';
 import { DesktopMessaging } from '../pages/desktop/DesktopMessaging';
 import { TeamsManagement } from '../pages/desktop/TeamsManagement';
 import { UserManagement } from '../pages/desktop/UserManagement';
+import { AdminActionItems } from '../pages/desktop/AdminActionItems';
 import { Reporting } from '../pages/desktop/Reporting';
 import { Announcements } from '../pages/desktop/Announcements';
 import { LessonBuilder } from '../pages/desktop/LessonBuilder';
@@ -222,6 +223,10 @@ export const router = createBrowserRouter([
       {
         path: 'users',
         element: <UserManagement />,
+      },
+      {
+        path: 'admin-action-items',
+        element: <AdminActionItems />,
       },
       {
         path: 'reporting',

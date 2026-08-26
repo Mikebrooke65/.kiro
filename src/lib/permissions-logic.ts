@@ -109,6 +109,55 @@ export function resolveCapabilities(input: {
 }
 
 /**
+ * Whether the current viewer may add (or invite) a caregiver for a given
+ * child (Requirement 7.5, `streamlined-invites-and-child-access` Task 9).
+ *
+ * - External League teams stay fully read-only for everyone (Req 4.3/5.17)
+ *   — attaching a caregiver is a roster-modifying action like any other.
+ * - Club-wide Admin can always add a caregiver, first or additional.
+ * - A Coach/Manager on the team may only add the child's FIRST caregiver —
+ *   once a child already has one or more linked caregivers, adding another
+ *   requires club-wide Admin ("any additional caregiver beyond the first
+ *   must be added by a club admin").
+ * - Player/Caregiver alone is never sufficient (Req 4.4, same as every
+ *   other roster-modifying action).
+ *
+ * This is a client-side convenience only — it decides whether to SHOW the
+ * action, never the actual authority to perform it. The real gate lives at
+ * the data layer in both places a caregiver can actually be attached (the
+ * `invite_codes` RLS policy, and the `link-player-caregiver` Edge
+ * Function — migration 056), so a stale or bypassed client check can never
+ * let an unauthorized write through.
+ *
+ * A negative or non-finite `existingCaregiverCount` (a defensive default on
+ * a failed count, mirroring `canPromoteToManager`'s own stance) is never
+ * treated as zero — it simply never equals zero, so it falls through to
+ * "not allowed" for a non-admin exactly like any other non-zero count.
+ */
+export function canAddCaregiver(input: {
+  isClubAdmin: boolean;
+  teamRoles: readonly PermissionRole[];
+  teamType: TeamType;
+  existingCaregiverCount: number;
+}): boolean {
+  if (input.teamType === 'external_league') {
+    return false;
+  }
+
+  if (input.isClubAdmin) {
+    return true;
+  }
+
+  const hasEditAuthority =
+    input.teamRoles.includes('coach') || input.teamRoles.includes('manager');
+  if (!hasEditAuthority) {
+    return false;
+  }
+
+  return input.existingCaregiverCount === 0;
+}
+
+/**
  * The minimal shape required to perform an active/inactive transition. Any
  * record carrying an identity and an `active` flag qualifies; the generic
  * parameter ensures all other fields are preserved unchanged.

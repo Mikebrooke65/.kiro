@@ -4,6 +4,7 @@ import type {
   CaregiverApproval,
   NewCaregiverData,
   Team,
+  AdminActionItem,
 } from '../types/database';
 import { emailApi } from './email-api';
 import { invitesApi } from './invites-api';
@@ -542,8 +543,14 @@ class CaregiversApi extends ApiClient {
    * admin-only — so this is the one step of `addJunior` that must run
    * server-side, gated on the caller being a coach/manager/admin of the
    * specific `teamId` the child is being added to.
+   *
+   * Not `private`: `addCaregiverToExistingChild` (Requirement 7.5, Task 9)
+   * reuses this exact same server-side call for its own "caregiver already
+   * has an account" branch — that Edge Function is also where the
+   * second-or-later-caregiver admin gate lives (migration 056's comment),
+   * so this stays the single place that call is made from client code.
    */
-  private async linkCaregiver(
+  async linkCaregiver(
     teamId: string,
     playerId: string,
     caregiverId: string
@@ -638,6 +645,174 @@ class CaregiversApi extends ApiClient {
     }
 
     return { code: result.code as string, expiresAt: result.expires_at as string };
+  }
+
+  /**
+   * Add (or invite) an additional caregiver for a child that already has a
+   * `users` row — the gap `addJunior` doesn't cover, since that method only
+   * ever runs once, at child-creation time (Requirement 7.5,
+   * `streamlined-invites-and-child-access` Task 9: "any additional
+   * caregiver beyond the first must be added by a club admin").
+   *
+   * Deliberately mirrors `addJunior`'s own caregiver-resolution branch
+   * (existing account -> link directly via `linkCaregiver`; no account yet
+   * -> invite via `generateInviteCode`) rather than sharing code with it —
+   * `addJunior` is an already-shipped, sensitive flow with a specific
+   * ordering (see its own doc comment); duplicating this small piece keeps
+   * this addition from ever being able to change that flow's behaviour.
+   *
+   * The actual "second-or-later requires admin" authorization is enforced
+   * at the data layer regardless of who calls this — the `invite_codes`
+   * RLS policy for the invite branch, and `link-player-caregiver`'s own
+   * check for the direct-link branch (both migration 056) — not duplicated
+   * here. A non-admin caller for whom this shouldn't be allowed simply gets
+   * an `ApiError` from whichever branch it took; `canAddCaregiver`
+   * (`permissions-logic.ts`) is what decides whether the UI even offers
+   * this action, not this method.
+   */
+  async addCaregiverToExistingChild(
+    teamId: string,
+    childId: string,
+    caregiver: { name: string; email: string; phone?: string }
+  ): Promise<{ invited: boolean }> {
+    const normalizedEmail = caregiver.email.trim().toLowerCase();
+    const [caregiverFirstName, ...caregiverRest] = caregiver.name.trim().split(/\s+/);
+    const caregiverLastName = caregiverRest.join(' ');
+
+    const { data: team, error: teamError } = await this.supabase
+      .from('teams')
+      .select('id, name, age_group')
+      .eq('id', teamId)
+      .single();
+    if (teamError || !team) {
+      throw new ApiError(teamError?.message || 'Team not found');
+    }
+    const teamRow = team as Pick<Team, 'id' | 'name' | 'age_group'>;
+
+    const { data: matchingUsers, error: userLookupError } = await this.supabase
+      .from('users')
+      .select('id, email')
+      .ilike('email', normalizedEmail);
+    if (userLookupError) throw new ApiError(userLookupError.message);
+
+    const resolution = resolveCaregiver(normalizedEmail, matchingUsers || []);
+
+    if (resolution.action === 'reuse') {
+      const { data: existingLinks, error: linkLookupError } = await this.supabase
+        .from('player_caregivers')
+        .select('player_id, caregiver_id')
+        .eq('player_id', childId);
+      if (linkLookupError) throw new ApiError(linkLookupError.message);
+
+      if (
+        resolveCaregiverLink(childId, resolution.caregiverId, existingLinks || []).action ===
+        'create'
+      ) {
+        await this.linkCaregiver(teamId, childId, resolution.caregiverId);
+      }
+      return { invited: false };
+    }
+
+    // No account yet — invite instead of linking directly (mirrors
+    // addJunior's own invite branch). `subjectUserId` is what lets
+    // `redeem-invite` complete the `player_caregivers` link server-side
+    // once this invite is redeemed.
+    const invite = await invitesApi.generateInviteCode(
+      teamId,
+      normalizedEmail,
+      caregiver.phone?.trim(),
+      undefined,
+      'caregiver',
+      childId,
+      caregiverFirstName || undefined,
+      caregiverLastName || undefined
+    );
+
+    try {
+      await emailApi.sendTeamInvite({
+        to: normalizedEmail,
+        recipientName: caregiverFirstName || undefined,
+        teamName: `${teamRow.age_group} ${teamRow.name}`,
+        inviteCode: invite.code,
+      });
+    } catch (err) {
+      // The invite row exists either way; a send failure shouldn't undo it —
+      // mirrors every other fire-and-forget invite email in this file.
+      console.warn('Failed to send additional-caregiver invite email:', err);
+    }
+
+    return { invited: true };
+  }
+
+  /**
+   * Pending `admin_action_items` rows for the admin review screen
+   * (Requirement 7.5, Task 9). RLS (migration 055) already restricts this
+   * table to admins — a non-admin caller simply gets an empty array back,
+   * not an error, since RLS filters rows rather than rejecting the query.
+   */
+  async getPendingAdminActionItems(): Promise<AdminActionItem[]> {
+    const { data, error } = await this.supabase
+      .from('admin_action_items')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+
+    if (error) throw new ApiError(error.message);
+    return (data ?? []) as AdminActionItem[];
+  }
+
+  /**
+   * Dismiss a pending admin action item WITHOUT revoking anything — a valid
+   * decision (design.md: "an admin decide[s] whether to revoke... this does
+   * not auto-revoke"). A direct client-side update, not an Edge Function:
+   * `admin_action_items` UPDATE is already admin-only via RLS (migration
+   * 055), and this action touches nothing else.
+   */
+  async dismissAdminActionItem(id: string): Promise<void> {
+    const {
+      data: { user: authUser },
+    } = await this.supabase.auth.getUser();
+    if (!authUser) throw new ApiError('Not authenticated');
+
+    const { error } = await this.supabase
+      .from('admin_action_items')
+      .update({ status: 'actioned', actioned_by: authUser.id, actioned_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw new ApiError(error.message);
+  }
+
+  /**
+   * Revoke a child's current device session (Requirement 7.5's other
+   * decision an admin can make on a `caregiver_removed_review` item — see
+   * `dismissAdminActionItem` for the "no, leave it" alternative). Unlike
+   * `generateChildDeviceCode`, this never hands out a replacement code —
+   * the point is to cut access off, not re-grant it — and it is admin-only,
+   * not linked-caregiver-gated, since the caller here is acting on a
+   * review, not on their own child.
+   *
+   * Passing `actionItemId` also marks that `admin_action_items` row
+   * actioned server-side, in the same call — see
+   * `revoke-child-device-access`'s own comment.
+   *
+   * DEPLOYMENT: Edge Functions do NOT ship with `git push`. This call fails
+   * until `supabase functions deploy revoke-child-device-access` has been
+   * run.
+   */
+  async revokeChildDeviceAccess(childId: string, actionItemId?: string): Promise<void> {
+    const { data: result, error } = await this.supabase.functions.invoke(
+      'revoke-child-device-access',
+      { body: { child_user_id: childId, action_item_id: actionItemId } }
+    );
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+    if (result?.error) {
+      throw new ApiError(
+        typeof result.error === 'string' ? result.error : 'Could not revoke device access.'
+      );
+    }
   }
 }
 
