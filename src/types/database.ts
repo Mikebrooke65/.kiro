@@ -277,6 +277,43 @@ export interface PlayerCaregiver {
   created_at: string;
 }
 
+/**
+ * Caregiver-issued, single-use code that establishes a session for a
+ * child's existing synthetic-email auth user.
+ * `.kiro/specs/streamlined-invites-and-child-access/` Requirement 7.4
+ * (migration 055). Generating a new code for a child must invalidate any
+ * prior session for that child — enforced in the `redeem-device-code`
+ * Edge Function, not by this table.
+ */
+export interface ChildDeviceCode {
+  id: string;
+  code: string;
+  child_user_id: string;
+  created_by: string;
+  expires_at: string;
+  redeemed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Generic admin-review queue. First use: `kind: 'caregiver_removed_review'`
+ * — created when a caregiver is removed from a child's link, so an admin
+ * can decide whether to revoke the child's device access (never automatic).
+ * `.kiro/specs/streamlined-invites-and-child-access/` Requirement 7.5
+ * (migration 055).
+ */
+export interface AdminActionItem {
+  id: string;
+  kind: string;
+  team_id: string | null;
+  player_id: string | null;
+  detail: Record<string, unknown> | null;
+  status: 'pending' | 'actioned';
+  created_at: string;
+  actioned_by: string | null;
+  actioned_at: string | null;
+}
+
 // Team member (source of truth for team assignments)
 export interface TeamMember {
   id: string;
