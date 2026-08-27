@@ -1,15 +1,43 @@
 # Next Session Notes
-## Current State — 25 August 2026
+## Current State — 27 August 2026
 
-**Since this was last updated:** the Add Player / DOB age model Kiro spec
-(13 tasks) is now fully built, applied to `prototype`, pushed to GitHub, and
-both affected Edge Functions redeployed — see the section immediately below.
-That closes out the "no nav link to Caregiver Approvals" follow-up noted
-throughout this file under V1.4/TASK 1 (now fixed via a real nav tab), and
-supersedes the older "no DOB field, age comes from `teams.age_group` only"
-design decisions recorded further down — DOB is now collected. Historical
-sections are left in place with inline correction notes rather than deleted,
-so the "why" of the original decision isn't lost.
+**Since this was last updated (25 -> 27 August):** the entire
+**Streamlined Invites & Child Account Access** Kiro spec (12 tasks) has
+been built, applied, and pushed — 11 of 12 tasks done, Task 12's final
+checkpoint in progress (automated tests/build already clean on the live
+head; a manual-test script covering every path has been handed to the repo
+owner and results are pending). This is the "Model A reversed" redesign:
+children now get a real, direct, device-bound login instead of only ever
+being a record their caregiver manages. Full detail in the new section
+immediately below and in `CHANGELOG.md`'s 2026-08-26/27 entries; full
+task-by-task detail lives in
+`.kiro/specs/streamlined-invites-and-child-access/tasks.md`.
+
+**This directly resolves one of the two decisions parked at the bottom of
+the Add Player / DOB section further down** ("Existing-User Invite
+Shortcut" — now built as this spec's Requirement 2 / Task 4) **and leaves
+the other one — "Caregiver DOB Correction Threshold" — still genuinely
+open**, now more precisely scoped: see the note inline in that section.
+
+**Also worth knowing about, not part of V1:** two operational docs were
+added this session — `CLAUDE.md` at the repo root and a paired
+`session-playbook.md` in this project's claude.ai Project — capturing how
+an AI session should work in this repo (git-patch delivery, verification
+discipline, migration/deploy steps) so that knowledge survives across
+separate Cowork sessions rather than living only in one long chat history.
+Two early planning docs for a possible future "Gant" AI coaching-feedback
+assistant were also added to `docs/project/` — no build started, not
+currently in V1 scope.
+
+**Older context below, still accurate:** the Add Player / DOB age model
+Kiro spec (13 tasks) was fully built, applied to `prototype`, pushed to
+GitHub, and both affected Edge Functions redeployed — see that section
+below. That closed out the "no nav link to Caregiver Approvals" follow-up
+noted throughout this file under V1.4/TASK 1 (fixed via a real nav tab),
+and superseded the older "no DOB field, age comes from `teams.age_group`
+only" design decisions recorded further down — DOB is now collected.
+Historical sections are left in place with inline correction notes rather
+than deleted, so the "why" of the original decision isn't lost.
 
 **2026-08-25 follow-up, found while live-testing the above:** the
 self-registration page made the invitee retype their name and email from
@@ -35,6 +63,61 @@ device-setup runbook, DNS gotchas, a design decision's rationale), that
 stayed — only the redundant blow-by-blow narrative was trimmed.
 
 ---
+
+## 🟢 Streamlined Invites & Child Account Access — 11/12 tasks done, Task 12 checkpoint in progress (2026-08-26/27)
+
+The biggest change in the app to date: children get a real, independent,
+device-bound login rather than only ever being a record their caregiver
+manages (`NEXT-SESSION-NOTES` previously recorded "Model A CONFIRMED —
+child never logs in" as a 2026-08-18 decision, explicitly reversed by
+`requirements.md`'s Section 7). Spec: `.kiro/specs/streamlined-invites-and-child-access/`.
+
+**What shipped (Tasks 1, 3a/3c/3e, 4, 6, 8, 9, 11 — full detail in that
+spec's `tasks.md` and `CHANGELOG.md`'s 2026-08-26/27 entries):**
+- Existing-user bypass on every invite path that can name an already-real
+  account (Add Player, caregiver-invite, Admin assign-existing-Manager) —
+  skips the registration form for a one-button "join" screen.
+- Symmetric DOB self-declaration with wrong-tick self-correction: an
+  Adult-ticked invite that comes back under-16 bounces to the Manager to
+  redo as a Junior; a Child-ticked (caregiver) invite that comes back
+  16-or-older converts in place into a normal adult registration.
+- Child accounts with one-time device-code login (a caregiver issues a
+  link, the child opens it once on their own device and stays signed in;
+  issuing a new code ends the prior session).
+- Child-scoped bottom nav (Home/Team/Schedule/Messages) and confirmation
+  that Team-tab contact visibility needs no new gating — it already runs
+  through the same age-band logic any adult Player's row uses.
+- Multi-caregiver admin gate (a child's 2nd+ caregiver needs a club Admin)
+  plus an admin review queue for caregiver removals, so device-access
+  revocation stays a deliberate Admin decision rather than automatic.
+- Consent-timeout auto-dropoff — a Junior whose caregiver never responds
+  within **30 days** automatically drops off the team list (`pg_cron` +
+  a new Postgres function, migration 058).
+
+**Real production bug found and fixed along the way, not part of the
+spec's design but discovered building it:** two migrations' `CREATE
+POLICY` statements had never actually taken effect on the live database
+despite being in the migration files — found once, then confirmed via a
+full audit to have happened twice more. All three restored (migrations
+056, 057). **This is now a documented, repeatable check** — see
+`CLAUDE.md`'s "Database migrations" section — worth re-running
+periodically, not just after a surprise.
+
+**Applied & deployed:** all patches applied via `git am` on the repo
+owner's machine and pushed to `origin/prototype`
+(`4999a27` chain through `b1511eb`); migrations run via the Supabase SQL
+Editor as each landed; affected Edge Functions (`check-invite-recipient`,
+`link-player-caregiver`, `revoke-child-device-access`,
+`redeem-device-code`) redeployed.
+
+**Task 12 — final checkpoint — in progress.** Automated half already
+confirmed clean directly on the live pushed head: `npm test` (210
+passing/2 skipped) and `npm run build`. The manual half — a full pass of
+the Adult happy path, Child happy path, the 6.1 bounce-back, the 6.2
+conversion, device-code redemption + revocation, and the existing-user
+bypass on all three call sites — has a step-by-step script handed to the
+repo owner; results pending as of this update. **This is the one thing
+standing between this spec and being fully closed out.**
 
 ## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21; UX follow-up 2026-08-25)
 
@@ -115,15 +198,29 @@ outstanding on this spec.**
   **Two decisions deliberately parked, coming back to them soon — named so
   they're easy to find again:**
 
-  **Parked Decision 1 — "Caregiver DOB Correction Threshold."** No
+  **Parked Decision 1 — "Caregiver DOB Correction Threshold." STILL OPEN
+  (re-checked 2026-08-27) — distinct from, and not resolved by, the
+  Streamlined Invites & Child Account Access spec above.** No
   age-threshold check exists for a caregiver-corrected DOB on the Approve
   screen — nothing currently stops a caregiver "correcting" a child's DOB to
   something that would actually make them 16+, and it would still go
-  through as a Junior. Needs a real decision on what should happen then
-  (reject like the Adult under-16 case does, redirect to the Adult path,
-  something else) — not a silent addition.
+  through as a Junior. **Confirmed this is a different gap from the new
+  spec's Section 6.2**: 6.2 only fires at initial redemption, before any
+  `caregiver_approvals`/child row exists. This decision is about the
+  *later* Approve-screen correction, in `respond-junior-approval`'s
+  `date_of_birth` field — that function's `isPlausibleDate` check
+  deliberately only validates "a real, non-future date," nothing about
+  age, by design as of when it was written. Needs a real decision on what
+  should happen then (reject like the Adult under-16 case does, redirect
+  to the Adult path, something else) — not a silent addition.
 
-  **Parked Decision 2 — "Existing-User Invite Shortcut."** Found
+  **Parked Decision 2 — "Existing-User Invite Shortcut." RESOLVED
+  2026-08-26** — built as Requirement 2 / Task 4 of the Streamlined
+  Invites & Child Account Access spec above (`check-invite-recipient`
+  Edge Function + a "You already have an account" redemption screen).
+  Final live confirmation across all three call sites named below is part
+  of that spec's Task 12 manual test pass, in progress. Original write-up
+  kept for context. Found
   2026-08-25 while testing a Club Admin setting up a new team and naming an
   already-verified user as Manager: any invite path (Add Player adult,
   competition team setup, a caregiver without an existing link) that emails
@@ -147,7 +244,9 @@ outstanding on this spec.**
   one-line tweak — a new server-side check plus a real UI branch in
   `LiteLandingPage.tsx`.
 
-  **Do both before considering the Add Player / DOB spec fully closed.**
+  **Status as of 2026-08-27: Decision 2 done; Decision 1 is the one
+  outstanding item before considering both this spec and its follow-on
+  fully closed.**
 
   **Still to do this same session**: exercise the under-16 self-declaration
   rejection message on the Adult path at least once, and test Deny (never
@@ -536,7 +635,7 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Where Things Stand (updated 2026-08-25)
+## V1 — Where Things Stand (updated 2026-08-27)
 
 One-line status per item. Detail is in the sections further down.
 
@@ -550,40 +649,64 @@ One-line status per item. Detail is in the sections further down.
 | V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
 | V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
-| Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **2 parked decisions open**: "Caregiver DOB Correction Threshold" and "Existing-User Invite Shortcut" — see the dedicated section near the top of this file |
+| Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **1 of 2 parked decisions resolved**: "Existing-User Invite Shortcut" — built via the Streamlined Invites spec's Task 4 (row below). **"Caregiver DOB Correction Threshold" is still open** — see the dedicated section near the top of this file |
+| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build already clean on the live head; a manual-test script covering every path is with the repo owner, results pending. See the dedicated section near the top of this file |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
-| V1.9 Store + privacy policy | 🟡 Privacy draft in progress | Store accounts + assets need V1.1a/b. Privacy policy drafted (`docs/privacy-policy-draft.md`) — open flags to close. **New (2026-08-25): `club_settings.app_url` needs updating to the real store listing at go-live** — see V1.9 section |
+| V1.9 Store + privacy policy | 🟠 **Privacy policy rewrite now confirmed required, not just "likely"** | Store accounts + assets need V1.1a/b. The child-account redesign above is now actually **built and live** — children have their own DOB on file, their own login, and can message a coach directly — so the existing privacy draft's "no child login, minimal child data" assumption is now factually wrong, not just at-risk. See V1.9 section for the full gate checklist. `club_settings.app_url` still needs updating to the real store listing at go-live |
 | V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample (Decision 6) |
 
-**Substantive build work left for V1** (updated 2026-08-21): the V1.M
-"Send to Admins" messaging bug, V1.6 invite branding, the V1.7 caregiver
-multi-child RSVP build + reminder pushes, V1.8 feature flags, and the V1.R
-retention build. Everything else is hardware, an external export, or open
-decisions. **V1.1, V1.1a, V1.4, and the whole Add Player / DOB age model
-spec are now fully closed out** (the last of those pending only a live
-device smoke test, not further build work).
+**Substantive build work left for V1** (updated 2026-08-27):
+1. **Streamlined Invites & Child Account Access — Task 12's manual test
+   pass** (in progress, script already handed over) — this is the only
+   thing standing between that entire spec and being fully closed.
+2. **"Caregiver DOB Correction Threshold" decision + build** (parked from
+   the Add Player / DOB spec, still open — see that section).
+3. **Privacy policy rewrite for the now-live child-account model**, plus
+   re-examining the Play Console audience declaration (Decision 3b) — see
+   V1.9. This is a **hard gate before store submission**, not a
+   parallel-track item.
+4. V1.M "Send to Admins" messaging bug.
+5. V1.6 invite-page branding.
+6. V1.7 caregiver multi-child RSVP build + reminder pushes.
+7. V1.8 feature flags.
+8. V1.R data-retention build (once `docs/data-retention-scoping.md`'s
+   decisions lock).
 
-### PLAN FOR NEXT SESSION (updated 2026-08-25)
+Everything else (V1.1b iOS, V1.T Friendly Manager import) is blocked on
+hardware or an external data export, not build work. **V1.0, V1.1, V1.1a,
+V1.2, V1.3, V1.4, V1.5, and the Add Player / DOB age model spec are fully
+closed out** (bar the one open Decision-1 item carried forward above); the
+Streamlined Invites spec is 11/12 tasks done.
 
-**Do first — decide and build the two parked decisions** (dedicated
-section near the top of this file):
-1. **"Caregiver DOB Correction Threshold"** — nothing today stops a
-   caregiver "correcting" a child's DOB to 16+ on the Approve screen and it
-   still going through as a Junior. Needs a real decision first: reject it
-   the way an under-16 Adult self-declaration is rejected server-side,
-   redirect the Manager to redo the person as an Adult, or something else —
-   then build it.
-2. **"Existing-User Invite Shortcut"** — any invite path (Add Player adult,
-   competition team setup, caregiver) that emails an already-verified
-   account still sends them through the full self-registration form for
-   nothing; the server already discards it all safely, but it's confusing
-   busywork. Needs a scoped "does this invite's email already have an
-   account" check the redemption page can call before rendering the form,
-   plus a proper simplified "just join" screen for that case.
+### PLAN FOR NEXT SESSION (updated 2026-08-27)
+
+**Do first — close out Task 12 of the Streamlined Invites & Child Account
+Access spec.** Automated checks are already clean on the live head; work
+through the manual-test script (Adult happy path, Child happy path, the
+6.1 bounce-back, the 6.2 conversion, device-code redemption + revocation,
+existing-user bypass on all three call sites) and report results back so
+`tasks.md` can be closed out. This is the only thing left on that entire
+12-task spec.
+
+**Then — decide and build the one remaining parked decision** (dedicated
+section near the top of this file): **"Caregiver DOB Correction
+Threshold"** — nothing today stops a caregiver "correcting" a child's DOB
+to 16+ on the Approve screen and it still going through as a Junior. Needs
+a real decision first: reject it the way an under-16 Adult self-declaration
+is rejected server-side, redirect the Manager to redo the person as an
+Adult, or something else — then build it. (The other parked decision,
+"Existing-User Invite Shortcut," is now built — see above.)
+
+**Then — start the V1.9 privacy policy rewrite.** This just became urgent
+rather than hypothetical: the child-account redesign that made the privacy
+draft's assumptions stale is now actually shipped, not just designed.
+Re-examine the Play Console audience declaration (Decision 3b) at the same
+time — see the V1.9 section for the full gate checklist. Treat this as a
+hard gate before store submission, not a parallel-track item that can slip.
 
 **Then — finish the last bits of Add Player / DOB live-testing**: exercise
 the under-16 self-declaration rejection message on the Adult path at least
@@ -605,6 +728,9 @@ and for this spec).
    TASK 3's cheap modal sweep (below), and the app_url → real store listing
    swap noted under V1.9 (must happen before app-store go-live, easy to
    forget since nothing breaks if it isn't done).
+7. **Worth doing periodically, not just once**: re-run the RLS
+   migration-vs-live-state audit described in `CLAUDE.md` — two real gaps
+   of this exact kind were found this session alone.
 
 **Blocked, not actionable next session:** V1.1b iOS testing (needs a
 borrowed Mac + Xcode), V1.T Friendly Manager import (waiting on a CSV
@@ -648,12 +774,14 @@ These block or shape work below. Listed here so they don't stay buried.
 | 8 | **Rate limiting on `redeem-invite`** — it's an unauthenticated endpoint that can create auth users; the invite code is the only authorization | Public launch, not the trial | Fine for a small trial. Needs a decision before wider release. See V1.3 |
 | 2 | **Which events trigger a push in V1?** Candidates: new message (built), new schedule event, event change/cancellation, RSVP reminder | V1.1 completion | Start with new message (done) + event change/cancellation. RSVP reminders once V1.7 exists |
 | 3 | **Privacy policy** — club has none to extend (confirmed 2026-08-17), so writing from scratch | V1.9 store submission | **User-owned, in progress.** Start from the Privacy Commissioner's Priv-o-matic generator — templates and the store questionnaires are listed in V1.9 |
-| 3b | **Play Console target-audience declaration** — is this an app for children, or an app about children used by adults? | V1.9, and whether Google's Families policy applies | ⚠️ **Likely no longer "almost certainly adults-only"** — the 2026-08-25 child-account redesign gives children their own direct login and messaging. Re-examine, don't assume. See the "Privacy policy & audience declaration" note under V1.9 |
+| 3b | **Play Console target-audience declaration** — is this an app for children, or an app about children used by adults? | V1.9, and whether Google's Families policy applies | ⚠️ **No longer "almost certainly adults-only," and this is now live, not proposed** — the child-account redesign (Streamlined Invites spec) is built and shipped: children have their own direct login and can message a coach. Re-examine, don't assume. See the "Privacy policy & audience declaration" note under V1.9 |
 | 3c | **Data retention & cleanup** — how long data is kept after a role/team ends, and what triggers removal | The privacy statement can't be finished without it; also a **future build** | ⏳ Mike scoping. Detailed thinking captured in **`docs/data-retention-scoping.md`** (3 data layers, per-competition clocks, open questions). Becomes its own build/spec once decisions lock — see "V1.R" below |
 | 4 | **Player/Caregiver nav — 2 undecided slots** | V1.5 | Options: Announcements, or fold Announcements into Home and leave 5 buttons |
 | 5 | **Does RSVP apply to Club Tournament teams, or only club teams?** | V1.7 scope | Probably club teams only for V1 — social/summer teams may just turn up |
 | 6 | **Friendly Manager export format** — waiting on sample | V1.T | User to obtain export sample or screenshot |
 | 7 | ~~Which machine for Android Studio?~~ | V1.1a | **RESOLVED 2026-08-14** — use the other laptop (has adequate disk/RAM). This laptop stays the main build machine. See V1.1a |
+| 9 | ~~Consent-timeout exact day count~~ | Streamlined Invites Task 11 | **RESOLVED 2026-08-27** — 30 days. See `CHANGELOG.md`'s 2026-08-27 entry |
+| 10 | **"Caregiver DOB Correction Threshold"** — should a caregiver be able to "correct" a child's DOB to 16+ on the Approve screen and have it still go through as a Junior? | Nothing blocks on it today, but it's a real, live gap | Parked from the Add Player / DOB spec, still open — see that section near the top of this file for the full write-up. Needs the same kind of decision as the Adult under-16 case: reject, redirect to Adult path, or something else |
 
 ---
 
@@ -1521,27 +1649,30 @@ nothing breaks if it's forgotten; it just quietly keeps sending everyone to
 the PWA forever. Add this as a concrete line item in the go-live checklist
 once one exists, and as a check in the V1.9 build itself.
 
-**Privacy policy & audience declaration — likely invalidated by the
-child-account redesign (flagged 2026-08-25).** Full detail: Section 9 of
+**Privacy policy & audience declaration — confirmed invalidated by the
+child-account redesign, which is now built and live (flagged 2026-08-25,
+shipped 2026-08-26/27).** Full detail: Section 9 of
 `.kiro/specs/streamlined-invites-and-child-access/requirements.md` — read
 that section before touching the privacy draft or Decision 3b below. Short
 version: the existing privacy draft and Decision 3b's "almost certainly
 adults-only audience" conclusion were both built on the old Model A
 assumption — no child DOB collected, no child login, minimal child data.
-The child-account redesign agreed 2026-08-25 directly breaks that
-assumption: children now get their own DOB on file, their own device-bound
-login, and the ability to message a coach directly. That means:
+**That assumption is no longer just at risk — it's factually wrong as of
+this session's Task 6/8 work**: children now have their own DOB on file,
+their own device-bound login, and the ability to message a coach directly,
+all shipped and running on `prototype`. That means:
 - The privacy policy draft (`docs/privacy-policy-draft.md`) needs rewriting
-  to reflect what's actually collected and who actually uses the app
-  directly, once the child-account design is built.
+  now, to reflect what's actually collected and who actually uses the app
+  directly — this is no longer a "once it's built" future step, it's built.
 - Decision 3b (below) needs re-examining, not assumed — a real child
   end-user population is a different conversation with Google/Apple than
   "an app about children, used by adults."
 - The existing legal caveat (NZ Privacy Act, app-store children's policies)
   is now more load-bearing than when it was first written.
-**Treat this as a hard gate before store submission** — easy to miss since
-the privacy work and the child-account build could easily happen on
-separate tracks without anyone connecting them back up.
+**Treat this as a hard gate before store submission** — it's the single
+highest-priority open item in V1.9 now that the build side is done; don't
+let it keep sitting on a separate track from the child-account work it
+depends on.
 
 **Accounts**:
 - Google Play Console — **$25 one-time**, needed before distributing to

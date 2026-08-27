@@ -2,6 +2,157 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-27] - Task 11: consent-timeout auto-dropoff for stale add-a-junior requests
+
+Closes out Requirement 8.4 of `.kiro/specs/streamlined-invites-and-child-access/`:
+a child added as a Junior whose caregiver never responds to the consent
+request now automatically drops off the team list after **30 days**
+(previously an open "blocked on a human decision" item, proposed at ~2
+months in requirements.md — decided by the project owner).
+
+- **Migration 058** adds `expire_stale_child_consents()`, a `SECURITY
+  DEFINER` Postgres function scheduled daily via `pg_cron` (new extension,
+  first use in this project). It denies any `caregiver_approvals` row with
+  `request_kind = 'add_child'` still `status = 'pending'` past the
+  threshold — mirroring the `respond-junior-approval` Edge Function's exact
+  `deny` outcome (status -> `denied`, child's `users.active` -> false) — and
+  deactivates the linked child. There's no `expired` value in the `status`
+  CHECK constraint, so "consent never arrived in time" is treated as a
+  denial rather than widening that constraint.
+- **No application code changes.** `TeamPage.tsx`'s roster query already
+  only surfaces children with a `pending` `caregiver_approvals` row, so the
+  moment the job flips a stale row away from `pending`, the child stops
+  appearing on the Manager's team list — exactly the "shows as pending...
+  auto-drops off" behaviour Section 8.4 calls for.
+- Threshold kept as a named constant inside the function (matching this
+  project's existing pattern for this exact kind of value — see migration
+  009's `INTERVAL '7 days'` announcement expiry), not a new settings-table
+  row. `EXECUTE` on the function is revoked from `PUBLIC` — Supabase
+  exposes public-schema functions as RPC endpoints by default, so without
+  this any authenticated user could have called it directly and forced
+  other users' pending requests to expire early.
+
+Verified against a local Postgres 16 instance with `pg_cron` actually
+installed and running (not just read for syntax): 7 scenarios covering a
+stale row expiring correctly, a fresh row and an already-decided row both
+left untouched, a wrong-`request_kind` row left untouched, idempotent
+re-runs, the `PUBLIC` execute revoke actually blocking a test role, and the
+cron job registering with the right schedule. Applied via the Supabase SQL
+Editor and `git am`, pushed to `origin/prototype` (`9ec9bf4..b1511eb`).
+
+## [2026-08-26] - Streamlined Invites & Child Account Access — spec built (Tasks 1–11 of 12)
+
+The full `.kiro/specs/streamlined-invites-and-child-access/` spec, covering
+ten sections of `requirements.md` — this is the "Model A reversed" redesign
+that gives children their own direct, device-bound login instead of only
+ever being a record their caregiver manages. Full task-by-task detail
+(mechanism, verification, deployment steps) lives in that spec's
+`tasks.md`, kept up to date inline as each task lands — not duplicated in
+full here. Task 12 (final checkpoint: automated tests/build plus a full
+manual pass of every path below) is in progress; see that file for current
+status.
+
+**What shipped, in build order:**
+- **Existing-user bypass (Requirement 2, Task 4).** A new
+  `check-invite-recipient` Edge Function lets the (unauthenticated)
+  redemption page check, before rendering anything, whether an invite's
+  recipient email already has a real account. If so, the registration form
+  is skipped entirely in favour of a one-button "You already have an
+  account — join {team} as {role}?" screen. Applies to every
+  invite-generation path that can name an existing user: Add Player, the
+  caregiver-invite path, and the Club Admin "assign existing user as
+  Manager" flow on the Competitions page.
+- **Symmetric DOB + wrong-tick self-correction (Requirements 5–6, Tasks
+  3a/3c/3e).** The Manager's Adult/Child tick on Add Player is now
+  provisional routing only, symmetric on both branches: the person
+  redeeming self-declares their own (or, on the caregiver side, their
+  child's) date of birth, and that's the record of truth. An Adult-ticked
+  invite whose self-declared DOB comes back under 16 bounces back to the
+  Manager to redo them as a Junior (Section 6.1) rather than letting a
+  minor name their own caregiver inline. A Child-ticked (caregiver) invite
+  whose declared DOB comes back 16-or-older converts in place into a
+  normal adult self-registration for the person filling in the form
+  (Section 6.2), skipping the caregiver-approval flow entirely.
+- **Child accounts + device-code login (Requirement 7.1/7.4, Task 6).** A
+  child's `auth.users` row already existed (Model A's `can_sign_in: false`
+  synthetic-email pattern) — this adds a way to establish a real session
+  for it without ever knowing or setting a password. A caregiver generates
+  a one-time device-code link (`generateChildDeviceCode`); the child opens
+  it once on their own device (`DeviceAccessLandingPage.tsx`) and is
+  signed in permanently from then on via `supabase.auth.verifyOtp`.
+  Generating a new code for the same child ends any prior session
+  (resolved via rotating the child's password through GoTrue's
+  `updateUserById` — no admin revoke-by-user-id route exists, confirmed
+  against `supabase/auth` source).
+- **Child scoped nav + Team-tab contact scope (Requirement 7.2, Task 8).**
+  A child's account mirrors the existing adult/caregiver bottom-nav
+  structure (Home / Team / Schedule / Messages), scoped to their own
+  team(s). Contact-detail visibility on the Team tab is gated only by the
+  *viewed* row's age band — same code path as any adult Player — not by a
+  Manager/Coach viewer tier (this had been mis-described in
+  `requirements.md` and was corrected in a follow-up sync, see below).
+- **Multi-caregiver admin gate + admin notification queue (Requirement
+  7.5, Task 9).** A child's first caregiver is still added by a
+  Coach/Manager as today; any caregiver beyond the first now requires a
+  club Admin. Removing a caregiver never auto-revokes the child's device
+  access on its own — it queues a review item (new `admin_action_items`
+  table + `AdminActionItems.tsx` screen, linked from the desktop nav as
+  "Caregiver Reviews") so an Admin decides explicitly whether to revoke.
+
+**Two real production RLS gaps found and fixed while building Task 9,
+worth its own callout:** the coach/manager `invite_codes` INSERT policy
+that migration 036's file defines had never actually been applied to the
+live database — discovered when a `56` migration's `ALTER POLICY` against
+it failed with "policy does not exist." Root-caused via direct `pg_policies`
+queries rather than guesswork, fixed via `DROP POLICY IF EXISTS` + `CREATE
+POLICY` (migration 056). This prompted a full audit of every `CREATE
+POLICY` across all 57 migration files at the time against the live
+database's actual policy set, which found two more of the same class of
+gap — `player_caregivers`'s read/manage policies (migration 036) and
+`users`' `users_update_own`/`service_role_delete` policies (migration
+004) — restored via migration 057. Likely root cause: a "migration 036
+recovery" commit earlier in this project's history only partially reapplied
+that migration. **Lesson captured in the new `CLAUDE.md`** (see below):
+migration files in this repo don't reliably reflect live state; verify
+before assuming.
+
+Also synced during this work: `requirements.md`'s Section 7.2 / Deferred
+Decisions item 8 was corrected to describe contact-visibility gating
+accurately (age-band of the viewed row, not a Manager/Coach viewer tier) —
+this content had existed on disk since the correction but was never
+committed to git until now.
+
+Verified per-task via the established sandbox → fresh-clone tree-match →
+`git am` → `npm test` + `npm run build` pipeline before delivery; applied
+and pushed to `origin/prototype` across a chain of commits from `8d253b6`
+through `f351814`, then `388c0c9` and `2517388` for the migration fixes,
+and `03dcda8` for the requirements.md sync.
+
+## [2026-08-26] - Operational docs: `CLAUDE.md` + Project session playbook
+
+Added `CLAUDE.md` at the repo root — a playbook for any AI session (Cowork,
+Claude Code, or otherwise) picking up work on this repo, covering the
+git-patch delivery workflow, pre-delivery verification discipline, the
+"always hand over runnable SQL/patches as a file, not just chat text"
+convention, migration/Edge-Function deployment steps, and the
+migration-files-vs-live-state lesson from the RLS audit above. Paired with
+a shorter `session-playbook.md` doc in this project's claude.ai Project
+knowledge base, referenced from the Project's custom instructions so it
+auto-loads into any new session attached to this Project without needing
+an explicit "please read this" prompt. Written after the repo owner asked
+about splitting work across separate Cowork sessions per task without
+losing the accumulated operational context.
+
+## [2026-08-26] - Gant AI coaching assistant — planning docs added (no code)
+
+Added `docs/project/GANT-AI-REQUIREMENTS.md` and
+`docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md` — early
+requirements and a coach-facing working doc for a future AI feedback
+assistant ("Gant") that would help coaches phrase player feedback
+consistently with club standards. Planning material only, uploaded by the
+repo owner for safekeeping in the repo; no build work has started and this
+is not currently part of the V1 scope tracked below.
+
 ## [2026-08-25] - Add Player / DOB age model — self-registration UX follow-up: prefill name, lock verified email
 
 Found while live-testing the Add Player / DOB age model spec (shipped
