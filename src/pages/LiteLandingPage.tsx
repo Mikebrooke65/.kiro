@@ -619,18 +619,30 @@ function MatchingWelcome({
         </p>
       )}
 
-      {/* Guidance text — states all three points required by Req 1.5. */}
+      {/* Guidance text — states the four points required by Req 1.5.
+          Corrected 2026-08-27: this screen renders for any redeeming role
+          (Player, Coach, Caregiver, Manager), not just a Manager, so the
+          Manager-only actions (add players, promote to Manager) are now
+          explicitly scoped behind "if you are a Manager" rather than
+          stated as if every registrant is one. See requirements.md's
+          Requirement 1.5 for the corrected wording this mirrors. */}
       <div className="mt-5 text-left bg-gray-50 rounded-lg p-4 text-sm text-gray-600 space-y-2">
         <p className="font-semibold text-gray-700">What you can do next</p>
         <ul className="list-disc pl-5 space-y-1">
-          <li>On the Team page you'll see the teams you can manage.</li>
           <li>
-            You can add players to your team. You'll need their email
-            address, or for under-16s, their caregiver's email address.
+            On the Team page you'll see the teams you belong to, and a list
+            of the people on that team and their role.
           </li>
           <li>
-            You can promote one additional player to Manager, up to a maximum of
-            two Managers per team.
+            If you are a Manager, you can add players to your team. You'll
+            need their email address, or for under-16s, their caregiver's
+            email address. You can also promote one additional player to
+            Manager (up to a maximum of two Managers per team).
+          </li>
+          <li>You can message people on your team.</li>
+          <li>
+            You can see upcoming team events (games, training, other), and
+            note your attendance for these events.
           </li>
         </ul>
       </div>

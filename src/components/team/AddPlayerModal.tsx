@@ -263,21 +263,25 @@ export function AddPlayerModal({
             role="radio"
             aria-checked={form.tick === option}
             onClick={() => updateTick(option)}
-            className={`px-3 py-2 border rounded-lg text-sm font-medium capitalize ${
+            className={`px-3 py-2 border rounded-lg text-sm font-medium ${
               form.tick === option
                 ? 'border-[#0091f3] bg-[#0091f3]/10 text-[#0091f3]'
                 : 'border-gray-300 text-gray-700 hover:bg-gray-50'
             }`}
           >
-            {option}
+            <span className="block capitalize">{option}</span>
+            {/* Under-16 hint, Child only — no equivalent explanatory copy is
+                needed for either button beyond this (deliberately removed
+                per UX feedback: the Manager just fills in the form as
+                presented). */}
+            {option === 'child' && (
+              <span className="block text-[10px] font-normal leading-tight text-gray-500">
+                &lt;16
+              </span>
+            )}
           </button>
         ))}
       </div>
-      <p className="mt-1 text-sm text-gray-500">
-        {form.tick === 'adult'
-          ? "They'll set up their own account — no need to know their exact date of birth."
-          : "Their caregiver will confirm their date of birth and consent when they redeem the invite."}
-      </p>
     </div>
   );
 
@@ -298,7 +302,7 @@ export function AddPlayerModal({
           </h2>
           <p className="text-sm text-gray-500">
             {stage === 'form'
-              ? 'Adult sends a self-registration invite. Child asks a caregiver to consent and confirm their details.'
+              ? "List the player's details — an email is required for them to register. Players under 16 (Child) will need a caregiver's details, since the caregiver gives consent and registers on their behalf."
               : 'Review before this goes out — the tick below decides which path is taken.'}
           </p>
         </div>
