@@ -47,6 +47,25 @@ change). Verified: `player_caregivers` link and `team_members` row for the
 test case both independently re-confirmed correct via direct query first,
 to isolate this as an RLS-only gap rather than a data problem.
 
+**Follow-on data fix, same re-test:** once migration 060 let Mortimer see
+the Frogs roster at all, Micky's own row showed no caregiver contact
+underneath (Amy Brook's does, on the same roster) — the roster derives a
+child's age band from their own `date_of_birth`, falling back to the
+team's `age_group` ("Open" here, i.e. adult) when none is recorded, so a
+DOB-less child shows their own (blank) number instead of routing through
+their caregiver. Confirmed via direct query: Micky's `date_of_birth` was
+`null`. Not a code bug — `redeem-invite` does write the caregiver's typed
+child DOB onto the child's record, but only once, at registration time,
+and Micky was registered while that function was still running the stale
+~7-day-old code from before tonight's redeploy (same root cause as the
+6-patch entry below), so the write never happened for his specific row and
+the later redeploy can't retroactively fix already-written data. Fixed
+with a one-time `UPDATE public.users SET date_of_birth = ...` for this one
+test record via the SQL Editor. The real check going forward is that a
+**brand-new** child/caregiver redemption writes the DOB correctly on the
+first try now that both Edge Functions are actually current — that's part
+of the still-pending clean re-test with a fresh pair.
+
 ## [2026-08-28] - Caregiver invite / add-a-junior flow: live-tested twice, 6 fixes shipped
 
 Task 12 of `.kiro/specs/streamlined-invites-and-child-access/` (final checkpoint)
