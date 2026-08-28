@@ -9,6 +9,7 @@ import React, {
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { messagingApi } from '../lib/messaging-api';
+import { teamsApi } from '../lib/teams-api';
 import { useAuth } from './AuthContext';
 import type {
   Thread,
@@ -65,7 +66,21 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
 
   const userId = user?.id ?? '';
 
-  // Derive team IDs from team_members (source of truth) rather than user_teams
+  // Derive team IDs from the shared team-access resolver (teamsApi.getMyTeams)
+  // rather than a raw team_members query, so a caregiver's linked child's
+  // team(s) are included the same way they already are for roster access and
+  // for message-send recipients (`resolveRecipients`/`unionTeamAndCaregiverRecipients`).
+  //
+  // streamlined-invites-and-child-access, 2026-08-28 fix: a caregiver never
+  // has their own `team_members` row (only their linked child does), so this
+  // used to always come back empty for a caregiver — which meant `fetchThreads`
+  // below (gated on `teamIds.length === 0`) silently never ran, and a
+  // caregiver could never see or reply to any team conversation, even one
+  // they'd just been messaged in. `getMyTeams` was already fixed to union in
+  // caregiver-linked teams; reusing it here closes the same gap for
+  // messaging. Additive only — a non-caregiver's own team_members rows are
+  // still returned exactly as before, just via the shared resolver instead
+  // of a duplicate inline query.
   const [teamIds, setTeamIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -73,20 +88,22 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
       setTeamIds([]);
       return;
     }
-    supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', userId)
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('[MessagingContext] Failed to fetch team_members:', error);
-          setTeamIds([]);
-          return;
-        }
-        const ids = (data || []).map((r: any) => r.team_id as string);
-        console.log('[MessagingContext] team_members team IDs:', ids);
+    let cancelled = false;
+    teamsApi
+      .getMyTeams(userId)
+      .then((memberships) => {
+        if (cancelled) return;
+        const ids = Array.from(new Set(memberships.map((m) => m.team_id)));
+        console.log('[MessagingContext] resolved team IDs:', ids);
         setTeamIds(ids);
+      })
+      .catch((error) => {
+        console.error('[MessagingContext] Failed to fetch teams via getMyTeams:', error);
+        if (!cancelled) setTeamIds([]);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   // ---------------------------------------------------------------------------
