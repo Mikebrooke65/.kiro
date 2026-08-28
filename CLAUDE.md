@@ -112,6 +112,36 @@ Before writing an `ALTER POLICY`/`ALTER TABLE` against something, verify
 its assumed current shape rather than assuming the migration file is
 truth.
 
+## Frontend deploys (clubfootball.app via Netlify)
+
+Pushing to `prototype` on GitHub does **not** guarantee a new deploy goes
+live — Netlify's git integration builds and publishes automatically, but
+only while the team has deploy credits available. **If a pushed fix
+doesn't seem to be live, don't assume it's a browser cache problem before
+checking Netlify's dashboard** (Usage & billing, or the banner at the top
+of the dashboard) for a "running on operational credits" /
+"production deploys paused" warning. This happened for real 2026-08-27:
+several same-day pushes (Task 11, Add Player/Success Screen copy fixes,
+the Announcements crash fix) sat correctly on GitHub for hours with zero
+effect on the live site, because the team's monthly Netlify credits had
+run out. The site stayed up (already-published content keeps serving) but
+nothing new could build.
+
+**The tell, if it happens again**: open the browser's error/console output
+and note the exact hashed JS filename (e.g. `index-s21xvn2d.js`). A real
+new deploy always produces a new hash — if the *same* hash shows up after
+a hard refresh, an incognito window, *and* a different device, the build
+genuinely hasn't shipped; it's not caching. Compare that against Netlify's
+Deploys tab for the site: no new deploy attempt for the latest commit is
+the confirming signal.
+
+**Fix is a billing action the repo owner has to take**, not something
+fixable from a coding session: add credits, upgrade the team plan, or
+wait for the next monthly cycle to reset (shown on the Usage & billing
+page). Once credits are available again, deploys may need a manual
+"Trigger deploy" the first time rather than assuming the backlog
+auto-flushes.
+
 ## Edge Functions
 
 `supabase/functions/<name>/index.ts`, Deno runtime. **Deploying is a

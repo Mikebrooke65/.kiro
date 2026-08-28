@@ -551,6 +551,22 @@ was a **stale cached bundle**; incognito showed it fine. RLS was NOT the problem
 (a `Members can read their teams` SELECT policy already exists on `teams`).
 **After any deploy, hard-refresh / use incognito before assuming a bug.**
 
+### ⚠️ New gotcha (2026-08-27): "not deploying" can mean Netlify ran out of
+### credits, not a cache problem
+A run of same-day pushes (Task 11, Add Player/Success Screen copy, the
+Announcements crash fix) looked identical live for hours after each push —
+same error, same hashed JS filename every time — which normally screams
+"stale cache." This time it wasn't: Netlify's dashboard showed **"running
+on operational credits... production deploys paused"** — the team's
+monthly deploy-credit allowance was fully used up, so GitHub pushes were
+landing correctly but nothing was actually building or publishing. Full
+write-up and the "how to tell the difference" check (compare the JS bundle
+hash across a hard refresh, incognito, *and* a different device — if it's
+still identical everywhere, it's not caching) is in `CLAUDE.md`'s new
+"Frontend deploys" section. Fix is a billing action on the repo owner's
+Netlify account (add credits / upgrade / wait for the monthly reset), not
+anything fixable in a coding session.
+
 ### Still open to fully close V1.4
 1. **Finish the smoke test** — the one flow not yet exercised end-to-end is
    **add-a-junior consent**: submit modal → caregiver approval email → approve →
