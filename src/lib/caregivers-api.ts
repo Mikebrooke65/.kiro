@@ -360,9 +360,13 @@ class CaregiversApi extends ApiClient {
       caregiverInvited = true;
 
       try {
-        await emailApi.sendTeamInvite({
+        // 2026-08-28: was sendTeamInvite (generic "join the team" copy that
+        // never mentioned a child or the word "caregiver") — switched to the
+        // dedicated caregiver_invite email, which names the child directly.
+        await emailApi.sendCaregiverInvite({
           to: normalizedEmail,
           recipientName: caregiverFirstName || undefined,
+          childName: `${form.childFirstName.trim()} ${form.childLastName.trim()}`.trim(),
           teamName: `${teamRow.age_group} ${teamRow.name}`,
           inviteCode: invite.code,
         });
@@ -673,6 +677,7 @@ class CaregiversApi extends ApiClient {
   async addCaregiverToExistingChild(
     teamId: string,
     childId: string,
+    childName: string,
     caregiver: { name: string; email: string; phone?: string }
   ): Promise<{ invited: boolean }> {
     const normalizedEmail = caregiver.email.trim().toLowerCase();
@@ -729,9 +734,12 @@ class CaregiversApi extends ApiClient {
     );
 
     try {
-      await emailApi.sendTeamInvite({
+      // 2026-08-28: was sendTeamInvite — see addJunior's identical fix above
+      // for why this switched to the dedicated caregiver_invite email.
+      await emailApi.sendCaregiverInvite({
         to: normalizedEmail,
         recipientName: caregiverFirstName || undefined,
+        childName,
         teamName: `${teamRow.age_group} ${teamRow.name}`,
         inviteCode: invite.code,
       });

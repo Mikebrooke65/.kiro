@@ -59,6 +59,27 @@ export interface WelcomeEmailParams {
   competitionName?: string;
 }
 
+/**
+ * Data for a caregiver invite (2026-08-28 addition) — sent to a caregiver
+ * with NO existing account, naming the child they're being asked to create
+ * one for. Previously this branch reused `sendTeamInvite`'s generic
+ * team-invite copy ("add your own players if you're managing the team"),
+ * which never mentioned a child or the word "caregiver" — found during live
+ * testing of the add-a-junior flow.
+ */
+export interface CaregiverInviteEmailParams {
+  /** Caregiver's real, deliverable email address. */
+  to: string;
+  /** Optional caregiver first name for the greeting. */
+  recipientName?: string;
+  /** Child's display name, e.g. "Sam Jones". */
+  childName: string;
+  /** Display name, e.g. "U9 Lithium" (age group + name, per project standard). */
+  teamName: string;
+  /** The invite code — the function builds the link as `${APP_URL}/invite/{code}` */
+  inviteCode: string;
+}
+
 class EmailApi extends ApiClient {
   /** Send a team invite email. Resolves on success, throws ApiError otherwise. */
   async sendTeamInvite(params: TeamInviteEmailParams): Promise<{ id?: string }> {
@@ -120,6 +141,31 @@ class EmailApi extends ApiClient {
 
     const { data: result, error } = await this.supabase.functions.invoke('send-email', {
       body: { type: 'caregiver_approval_request', to, data },
+    });
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+
+    if (result?.error) {
+      throw new ApiError(result.error);
+    }
+
+    return { id: result?.id };
+  }
+
+  /**
+   * Send a caregiver invite email (2026-08-28 addition) — for a caregiver
+   * with no existing account, naming the specific child. Resolves on
+   * success, throws ApiError otherwise. See `CaregiverInviteEmailParams`'s
+   * doc comment for why this exists as its own type/method rather than
+   * reusing `sendTeamInvite`.
+   */
+  async sendCaregiverInvite(params: CaregiverInviteEmailParams): Promise<{ id?: string }> {
+    const { to, ...data } = params;
+
+    const { data: result, error } = await this.supabase.functions.invoke('send-email', {
+      body: { type: 'caregiver_invite', to, data },
     });
 
     if (error) {

@@ -101,7 +101,12 @@ export function AddCaregiverModal({
 
     setIsSubmitting(true);
     try {
-      const outcome = await caregiversApi.addCaregiverToExistingChild(teamId, childId, form);
+      const outcome = await caregiversApi.addCaregiverToExistingChild(
+        teamId,
+        childId,
+        childName,
+        form
+      );
       onSuccess(outcome);
       onClose();
     } catch (err) {

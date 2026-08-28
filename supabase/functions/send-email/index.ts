@@ -77,13 +77,30 @@ interface CaregiverApprovalRequestData {
   teamName: string;
 }
 
+// Sent to a caregiver who has NO existing account yet, naming the specific
+// child they're being asked to create one for — added 2026-08-28 after live
+// testing found this path was reusing `team_invite`'s generic copy
+// ("add your own players if you're managing the team"), which never
+// mentioned a child or the word "caregiver" at all. Distinct from
+// `caregiver_approval_request` above: that one notifies an EXISTING
+// caregiver account that a decision is waiting in-app; this one is the very
+// first contact for someone who doesn't have an account to log into yet,
+// so — like `team_invite` — it carries the invite link itself.
+interface CaregiverInviteData {
+  recipientName?: string;
+  childName: string;
+  teamName: string;
+  inviteCode: string;
+}
+
 // The union of everything this function can send. Adding a member here forces
 // a matching branch in the send switch, so no type can be sent without copy.
 type EmailRequest =
   | { type: 'team_invite'; to: string; data: TeamInviteData }
   | { type: 'welcome'; to: string; data: WelcomeData }
   | { type: 'confirm_registration'; to: string; data: ConfirmRegistrationData }
-  | { type: 'caregiver_approval_request'; to: string; data: CaregiverApprovalRequestData };
+  | { type: 'caregiver_approval_request'; to: string; data: CaregiverApprovalRequestData }
+  | { type: 'caregiver_invite'; to: string; data: CaregiverInviteData };
 
 function escapeHtml(s: string): string {
   return s
@@ -176,6 +193,102 @@ function buildTeamInvite(
                       <a href="${inviteUrl}"
                          style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;">
                         Join ${teamName}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">
+                  Or paste this link into your browser:
+                </p>
+                <p style="margin:0 0 20px;font-size:13px;word-break:break-all;">
+                  <a href="${inviteUrl}" style="color:${clubColor};">${inviteUrl}</a>
+                </p>
+                <p style="margin:0;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:16px;">
+                  If you weren't expecting this invitation, you can safely ignore this email.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return { subject, html, text };
+}
+
+// A caregiver invite (2026-08-28 addition) — names the specific child and
+// says "caregiver", unlike `buildTeamInvite`'s copy which this deliberately
+// does NOT reuse (that copy is written for someone joining a team
+// themselves, not for someone being asked to confirm a child's place on
+// one). Shares `buildTeamInvite`'s invite-link/button structure, since the
+// underlying action — redeem this code to create an account — is identical.
+function buildCaregiverInvite(
+  data: CaregiverInviteData,
+  branding: Branding
+): { subject: string; html: string; text: string } {
+  const rawChild = data.childName;
+  const rawTeam = data.teamName;
+  const rawGreeting = data.recipientName || null;
+  const inviteUrl = `${branding.appUrl}/invite/${encodeURIComponent(data.inviteCode)}`;
+
+  const childName = escapeHtml(rawChild);
+  const teamName = escapeHtml(rawTeam);
+  const greetingName = rawGreeting ? escapeHtml(rawGreeting) : null;
+  const clubName = escapeHtml(branding.clubName);
+  const clubColor = escapeHtml(branding.clubColor);
+
+  const subject = `You've been listed as a caregiver for ${rawChild}`;
+
+  const text = [
+    rawGreeting ? `Hi ${rawGreeting},` : 'Hi,',
+    '',
+    `${rawChild} has been added to ${rawTeam} and listed you as their caregiver.`,
+    '',
+    'Set up your account here:',
+    inviteUrl,
+    '',
+    `Once you're in, you'll be able to review ${rawChild}'s details and approve`,
+    "their place on the team, see the team's schedule, and get team messages.",
+    '',
+    "If you weren't expecting this invitation, you can safely ignore this email.",
+    '',
+    branding.clubName,
+  ].join('\n');
+
+  const html = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background:${clubColor};padding:20px 24px;">
+                <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:700;">${clubName}</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px;">
+                <p style="margin:0 0 16px;font-size:16px;color:#111827;">
+                  ${greetingName ? `Hi ${greetingName},` : 'Hi,'}
+                </p>
+                <p style="margin:0 0 16px;font-size:15px;line-height:1.5;color:#374151;">
+                  <strong>${childName}</strong> has been added to <strong>${teamName}</strong> and
+                  listed you as their caregiver.
+                </p>
+                <p style="margin:0 0 24px;font-size:15px;line-height:1.5;color:#374151;">
+                  Tap the button below to set up your account. Once you're in, you'll be able to
+                  review ${childName}'s details and approve their place on the team, see the
+                  team's schedule, and get team messages.
+                </p>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+                  <tr>
+                    <td style="background:${clubColor};border-radius:8px;">
+                      <a href="${inviteUrl}"
+                         style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;">
+                        Get Started
                       </a>
                     </td>
                   </tr>
@@ -471,6 +584,18 @@ Deno.serve(async (req) => {
           );
         }
         ({ subject, html, text } = buildCaregiverApprovalRequest(body.data, branding));
+        break;
+      }
+      case 'caregiver_invite': {
+        if (!body.data?.childName || !body.data?.teamName || !body.data?.inviteCode) {
+          return new Response(
+            JSON.stringify({
+              error: 'caregiver_invite requires data.childName, data.teamName and data.inviteCode',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        ({ subject, html, text } = buildCaregiverInvite(body.data, branding));
         break;
       }
       default:
