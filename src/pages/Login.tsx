@@ -135,7 +135,12 @@ export function Login() {
             West Coast Rangers FC
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Sign in to your coaching account
+            {/* Was "Sign in to your coaching account" — shown to every role
+                (Player, Caregiver, Manager, Admin, not just Coach) with no
+                way to know which one before they've actually signed in.
+                Flagged during tonight's caregiver-flow testing; fixed to
+                role-neutral copy rather than guessing a role here. */}
+            Sign in to your account
           </p>
         </div>
 
