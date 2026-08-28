@@ -1,15 +1,20 @@
 # Next Session Notes
-## Current State — 27 August 2026
+## Current State — 28 August 2026
 
-**Since this was last updated (25 -> 27 August):** the entire
+**Since this was last updated (25 -> 28 August):** the entire
 **Streamlined Invites & Child Account Access** Kiro spec (12 tasks) has
-been built, applied, and pushed — 11 of 12 tasks done, Task 12's final
-checkpoint in progress (automated tests/build already clean on the live
-head; a manual-test script covering every path has been handed to the repo
-owner and results are pending). This is the "Model A reversed" redesign:
+been built, applied, and pushed — 11 of 12 tasks done. Task 12's manual
+test pass got underway on 2026-08-28: item 1 (Adult happy path) confirmed
+working; item 2 (Child happy path) was live-tested twice, found genuinely
+broken in six ways, and all six were diagnosed and fixed same session (6
+patches pushed, migration 059 run, two Edge Functions redeployed) — it
+now needs one clean re-test before items 3-6 can start. A separate,
+unrelated bug (Announcements admin modal crashing on every open) was also
+found and fixed along the way. This is the "Model A reversed" redesign:
 children now get a real, direct, device-bound login instead of only ever
 being a record their caregiver manages. Full detail in the new section
-immediately below and in `CHANGELOG.md`'s 2026-08-26/27 entries; full
+immediately below, in `CHANGELOG.md`'s 2026-08-26/28 entries, and in
+`task12-manual-test-script.md` / `caregiver-invite-flow-fix-plan.md`; full
 task-by-task detail lives in
 `.kiro/specs/streamlined-invites-and-child-access/tasks.md`.
 
@@ -64,7 +69,7 @@ stayed — only the redundant blow-by-blow narrative was trimmed.
 
 ---
 
-## 🟢 Streamlined Invites & Child Account Access — 11/12 tasks done, Task 12 checkpoint in progress (2026-08-26/27)
+## 🟢 Streamlined Invites & Child Account Access — 11/12 tasks done, Task 12 checkpoint in progress (2026-08-26/28)
 
 The biggest change in the app to date: children get a real, independent,
 device-bound login rather than only ever being a record their caregiver
@@ -110,14 +115,36 @@ Editor as each landed; affected Edge Functions (`check-invite-recipient`,
 `link-player-caregiver`, `revoke-child-device-access`,
 `redeem-device-code`) redeployed.
 
-**Task 12 — final checkpoint — in progress.** Automated half already
-confirmed clean directly on the live pushed head: `npm test` (210
-passing/2 skipped) and `npm run build`. The manual half — a full pass of
-the Adult happy path, Child happy path, the 6.1 bounce-back, the 6.2
-conversion, device-code redemption + revocation, and the existing-user
-bypass on all three call sites — has a step-by-step script handed to the
-repo owner; results pending as of this update. **This is the one thing
-standing between this spec and being fully closed out.**
+**Task 12 — final checkpoint — in progress.** Automated half confirmed
+clean on the live pushed head: `npm test` (211 passing/2 skipped) and
+`npm run build`. The manual half is a full pass of 6 sections — script:
+`task12-manual-test-script.md`. Status as of 2026-08-28:
+
+1. **Adult happy path** — ✅ confirmed working as expected.
+2. **Child happy path** — tested live twice (James Corrigan/Donny Trump,
+   then Mortimer Mouse/Micky Mouse) and found genuinely broken: stale
+   Edge Functions (`redeem-invite`, `respond-junior-approval` running
+   code ~7 days old — `supabase functions deploy` doesn't happen on
+   `git push`), a child's DOB not persisting, a caregiver unable to reach
+   their child's Team page or Messages at all, a confusing/hard-to-reach
+   Approvals page, and no indication anywhere (email or form) that a
+   child was involved. All six findings diagnosed and fixed — 6 patches
+   pushed (`6dcc185..dc499b5`), migration 059 run, both Edge Functions
+   redeployed. Full detail: `CHANGELOG.md`'s 2026-08-28 caregiver-flow
+   entry and `caregiver-invite-flow-fix-plan.md`. **Not yet re-confirmed
+   clean — this is the very next thing to do, with a fresh
+   child/caregiver pair (or James Corrigan's original invite link, which
+   is still reusable), ideally in incognito to rule out stale cache.**
+3. **6.1 bounce-back** (Adult ticked, actually a Child) — not yet started.
+4. **6.2 conversion** (Child ticked, actually an Adult) — not yet started.
+5. **Device-code redemption + revocation** — not yet started.
+6. **Existing-user bypass**, all three call sites — not yet started.
+
+Also found and fixed along the way, unrelated to this spec: the
+Announcements admin modal crashed on every open (New or Edit) —
+`CHANGELOG.md`'s 2026-08-28 entry. **Repeating item 2 clean, then working
+through items 3-6, is the one thing standing between this spec and being
+fully closed out** — see "PLAN FOR NEXT SESSION" below.
 
 ## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21; UX follow-up 2026-08-25)
 
@@ -666,7 +693,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
 | V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
 | Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **1 of 2 parked decisions resolved**: "Existing-User Invite Shortcut" — built via the Streamlined Invites spec's Task 4 (row below). **"Caregiver DOB Correction Threshold" is still open** — see the dedicated section near the top of this file |
-| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build already clean on the live head; a manual-test script covering every path is with the repo owner, results pending. See the dedicated section near the top of this file |
+| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass item 1 (Adult) ✅ done, item 2 (Child) found broken live, now fixed (6 patches), needs a clean re-test; items 3-6 not yet started. See the dedicated section near the top of this file |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
@@ -675,10 +702,12 @@ One-line status per item. Detail is in the sections further down.
 | V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample (Decision 6) |
 
-**Substantive build work left for V1** (updated 2026-08-27):
+**Substantive build work left for V1** (updated 2026-08-28):
 1. **Streamlined Invites & Child Account Access — Task 12's manual test
-   pass** (in progress, script already handed over) — this is the only
-   thing standing between that entire spec and being fully closed.
+   pass** (in progress — item 1 done, item 2 found broken live and now
+   fixed, needs a clean re-test, items 3-6 not started; script:
+   `task12-manual-test-script.md`) — this is the only thing standing
+   between that entire spec and being fully closed.
 2. **"Caregiver DOB Correction Threshold" decision + build** (parked from
    the Add Player / DOB spec, still open — see that section).
 3. **Privacy policy rewrite for the now-live child-account model**, plus
@@ -698,15 +727,25 @@ V1.2, V1.3, V1.4, V1.5, and the Add Player / DOB age model spec are fully
 closed out** (bar the one open Decision-1 item carried forward above); the
 Streamlined Invites spec is 11/12 tasks done.
 
-### PLAN FOR NEXT SESSION (updated 2026-08-27)
+### PLAN FOR NEXT SESSION (updated 2026-08-28)
 
-**Do first — close out Task 12 of the Streamlined Invites & Child Account
-Access spec.** Automated checks are already clean on the live head; work
-through the manual-test script (Adult happy path, Child happy path, the
-6.1 bounce-back, the 6.2 conversion, device-code redemption + revocation,
-existing-user bypass on all three call sites) and report results back so
-`tasks.md` can be closed out. This is the only thing left on that entire
-12-task spec.
+**Do first — repeat Task 12 item #2 (Child happy path) clean, then work
+through items 3-6.** Automated checks are already clean on the live head.
+Item 2 was live-tested twice tonight, found genuinely broken in six ways
+(stale Edge Functions, DOB not persisting, caregiver locked out of the
+child's Team/Messages, a confusing Approvals page, no indication anywhere
+a child was involved, plus a role-neutral Login copy fix) — all six
+diagnosed and fixed, 6 patches pushed (`6dcc185..dc499b5`), migration 059
+run, both Edge Functions redeployed, and the live Netlify deploy confirmed
+caught up to the final commit (`f800255`). **Re-run item 2 clean with a
+fresh child/caregiver pair (or James Corrigan's original invite link,
+still reusable) before trusting it** — ideally in incognito to rule out
+stale cache. Then continue with items 3 through 6 (6.1 bounce-back, 6.2
+conversion, device-code redemption + revocation, existing-user bypass on
+all three call sites) and report results back so `tasks.md` can be closed
+out. Full detail: `CHANGELOG.md`'s 2026-08-28 entries,
+`task12-manual-test-script.md`, `caregiver-invite-flow-fix-plan.md`. This
+is the only thing left on that entire 12-task spec.
 
 **Then — decide and build the one remaining parked decision** (dedicated
 section near the top of this file): **"Caregiver DOB Correction

@@ -2,6 +2,124 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-28] - Caregiver invite / add-a-junior flow: live-tested twice, 6 fixes shipped
+
+Task 12 of `.kiro/specs/streamlined-invites-and-child-access/` (final checkpoint)
+called for a full manual pass of the Child happy path. Two live tests tonight
+(James Corrigan/Donny Trump, then Mortimer Mouse/Micky Mouse) surfaced six
+real problems in the caregiver-invite/add-a-junior flow — all diagnosed,
+fixed, and pushed. Full root-cause writeup and per-patch detail:
+`caregiver-invite-flow-fix-plan.md` (also saved to the project's knowledge
+base). Summary:
+
+- **Root cause of most symptoms: stale Edge Functions.** `redeem-invite` and
+  `respond-junior-approval` were running code ~7 days out of date —
+  `supabase functions deploy` is a separate step from `git push` and had
+  been missed. Redeployed both; this alone explains several of the items
+  below looking like fresh bugs when they were actually already-fixed code
+  that had never gone live.
+- **Caregivers had no access to their child's Team page or Messages at
+  all.** `teamsApi.getMyTeams` only checked the caregiver's own
+  `team_members` rows, which a caregiver never has — added a shared
+  team-access resolver (covering caregiver-linked children too) and
+  switched both the roster query and `MessagingContext` to use it.
+- **The dedicated Approvals tab/page was confusing and easy to lose**, and
+  a caregiver couldn't even reach their child's roster to find it. Replaced
+  with an inline Accept/Deny (with confirm-or-correct child name + DOB)
+  right on the child's own pending roster row; the old
+  `/caregiver-approvals` route now redirects to `/team` instead of
+  404ing, and the Approvals nav tab points at `/team`.
+- **A child's DOB never actually persisted** through the add-a-junior flow,
+  which silently misrouted the roster's contact display (a DOB-less child
+  fell back to the team's own age group and showed no caregiver contact —
+  a blank line, not an error).
+- **Nothing told the caregiver a child was involved.** The invite email and
+  the registration form's blank child-name fields gave no indication at
+  all — added a dedicated `caregiver_invite` email (new Edge Function email
+  type) naming the child and team, and a prefilled, confirmation-checkbox-
+  gated child-name field on the registration form (migration 059 adds
+  `invite_codes.subject_first_name`/`subject_last_name`, mirroring the
+  existing `recipient_first_name`/`recipient_last_name` pattern —
+  deliberately name-only, since Add Player collects no child DOB to
+  prefill).
+- **Login page subtitle** ("Sign in to your coaching account") was shown to
+  every role, not just Coach — changed to role-neutral copy.
+
+Verified via 6 separate patches, each independently fresh-clone-checked
+(`git am` apply, `npm test`, `npm run build`) before delivery — 211
+passing / 2 skipped throughout, clean build every time. Migration 059 run
+via the Supabase SQL Editor; both `redeem-invite` and `send-email` Edge
+Functions redeployed. Pushed to `origin/prototype` across commits
+`6dcc185..dc499b5`.
+
+**Not done as part of this pass** (out of scope, noted for later):
+`teamsApi.getMyTeamCount` has the same caregiver blind spot the
+messaging/roster resolver fixed elsewhere, and Announcements' "Team Types"
+targeting filter doesn't fully cover every case — see
+`caregiver-invite-flow-fix-plan.md` for detail.
+
+## [2026-08-28] - Netlify production deploys can silently pause on exhausted build credits
+
+Documented (not code) — added a new "Frontend deploys" section to
+`CLAUDE.md`. Pushing to `prototype` on GitHub does not guarantee a new
+Netlify deploy: Netlify's git integration only builds while the team has
+deploy credits, and when they're exhausted, deploys silently pause while
+the already-published site keeps serving its last build (no error, no
+obvious banner unless you check Netlify's dashboard directly). Diagnostic:
+compare the hashed JS bundle filename across a hard refresh, an incognito
+window, and a different device — if it's identical everywhere, it isn't
+browser caching; check Netlify's dashboard for a "production deploys
+paused" / "running on operational credits" notice. Fix is a billing action
+(add credits, upgrade plan, or wait for the monthly reset), not something
+fixable from a coding session — once credits return, a manual "Trigger
+deploy" may still be needed. Pushed as `0fff190`.
+
+## [2026-08-28] - Fix crash on every Announcement create/edit
+
+Found live 2026-08-27 during Task 12 testing (unrelated to the
+caregiver-invite work above): opening the Announcements admin modal — New
+or Edit, every single time — threw `TypeError: Cannot read properties of
+undefined (reading 'includes')` and made the feature completely unusable.
+
+- **Root cause**: an incomplete prior refactor. `Announcements.tsx` already
+  imported the shared `TargetingSelector` component and already had a
+  correctly-populated `targetingData` state (set from the announcement's
+  `target_*` columns, read back on save) — but the rendered JSX was never
+  switched over, and still had the old ~110-line duplicated inline
+  targeting UI referencing `formData.target_roles` etc. (fields `formData`
+  never actually had) plus a `teams` variable that was never declared
+  anywhere in the file. Vite's build doesn't type-check, so this shipped
+  without anything catching it.
+- **Fix**: deleted the broken inline duplicate, rendered
+  `<TargetingSelector value={targetingData} onChange={setTargetingData} />`
+  in its place (the component already does everything that block was
+  trying to), and updated the save handler to read `targetingData` instead
+  of the non-existent `formData.target_*` fields.
+
+Verified with a scoped strict `tsc` check on this one file (previously
+surfaced the bug, now passes clean), plus `npm test` (210/2 skipped,
+unchanged) and `npm run build` clean on a fresh clone. Pushed as `5bf8f97`.
+
+## [2026-08-27] - Task 12 live-testing follow-up: Add Player copy + Success Screen guidance text
+
+First round of Task 12 manual testing turned up two copy/clarity gaps (not
+functional bugs):
+
+- **Add Player modal** subtitle rewritten to explain *why* a Child needs a
+  caregiver ("List the player's details — an email is required for them to
+  register. Players under 16 (Child) will need a caregiver's details,
+  since the caregiver gives consent and registers on their behalf."), plus
+  a `<16` hint under the Child button; the old separate explanatory line
+  under the Adult/Child buttons was removed as redundant.
+- **Success screen** ("What you can do next") bullets made role-agnostic
+  rather than assuming every new user is a Manager — added two new bullets
+  (messaging teammates, seeing/RSVPing to events) and scoped the
+  Manager-specific bullet with "if you are a Manager".
+- `.kiro/specs/post-registration-welcome-and-team-page/requirements.md`
+  Requirement 1.5 corrected to match (role-agnostic wording).
+
+Pushed as `782dce8`.
+
 ## [2026-08-27] - Task 11: consent-timeout auto-dropoff for stale add-a-junior requests
 
 Closes out Requirement 8.4 of `.kiro/specs/streamlined-invites-and-child-access/`:
