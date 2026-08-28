@@ -2,6 +2,51 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-28] - Migration 060: caregivers couldn't read their linked child's team
+
+Found live during the clean re-test of Task 12 item #2, right after the
+6-patch fix below: Mortimer (caregiver) still saw "You are not a member of
+any team yet" on the Team page, even though Mickey (his linked child) is an
+active member of Open Riverhead Frogs. Ruled out browser/session caching
+first (closed the session, logged back in — no change) before digging
+further.
+
+- **Root cause**: a `teams` SELECT policy that exists **live** on the
+  database but was never captured in any migration file — `pg_policy`
+  confirms today's actual live policy set on `teams` is "Admins can manage
+  teams", "Allow anon users to read teams with a live invite", "Members can
+  read their teams" (undocumented — requires the *requesting* user to have
+  their own `team_members` row on that team), and "Users can view assigned
+  teams" (a dead policy — keyed off a `user_teams` table nothing in this
+  app's code has ever written a row to). `teamsApi.getMyTeams()` (fixed
+  earlier tonight, commit `6dcc185`) correctly reads a caregiver's linked
+  child's `team_members` row and joins to `teams` — but that join is still
+  evaluated under the *caregiver's* `auth.uid()`, and a caregiver never has
+  their own `team_members` row on that team, only their child does. Result:
+  the `teams` embed silently comes back `null`, and `buildTeamSelection`
+  treats a null `.team` as "skip this membership" — zero options, "not a
+  member of any team," for a caregiver whose child is very much on the
+  roster.
+- **Same blind spot, same places**: `TeamPage.tsx`, `Games.tsx`, and
+  `Coaching.tsx` all filter out a null `.team` from `getMyTeams()`'s result
+  the same way, so all three would have shown "no teams" for a caregiver,
+  not just the roster page. `MessagingContext.tsx` only reads `.team_id`
+  off the same rows, never `.team`, so it wasn't affected by this specific
+  gap.
+- **Fix**: migration 060 adds one new, narrowly-scoped SELECT policy on
+  `teams` — "Caregivers can read their linked children's teams" — mirroring
+  "Members can read their teams" but keyed off the requesting user's
+  `player_caregivers` links instead of their own `team_members` row.
+  Additive only: a user with no caregiver links gets no new access; a
+  caregiver only ever sees a team their own linked child is actually on. No
+  application code changes needed — `teamsApi.getMyTeams()`'s join was
+  already correct.
+
+Run via the Supabase SQL Editor (not `git am` — this is a database-only
+change). Verified: `player_caregivers` link and `team_members` row for the
+test case both independently re-confirmed correct via direct query first,
+to isolate this as an RLS-only gap rather than a data problem.
+
 ## [2026-08-28] - Caregiver invite / add-a-junior flow: live-tested twice, 6 fixes shipped
 
 Task 12 of `.kiro/specs/streamlined-invites-and-child-access/` (final checkpoint)
