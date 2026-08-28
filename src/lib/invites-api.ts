@@ -46,6 +46,16 @@ class InvitesApi extends ApiClient {
    * already known. Deliberately no equivalent exists for date of birth: see
    * migration 054's comment for why that must stay a fresh, self-declared
    * value every time.
+   *
+   * `subjectFirstName`/`subjectLastName` (migration 059, streamlined-invites-
+   * and-child-access Decision 2) are the CHILD's name on a Caregiver
+   * invite — distinct from `recipientFirstName`/`recipientLastName` above,
+   * which are the caregiver's own name. Lets the registration page prefill
+   * the child-name fields too, reversing this feature's original "must be
+   * freshly, independently typed" design after live testing found it just
+   * left the caregiver typing a name into a blank field with nothing to
+   * check it against; a required confirmation checkbox on submit is the new
+   * safeguard instead of relying on independent retyping alone.
    */
   async generateInviteCode(
     teamId: string,
@@ -55,7 +65,9 @@ class InvitesApi extends ApiClient {
     intendedRole?: 'player' | 'coach' | 'manager' | 'caregiver',
     subjectUserId?: string,
     recipientFirstName?: string,
-    recipientLastName?: string
+    recipientLastName?: string,
+    subjectFirstName?: string,
+    subjectLastName?: string
   ): Promise<InviteCode> {
     const { data: { user: authUser } } = await this.supabase.auth.getUser();
     if (!authUser) throw new ApiError('Not authenticated');
@@ -77,6 +89,8 @@ class InvitesApi extends ApiClient {
         subject_user_id: subjectUserId ?? null,
         recipient_first_name: recipientFirstName ?? null,
         recipient_last_name: recipientLastName ?? null,
+        subject_first_name: subjectFirstName ?? null,
+        subject_last_name: subjectLastName ?? null,
       })
       .select()
       .single();

@@ -107,14 +107,22 @@ export function LiteLandingPage() {
     email: '',
     password: '',
     date_of_birth: '',
-    // Caregiver-invite redemption only (Requirement 5.2/5.3) — the child's
-    // name and date of birth, collected here for the first time and never
-    // prefilled from the Manager's Add Player entry (same reasoning as the
-    // adult self-declaration DOB above: it must be freshly, independently
-    // typed, not rubber-stamped from someone else's guess).
+    // Caregiver-invite redemption only (Requirement 5.2/5.3). The name
+    // fields are prefilled from the invite's own subject_first_name/
+    // subject_last_name when available (migration 059, streamlined-invites-
+    // and-child-access Decision 2 — reversed from this feature's original
+    // "never prefilled" design after live testing found it just left the
+    // caregiver typing a name into a blank field with nothing to check it
+    // against). Date of birth is never prefilled — Add Player still collects
+    // no DOB for a child, so there is usually nothing to prefill anyway, and
+    // this stays a fresh, independently-typed value either way.
     subject_first_name: '',
     subject_last_name: '',
     subject_date_of_birth: '',
+    // Decision 2's safeguard in place of "must be freshly, independently
+    // typed": a required explicit confirmation, checked separately from the
+    // privacy-notice consent above. Only enforced when requiresSubjectDetails.
+    subject_details_confirmed: false,
     consent: false,
   });
 
@@ -134,12 +142,20 @@ export function LiteLandingPage() {
         // exact address this invite was delivered to. Deliberately excludes
         // date_of_birth — see the DOB field's own comment further down for
         // why that must never be prefilled.
+        //
+        // subject_first_name/subject_last_name (migration 059, Decision 2)
+        // are the equivalent prefill for a Caregiver invite's CHILD-name
+        // fields — same "convenience, not verified, still fully editable"
+        // treatment, with the required confirmation checkbox further down
+        // standing in for what independent retyping used to guard against.
         if (v.valid && v.invite) {
           setForm(prev => ({
             ...prev,
             first_name: v.invite?.recipient_first_name || prev.first_name,
             last_name: v.invite?.recipient_last_name || prev.last_name,
             email: v.invite?.recipient_email || prev.email,
+            subject_first_name: v.invite?.subject_first_name || prev.subject_first_name,
+            subject_last_name: v.invite?.subject_last_name || prev.subject_last_name,
           }));
 
           // Requirement 2.1 — checked here, before the form ever renders, so
@@ -225,6 +241,14 @@ export function LiteLandingPage() {
       }
       if (!isValidDateOfBirth(form.subject_date_of_birth)) {
         setFormError("Please enter your child's date of birth.");
+        return;
+      }
+      // Decision 2's required safeguard, in place of the original "must be
+      // freshly, independently typed" design — whether the name above came
+      // from the invite's prefill or was typed here from scratch, the
+      // caregiver must actively confirm it before it's locked in.
+      if (!form.subject_details_confirmed) {
+        setFormError("Please confirm your child's details are correct.");
         return;
       }
     }
@@ -424,26 +448,33 @@ export function LiteLandingPage() {
             </div>
           )}
 
-          {/* Caregiver-invite redemption only (Requirement 5.2/5.3) — the
-              child's name and date of birth, as the record of truth, never
-              prefilled from the Manager's Add Player entry (see the
-              caregiver name/email fields above for the equivalent adult
-              case: those ARE prefilled because they're just a convenience;
-              this is deliberately not, for the same reason the adult DOB
-              above isn't). If the declared date of birth turns out to be 16
-              or older, redemption converts in place into a normal adult
-              registration for the person filling this in (Requirement 6.2) —
-              handled entirely server-side; this form doesn't need to know
-              which outcome it'll get until the response comes back. */}
+          {/* Caregiver-invite redemption only (Requirement 5.2/5.3). Name
+              fields are prefilled from the invite (migration 059, Decision
+              2) when the Manager's Add Player entry (or, for an additional
+              caregiver, the child's own current name) is available — same
+              "convenience, not a verified value, stays fully editable"
+              treatment as the caregiver's own name/email fields above.
+              Reversed from this feature's original never-prefilled design:
+              live testing found an always-blank field just left the
+              caregiver guessing at spelling with nothing to check against.
+              The required confirmation checkbox below is Decision 2's
+              replacement safeguard. Date of birth is still never prefilled
+              (Add Player collects none for a child today, and this field
+              stays independently typed either way). If the declared date of
+              birth turns out to be 16 or older, redemption converts in
+              place into a normal adult registration for the person filling
+              this in (Requirement 6.2) — handled entirely server-side; this
+              form doesn't need to know which outcome it'll get until the
+              response comes back. */}
           {requiresSubjectDetails && (
             <div className="border-t pt-4 mt-1">
               <p className="text-xs font-semibold text-gray-700 mb-2">Your child's details</p>
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <input type="text" placeholder="Child's first name" value={form.subject_first_name}
-                  onChange={e => setForm({ ...form, subject_first_name: e.target.value })}
+                  onChange={e => setForm({ ...form, subject_first_name: e.target.value, subject_details_confirmed: false })}
                   className="border rounded-lg px-3 py-2 text-sm" required />
                 <input type="text" placeholder="Child's last name" value={form.subject_last_name}
-                  onChange={e => setForm({ ...form, subject_last_name: e.target.value })}
+                  onChange={e => setForm({ ...form, subject_last_name: e.target.value, subject_details_confirmed: false })}
                   className="border rounded-lg px-3 py-2 text-sm" required />
               </div>
               <label htmlFor="lite-registration-subject-dob" className="block text-xs text-gray-500 mb-1">
@@ -454,10 +485,19 @@ export function LiteLandingPage() {
                 type="date"
                 value={form.subject_date_of_birth}
                 max={todayIso()}
-                onChange={e => setForm({ ...form, subject_date_of_birth: e.target.value })}
+                onChange={e => setForm({ ...form, subject_date_of_birth: e.target.value, subject_details_confirmed: false })}
                 className="w-full border rounded-lg px-3 py-2 text-sm"
                 required
               />
+              {/* Decision 2's required safeguard — resets above whenever a
+                  name/DOB field changes, so re-editing after confirming
+                  can't slip through unconfirmed. */}
+              <label className="flex items-start gap-2 mt-3 cursor-pointer">
+                <input type="checkbox" checked={form.subject_details_confirmed}
+                  onChange={e => setForm({ ...form, subject_details_confirmed: e.target.checked })}
+                  className="mt-0.5" required />
+                <span className="text-sm text-gray-600">I confirm these details are correct</span>
+              </label>
             </div>
           )}
 
@@ -478,7 +518,7 @@ export function LiteLandingPage() {
             </label>
           </div>
 
-          <button type="submit" disabled={submitting || !form.consent}
+          <button type="submit" disabled={submitting || !form.consent || (requiresSubjectDetails && !form.subject_details_confirmed)}
             className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
             {submitting ? 'Creating account...' : 'Create Account'}
           </button>

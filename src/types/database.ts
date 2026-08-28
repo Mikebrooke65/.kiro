@@ -411,6 +411,16 @@ export interface InviteCode {
    */
   recipient_first_name: string | null;
   recipient_last_name: string | null;
+  /**
+   * For a caregiver-intended invite only: the child's name, captured so
+   * `LiteLandingPage.tsx`'s caregiver registration form can prefill (never
+   * lock) the "child's name" fields instead of asking the caregiver to type
+   * them into a blank field with nothing to check against. NULL for invites
+   * created before migration 059, and for every other invite type.
+   * `.kiro/specs/streamlined-invites-and-child-access/` Decision 2.
+   */
+  subject_first_name?: string | null;
+  subject_last_name?: string | null;
 }
 
 // Invite code validation result

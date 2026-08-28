@@ -355,7 +355,11 @@ class CaregiversApi extends ApiClient {
         'caregiver',
         childId,
         caregiverFirstName || undefined,
-        caregiverLastName || undefined
+        caregiverLastName || undefined,
+        // streamlined-invites-and-child-access, Decision 2 (migration 059) —
+        // the child's own name, so the registration page can prefill it.
+        form.childFirstName.trim(),
+        form.childLastName.trim()
       );
       caregiverInvited = true;
 
@@ -683,6 +687,12 @@ class CaregiversApi extends ApiClient {
     const normalizedEmail = caregiver.email.trim().toLowerCase();
     const [caregiverFirstName, ...caregiverRest] = caregiver.name.trim().split(/\s+/);
     const caregiverLastName = caregiverRest.join(' ');
+    // streamlined-invites-and-child-access, Decision 2 (migration 059) — this
+    // method only receives the child's already-merged display name (unlike
+    // addJunior's form, which has separate first/last fields), so split it
+    // the same way the caregiver's own name is split just above.
+    const [childFirstName, ...childRest] = childName.trim().split(/\s+/);
+    const childLastName = childRest.join(' ');
 
     const { data: team, error: teamError } = await this.supabase
       .from('teams')
@@ -730,7 +740,9 @@ class CaregiversApi extends ApiClient {
       'caregiver',
       childId,
       caregiverFirstName || undefined,
-      caregiverLastName || undefined
+      caregiverLastName || undefined,
+      childFirstName || undefined,
+      childLastName || undefined
     );
 
     try {
