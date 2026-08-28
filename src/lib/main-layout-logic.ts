@@ -66,11 +66,17 @@ export function tabsForRole(role: UserRole | undefined, approvalsTab: ApprovalsT
       : []),
     { key: 'schedule', to: '/schedule', label: 'Schedule', color: '#06b6d4' },
     { key: 'messages', to: '/messaging', label: 'Messages', color: '#545859' },
+    // streamlined-invites-and-child-access, Decision 1 — this tab now points
+    // at Team, not a dedicated Approvals page: the pending-consent decision
+    // lives inline on the roster row (TeamPage.tsx's RosterRow) so this is a
+    // shortcut to where the badge count is actually explained, not a
+    // separate destination. The badge itself (via resolveApprovalsTab) is
+    // unchanged — still visible exactly when there's something pending.
     ...(approvalsTab.visible
       ? [
           {
             key: 'approvals' as const,
-            to: '/caregiver-approvals',
+            to: '/team',
             label: 'Approvals',
             color: '#dc2626',
             badge: approvalsTab.badge,

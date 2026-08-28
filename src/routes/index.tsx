@@ -55,7 +55,10 @@ import { LiteLandingPage } from '../pages/LiteLandingPage';
 import { DeviceAccessLandingPage } from '../pages/DeviceAccessLandingPage';
 
 // In-app pages
-import { CaregiverApprovalPage } from '../pages/CaregiverApprovalPage';
+// CaregiverApprovalPage itself is retired as a destination (streamlined-
+// invites-and-child-access, Decision 1 — the caregiver consent decision now
+// lives inline on the Team roster row) but the file is left in place,
+// unimported, rather than deleted — no code path renders it any more.
 
 export const router = createBrowserRouter([
   // Public routes
@@ -158,8 +161,14 @@ export const router = createBrowserRouter([
         element: <Messaging />,
       },
       {
+        // streamlined-invites-and-child-access, Decision 1 — this used to be
+        // a dedicated Approvals page; the consent decision now lives inline
+        // on the Team roster row instead (TeamPage.tsx's RosterRow). This
+        // route is kept alive as a redirect, not removed, so an old
+        // bookmarked/emailed link (including tonight's own test emails)
+        // still lands somewhere useful rather than 404ing.
         path: 'caregiver-approvals',
-        element: <CaregiverApprovalPage />,
+        element: <Navigate to="/team" replace />,
       },
       {
         path: 'ai-coach',

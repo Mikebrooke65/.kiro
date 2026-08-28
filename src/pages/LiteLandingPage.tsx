@@ -599,8 +599,16 @@ function MatchingWelcome({
   // see resolvePrimaryActionHref's own doc comment for why it wins even over
   // a branded appUrl.
   const primaryHref = resolvePrimaryActionHref(result.has_pending_approval, appUrl);
-  const primaryLabel =
-    primaryHref === '/caregiver-approvals' ? 'Review the Request' : appUrl ? 'Open the app' : 'Go to Login';
+  // streamlined-invites-and-child-access, Decision 1: the pending-approval
+  // destination is now /team (the dedicated Approvals page is retired), so
+  // the label keys off `has_pending_approval` directly rather than matching
+  // the href string — '/team' is also the plain non-caregiver destination
+  // once logged in elsewhere, and shouldn't get this caregiver-specific label.
+  const primaryLabel = result.has_pending_approval
+    ? 'View Your Team'
+    : appUrl
+      ? 'Open the app'
+      : 'Go to Login';
 
   return (
     <>
@@ -617,6 +625,20 @@ function MatchingWelcome({
         <p className="text-sm text-gray-600 mt-1">
           Competition: <span className="font-semibold text-gray-900">{competitionName}</span>
         </p>
+      )}
+
+      {/* streamlined-invites-and-child-access, Decision 1 / Section 2 Step 3
+          fix: a caregiver with a pending add-a-junior request previously got
+          the exact same generic bullets below as anyone else, with no
+          acknowledgement anything was waiting on them — the only hint was
+          the button label. Called out explicitly here instead, pointing at
+          Team (Decision 1's own suggested wording) now that the decision
+          lives on the roster row rather than a separate page. */}
+      {result.has_pending_approval && (
+        <div className="mt-4 text-left bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800">
+          Visit your team to see your child's status and approve their addition
+          once you're ready.
+        </div>
       )}
 
       {/* Guidance text — states the four points required by Req 1.5.
@@ -692,7 +714,9 @@ function GenericComplete({
   // it always falls back to /login unless a Caregiver approval is pending
   // (Req 8.2), same rule as MatchingWelcome.
   const primaryHref = resolvePrimaryActionHref(hasPendingApproval, null);
-  const primaryLabel = primaryHref === '/caregiver-approvals' ? 'Review the Request' : 'Go to Login';
+  // See MatchingWelcome's identical comment above — keyed off the flag
+  // directly now that /team is a shared destination, not a caregiver-only one.
+  const primaryLabel = hasPendingApproval ? 'View Your Team' : 'Go to Login';
 
   return (
     <>

@@ -114,6 +114,12 @@ describe('tabsForRole — bottom-nav tab set by role (Requirement 7.2.1-7.2.4)',
     }
   });
 
+  it('points Approvals at /team, not the retired dedicated Approvals page (streamlined-invites-and-child-access, Decision 1)', () => {
+    const tabs = tabsForRole(UserRole.CAREGIVER, { visible: true, badge: 1 });
+    const approvals = tabs.find((t) => t.key === 'approvals');
+    expect(approvals?.to).toBe('/team');
+  });
+
   it('never includes Approvals when not visible', () => {
     expect(keysFor(UserRole.ADMIN)).not.toContain('approvals');
   });

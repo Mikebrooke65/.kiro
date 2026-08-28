@@ -5,6 +5,8 @@
 // property/unit tests without a live backend. The API layer
 // (`caregivers-api.addJunior`) wires these helpers to Postgres and send-email.
 
+import { isValidDateOfBirth } from './success-screen-logic';
+
 // ---------------------------------------------------------------------------
 // Add-a-junior form validation (Req 5.3)
 // ---------------------------------------------------------------------------
@@ -177,6 +179,55 @@ export function resolveCaregiverLink(
     (link) => link.player_id === playerId && link.caregiver_id === caregiverId
   );
   return exists ? { action: 'reuse' } : { action: 'create' };
+}
+
+// ---------------------------------------------------------------------------
+// Confirm-or-correct a pending child's details before approving
+// (streamlined-invites-and-child-access, Decision 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * A caregiver's editable confirm-or-correct copy of a pending child's
+ * identifying details, seeded from whatever the Manager typed into Add
+ * Player — a routing guess nobody who actually knows the child has
+ * confirmed. Shared by `TeamPage.tsx`'s inline roster-row Accept action and
+ * `respond-junior-approval`'s own request body shape (`first_name`/
+ * `last_name`/`date_of_birth`), extracted here (2026-08-28) so the
+ * validation these both need lives in one tested place instead of being
+ * copied a third time — it previously existed only inline in
+ * `CaregiverApprovalPage.tsx`, the dedicated Approvals page Decision 1
+ * retires in favour of this roster-row flow.
+ */
+export interface ChildEdit {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+}
+
+/** Per-field validation errors for one `ChildEdit`. */
+export interface ChildEditErrors {
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
+}
+
+/**
+ * Validate a child edit before it's sent to `respond-junior-approval`.
+ *
+ * Deliberately no age-threshold check here (e.g. rejecting a corrected DOB
+ * that would make the child 16+) — that's a real question worth deciding
+ * separately, not something to bake in silently. Today this only confirms
+ * the caregiver typed *something plausible*, the same bar Add Player's own
+ * form applies.
+ */
+export function validateChildEdit(edit: ChildEdit): ChildEditErrors {
+  const errors: ChildEditErrors = {};
+  if (!lengthInBounds(edit.firstName, 1, 50)) errors.firstName = 'Enter a first name.';
+  if (!lengthInBounds(edit.lastName, 1, 50)) errors.lastName = 'Enter a last name.';
+  if (!isValidDateOfBirth(edit.dateOfBirth)) {
+    errors.dateOfBirth = "Enter a valid date of birth that isn't in the future.";
+  }
+  return errors;
 }
 
 // ---------------------------------------------------------------------------

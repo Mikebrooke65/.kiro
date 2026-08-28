@@ -100,11 +100,12 @@ describe('isValidDateOfBirth', () => {
 });
 
 describe('resolvePrimaryActionHref (Requirement 8.2)', () => {
-  it('routes to caregiver approvals when a request is pending, even with an appUrl set', () => {
-    expect(resolvePrimaryActionHref(true, 'https://club.example.com')).toBe(
-      '/caregiver-approvals'
-    );
-    expect(resolvePrimaryActionHref(true, null)).toBe('/caregiver-approvals');
+  it('routes to the Team roster when a request is pending, even with an appUrl set', () => {
+    // streamlined-invites-and-child-access, Decision 1: the destination
+    // moved from the retired dedicated Approvals page to /team, where the
+    // pending child's roster row now carries the Accept/Deny action.
+    expect(resolvePrimaryActionHref(true, 'https://club.example.com')).toBe('/team');
+    expect(resolvePrimaryActionHref(true, null)).toBe('/team');
   });
 
   it('falls back to the branded appUrl when nothing is pending', () => {

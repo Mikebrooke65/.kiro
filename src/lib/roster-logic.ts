@@ -56,6 +56,21 @@ export interface RosterMember {
   contact: ContactDisplay;
   /** Child awaiting caregiver consent — greyed + non-selectable (Req 5.10). */
   pending?: boolean;
+  /**
+   * Only set on a pending row: the `caregiver_approvals.id` of the
+   * `add_child` request awaiting a decision. Lets the roster row itself
+   * drive Approve/Deny (streamlined-invites-and-child-access, Decision 1)
+   * instead of a separate Approvals page — the caller passes this straight
+   * to `respond-junior-approval` without a second lookup.
+   */
+  pendingApprovalId?: string;
+  /**
+   * Only set on a pending row: the caregiver's editable confirm-or-correct
+   * seed for the child's name/DOB, exactly what `CaregiverApprovalPage.tsx`
+   * used to show on its own separate page. Undefined for any non-pending
+   * row, and for a pending row with no recorded DOB yet.
+   */
+  pendingChildDetails?: { firstName: string; lastName: string; dateOfBirth: string };
 }
 
 /**
@@ -69,6 +84,10 @@ export interface RosterEntry {
   active: boolean;
   contact: ContactDisplay;
   pending?: boolean;
+  /** See `RosterMember.pendingApprovalId`. */
+  pendingApprovalId?: string;
+  /** See `RosterMember.pendingChildDetails`. */
+  pendingChildDetails?: { firstName: string; lastName: string; dateOfBirth: string };
 }
 
 /** A selectable team option for the Team Page dropdown. */
@@ -275,6 +294,8 @@ export function mergeRoles(members: RosterMember[]): RosterEntry[] {
         active: member.active,
         contact: member.contact,
         pending: member.pending,
+        pendingApprovalId: member.pendingApprovalId,
+        pendingChildDetails: member.pendingChildDetails,
       });
       continue;
     }

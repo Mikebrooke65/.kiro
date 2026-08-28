@@ -41,6 +41,11 @@ import { AddPlayerModal, type AddPlayerOutcome } from '../components/team/AddPla
 import { AddCaregiverModal } from '../components/team/AddCaregiverModal';
 import { caregiversApi } from '../lib/caregivers-api';
 import { ApiError } from '../lib/api-client';
+import {
+  validateChildEdit,
+  type ChildEdit,
+  type ChildEditErrors,
+} from '../lib/add-junior-logic';
 
 /** How long a roster fetch may run before the error state shows (Req 3.15). */
 const ROSTER_TIMEOUT_MS = 10_000;
@@ -161,6 +166,16 @@ export function TeamPage() {
     Record<string, CaregiverManagementState>
   >({});
 
+  // streamlined-invites-and-child-access, Decision 1 — the caregiver's
+  // confirm-or-correct copy of a pending child's name/DOB, and this row's
+  // approve/deny state, keyed by `caregiver_approvals.id`. Folds what
+  // `CaregiverApprovalPage.tsx` used to show on its own separate page
+  // directly onto the roster row instead (that route now just redirects
+  // here — see routes/index.tsx).
+  const [respondEdits, setRespondEdits] = useState<Record<string, ChildEdit>>({});
+  const [respondErrors, setRespondErrors] = useState<Record<string, ChildEditErrors>>({});
+  const [respondingApprovalId, setRespondingApprovalId] = useState<string | null>(null);
+
   // Guards a roster response against a newer selection/retry superseding it.
   const loadTokenRef = useRef(0);
 
@@ -198,6 +213,29 @@ export function TeamPage() {
         if (token !== loadTokenRef.current) return; // superseded
         setRoster(data);
         setRosterStatus('loaded');
+
+        // Seed a confirm-or-correct edit for every pending child row THIS
+        // viewer can act on — mirrors CaregiverApprovalPage.tsx's own seeding,
+        // and likewise never clobbers an edit already in progress (a reload
+        // shouldn't discard what the caregiver has half-typed).
+        setRespondEdits((prev) => {
+          const next = { ...prev };
+          for (const entry of data.entries) {
+            if (
+              entry.pending &&
+              entry.pendingApprovalId &&
+              data.myLinkedChildIds.has(entry.userId) &&
+              !next[entry.pendingApprovalId]
+            ) {
+              next[entry.pendingApprovalId] = {
+                firstName: entry.pendingChildDetails?.firstName ?? '',
+                lastName: entry.pendingChildDetails?.lastName ?? '',
+                dateOfBirth: entry.pendingChildDetails?.dateOfBirth ?? '',
+              };
+            }
+          }
+          return next;
+        });
       } catch (err) {
         if (token !== loadTokenRef.current) return; // superseded
         setRoster(null);
@@ -390,6 +428,64 @@ export function TeamPage() {
         [childId]: { ...(prev[childId] ?? COLLAPSED_CAREGIVER_MANAGEMENT), removingId: null },
       }));
       setActionMessage(err instanceof ApiError ? err.message : 'Could not remove this caregiver.');
+    }
+  };
+
+  /**
+   * streamlined-invites-and-child-access, Decision 1 — the roster row's own
+   * Accept/Deny action for a pending add-a-junior request, replacing the
+   * dedicated Approvals page. Reuses `caregiversApi.approveJunior`/
+   * `denyJunior`, which already wire to the (now correctly deployed)
+   * `respond-junior-approval` Edge Function — nothing about that approval
+   * logic changes here, only where the UI for it lives.
+   */
+  const updateRespondEdit = (approvalId: string, field: keyof ChildEdit, value: string) => {
+    setRespondEdits((prev) => ({
+      ...prev,
+      [approvalId]: { ...prev[approvalId], [field]: value } as ChildEdit,
+    }));
+    setRespondErrors((prev) => {
+      if (!prev[approvalId]?.[field]) return prev;
+      const { [field]: _removed, ...rest } = prev[approvalId];
+      return { ...prev, [approvalId]: rest };
+    });
+  };
+
+  const handleRespondToJunior = async (entry: RosterEntry, decision: 'approve' | 'deny') => {
+    const approvalId = entry.pendingApprovalId;
+    if (!approvalId || !user) return;
+    setActionMessage(null);
+
+    // Only an approval locks the child in, so only approve validates and
+    // sends the caregiver's confirmed-or-corrected name/DOB — deny leaves
+    // the child's record untouched, same as the page this replaces.
+    let correction: { firstName: string; lastName: string; dateOfBirth: string } | undefined;
+    if (decision === 'approve') {
+      const edit = respondEdits[approvalId];
+      const errors = edit ? validateChildEdit(edit) : {};
+      if (!edit || Object.keys(errors).length > 0) {
+        setRespondErrors((prev) => ({ ...prev, [approvalId]: errors }));
+        return;
+      }
+      correction = edit;
+    }
+
+    setRespondingApprovalId(approvalId);
+    try {
+      if (decision === 'approve') {
+        await caregiversApi.approveJunior(approvalId, user.id, correction);
+        setActionMessage(`${entry.displayName} is now active on the team.`);
+      } else {
+        await caregiversApi.denyJunior(approvalId, user.id);
+        setActionMessage(`Declined the request for ${entry.displayName}.`);
+      }
+      refreshRoster();
+    } catch (err) {
+      setActionMessage(
+        err instanceof ApiError ? err.message : 'Could not respond to this request.'
+      );
+    } finally {
+      setRespondingApprovalId(null);
     }
   };
 
@@ -590,11 +686,41 @@ export function TeamPage() {
                     const existingCaregiverCount =
                       roster.caregiverCountByPlayer[entry.userId] ?? 0;
 
+                    // streamlined-invites-and-child-access, Decision 1 — this
+                    // viewer sees Accept/Deny on a pending row only when
+                    // they're the linked caregiver being asked to decide
+                    // (or, once linked at registration time, ANY caregiver
+                    // linked to this child — matching respond-junior-
+                    // approval's own authorization rule).
+                    const canRespondToRequest =
+                      !!entry.pending &&
+                      !!entry.pendingApprovalId &&
+                      roster.myLinkedChildIds.has(entry.userId);
+
                     return (
                       <RosterRow
                         key={entry.userId}
                         entry={entry}
                         capabilities={capabilities}
+                        canRespondToRequest={canRespondToRequest}
+                        respondEdit={
+                          entry.pendingApprovalId
+                            ? respondEdits[entry.pendingApprovalId]
+                            : undefined
+                        }
+                        respondErrors={
+                          (entry.pendingApprovalId && respondErrors[entry.pendingApprovalId]) ||
+                          {}
+                        }
+                        respondingThis={
+                          !!entry.pendingApprovalId &&
+                          respondingApprovalId === entry.pendingApprovalId
+                        }
+                        onUpdateRespondEdit={(field, value) =>
+                          entry.pendingApprovalId &&
+                          updateRespondEdit(entry.pendingApprovalId, field, value)
+                        }
+                        onRespond={(decision) => handleRespondToJunior(entry, decision)}
                         onDeactivate={() => handleDeactivate(entry)}
                         onReactivate={() => handleReactivate(entry)}
                         onPromote={() => handlePromoteToManager(entry)}
@@ -696,6 +822,14 @@ interface RosterRowProps {
   caregiverManagement: CaregiverManagementState;
   onToggleManageCaregivers: () => void;
   onRemoveCaregiver: (caregiverId: string) => void;
+  /** streamlined-invites-and-child-access, Decision 1 — see the call site's
+   *  own comment for exactly who this is true for. */
+  canRespondToRequest: boolean;
+  respondEdit: ChildEdit | undefined;
+  respondErrors: ChildEditErrors;
+  respondingThis: boolean;
+  onUpdateRespondEdit: (field: keyof ChildEdit, value: string) => void;
+  onRespond: (decision: 'approve' | 'deny') => void;
 }
 
 function RosterRow({
@@ -714,6 +848,12 @@ function RosterRow({
   caregiverManagement,
   onToggleManageCaregivers,
   onRemoveCaregiver,
+  canRespondToRequest,
+  respondEdit,
+  respondErrors,
+  respondingThis,
+  onUpdateRespondEdit,
+  onRespond,
 }: RosterRowProps) {
   // Inactive OR pending members are greyed (Req 3.6, 5.10).
   const greyed = !entry.active || entry.pending;
@@ -817,6 +957,82 @@ function RosterRow({
         )}
       </div>
 
+      {/* streamlined-invites-and-child-access, Decision 1 — the linked
+          caregiver's own Accept/Deny for THIS pending child, right on the
+          roster row instead of a separate Approvals page/tab. Deliberately
+          rendered outside the `actionsAllowed` gate above (Req 5.10 still
+          hides every OTHER action on a pending row — Make Manager,
+          Deactivate, etc. — from everyone, including this caregiver). */}
+      {entry.pending && canRespondToRequest && (
+        <div className="mt-2 pt-2 border-t border-amber-100 space-y-2">
+          <p className="text-xs text-gray-500">
+            You've been listed as a caregiver for {entry.displayName} joining the team.
+            Confirm their details below and Accept to add them to the roster.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">First name</label>
+              <input
+                type="text"
+                value={respondEdit?.firstName ?? ''}
+                onChange={(e) => onUpdateRespondEdit('firstName', e.target.value)}
+                className={`w-full border rounded-md px-2 py-1.5 text-sm ${
+                  respondErrors.firstName ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
+              />
+              {respondErrors.firstName && (
+                <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.firstName}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">Last name</label>
+              <input
+                type="text"
+                value={respondEdit?.lastName ?? ''}
+                onChange={(e) => onUpdateRespondEdit('lastName', e.target.value)}
+                className={`w-full border rounded-md px-2 py-1.5 text-sm ${
+                  respondErrors.lastName ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
+              />
+              {respondErrors.lastName && (
+                <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.lastName}</p>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] text-gray-500 mb-0.5">Date of birth</label>
+            <input
+              type="date"
+              value={respondEdit?.dateOfBirth ?? ''}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => onUpdateRespondEdit('dateOfBirth', e.target.value)}
+              className={`w-full border rounded-md px-2 py-1.5 text-sm ${
+                respondErrors.dateOfBirth ? 'border-red-500 bg-red-50' : 'border-gray-300'
+              }`}
+            />
+            {respondErrors.dateOfBirth && (
+              <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.dateOfBirth}</p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onRespond('approve')}
+              disabled={respondingThis}
+              className="flex-1 py-1.5 bg-green-600 text-white rounded-md text-xs font-medium hover:bg-green-700 disabled:opacity-50"
+            >
+              {respondingThis ? '...' : 'Accept'}
+            </button>
+            <button
+              onClick={() => onRespond('deny')}
+              disabled={respondingThis}
+              className="flex-1 py-1.5 bg-red-100 text-red-700 rounded-md text-xs font-medium hover:bg-red-200 disabled:opacity-50"
+            >
+              Deny
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Requirement 7.5 (Task 9) — admin-only expandable caregiver list.
           Removing one fires migration 056's trigger (an admin_action_items
           notification) regardless of who removes it — never an immediate
@@ -919,7 +1135,7 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
   // they're read from their pending add-child approval records (Req 5.10).
   const { data: pendingApprovals, error: pendingError } = await supabase
     .from('caregiver_approvals')
-    .select('player_id')
+    .select('id, player_id')
     .eq('team_id', teamId)
     .eq('request_kind', 'add_child')
     .eq('status', 'pending');
@@ -928,6 +1144,17 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
   const pendingChildIds = (pendingApprovals ?? []).map(
     (row: { player_id: string }) => row.player_id
   );
+
+  // streamlined-invites-and-child-access, Decision 1 — the approval row id
+  // each pending child's roster row needs to drive its own inline Accept/
+  // Deny (`respond-junior-approval` is keyed on `approval_id`, not
+  // `player_id`). A child could in principle have more than one pending
+  // `add_child` row; last-one-wins here is fine in practice since only one
+  // is ever created per child by the current Add Player flow.
+  const approvalIdByChildId: Record<string, string> = {};
+  for (const row of (pendingApprovals ?? []) as Array<{ id: string; player_id: string }>) {
+    approvalIdByChildId[row.player_id] = row.id;
+  }
 
   // Resolve pending child user rows (name, active flag, and their own DOB if
   // Add Player's Junior path recorded one — Req 4.1).
@@ -987,6 +1214,12 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
           ? selectCaregiverContact(caregiverLinksByPlayer[child.id] ?? [])
           : { kind: 'self', cellphone: '' },
       pending: true,
+      pendingApprovalId: approvalIdByChildId[child.id],
+      pendingChildDetails: {
+        firstName: child.first_name,
+        lastName: child.last_name,
+        dateOfBirth: child.date_of_birth ?? '',
+      },
     });
   }
 

@@ -189,11 +189,18 @@ export function isValidDateOfBirth(value: string, asOf: Date = new Date()): bool
  * Redeeming the invite never auto-approves it (Requirement 4.7), so this is
  * the one chance to make sure the registrant actually finds their way to
  * the still-pending request.
+ *
+ * streamlined-invites-and-child-access, Decision 1 (2026-08-28): the
+ * destination changed from the now-retired dedicated Approvals page to
+ * `/team` — the pending child's roster row is where the caregiver actually
+ * confirms/corrects details and accepts, since that's a redirect target
+ * (routes/index.tsx) either way, but sending the registrant there directly
+ * skips the extra hop.
  */
 export function resolvePrimaryActionHref(
   hasPendingApproval: boolean | undefined,
   appUrl: string | null
 ): string {
-  if (hasPendingApproval) return '/caregiver-approvals';
+  if (hasPendingApproval) return '/team';
   return appUrl || '/login';
 }
