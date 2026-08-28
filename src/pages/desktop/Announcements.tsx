@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
-import { Upload, X, Calendar, Users, Shield } from 'lucide-react';
+import { Upload, X, Calendar, Shield } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { TargetingSelector, type TargetingData } from '../../components/shared/TargetingSelector';
@@ -135,11 +135,11 @@ export function Announcements() {
         content: formData.content,
         image_url: imageUrl,
         is_ongoing: formData.is_ongoing,
-        target_roles: formData.target_roles.length > 0 ? formData.target_roles : null,
-        target_team_types: formData.target_team_types.length > 0 ? formData.target_team_types : null,
-        target_divisions: formData.target_divisions.length > 0 ? formData.target_divisions : null,
-        target_age_groups: formData.target_age_groups.length > 0 ? formData.target_age_groups : null,
-        target_team_ids: formData.target_team_ids.length > 0 ? formData.target_team_ids : null,
+        target_roles: targetingData.target_roles.length > 0 ? targetingData.target_roles : null,
+        target_team_types: targetingData.target_team_types.length > 0 ? targetingData.target_team_types : null,
+        target_divisions: targetingData.target_divisions.length > 0 ? targetingData.target_divisions : null,
+        target_age_groups: targetingData.target_age_groups.length > 0 ? targetingData.target_age_groups : null,
+        target_team_ids: targetingData.target_team_ids.length > 0 ? targetingData.target_team_ids : null,
         created_by: user?.id,
       };
 
@@ -180,14 +180,6 @@ export function Announcements() {
     } catch (error) {
       console.error('Error deleting announcement:', error);
       alert('Failed to delete announcement. Please try again.');
-    }
-  };
-
-  const toggleArrayValue = (array: string[], value: string) => {
-    if (array.includes(value)) {
-      return array.filter(v => v !== value);
-    } else {
-      return [...array, value];
     }
   };
 
@@ -337,115 +329,18 @@ export function Announcements() {
             </div>
 
             <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-              {/* Targeting - Moved to top */}
-              <div className="border-b border-gray-200 pb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Who should see this? (leave empty for all users)
-                </h3>
-
-                {/* User Roles */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">User Roles</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['coach', 'manager', 'admin', 'player', 'caregiver'].map((role) => (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, target_roles: toggleArrayValue(formData.target_roles, role) })}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                          formData.target_roles.includes(role)
-                            ? 'bg-[#0091f3] text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {role.charAt(0).toUpperCase() + role.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Team Types */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Types</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['First Kicks', 'Fun Football', 'Junior', 'Youth', 'Senior'].map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, target_team_types: toggleArrayValue(formData.target_team_types, type) })}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                          formData.target_team_types.includes(type)
-                            ? 'bg-[#0091f3] text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Divisions */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Divisions</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['Community', 'Academy'].map((division) => (
-                      <button
-                        key={division}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, target_divisions: toggleArrayValue(formData.target_divisions, division) })}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                          formData.target_divisions.includes(division)
-                            ? 'bg-[#0091f3] text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {division}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Age Groups */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Age Groups</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['U4', 'U5', 'U6', 'U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17'].map((age) => (
-                      <button
-                        key={age}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, target_age_groups: toggleArrayValue(formData.target_age_groups, age) })}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                          formData.target_age_groups.includes(age)
-                            ? 'bg-[#0091f3] text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {age}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Specific Teams */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Specific Teams</label>
-                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
-                    {teams.map((team) => (
-                      <label key={team.id} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.target_team_ids.includes(team.id)}
-                          onChange={() => setFormData({ ...formData, target_team_ids: toggleArrayValue(formData.target_team_ids, team.id) })}
-                          className="w-4 h-4 text-[#0091f3] border-gray-300 rounded focus:ring-[#0091f3]"
-                        />
-                        <span className="ml-2 text-sm text-gray-700">{team.age_group} {team.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              {/* Targeting — was a broken, half-finished duplicate of this
+                  same UI inline right here, reading `formData.target_roles`
+                  etc. (never actually part of `formData`'s state — see the
+                  history for this file) and an undeclared `teams` variable.
+                  It crashed every single time this modal opened (New or
+                  Edit) with "Cannot read properties of undefined (reading
+                  'includes')" — found live 2026-08-27 during Task 12
+                  testing. `targetingData` state and the `TargetingSelector`
+                  import were already present and already correctly wired up
+                  in `handleOpenModal`/`handleSave` below; the only thing
+                  missing was actually rendering the component. */}
+              <TargetingSelector value={targetingData} onChange={setTargetingData} />
 
               {/* Basic Info */}
               <div>
