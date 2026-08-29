@@ -50,6 +50,19 @@ import {
 /** How long a roster fetch may run before the error state shows (Req 3.15). */
 const ROSTER_TIMEOUT_MS = 10_000;
 
+/**
+ * `yyyy-mm-dd` -> `dd/mm/yyyy` for the read-only pending-consent summary
+ * (2026-08-29). Falls back to the raw value for anything unparseable rather
+ * than showing nothing — this is a display nicety, not validation (that
+ * already happened before this value ever reached the database).
+ */
+function formatDob(dateOfBirth: string | null | undefined): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOfBirth ?? '');
+  if (!match) return dateOfBirth ?? '';
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 /** Everything one roster fetch resolves, ready to drive the render. */
@@ -456,18 +469,31 @@ export function TeamPage() {
     if (!approvalId || !user) return;
     setActionMessage(null);
 
-    // Only an approval locks the child in, so only approve validates and
-    // sends the caregiver's confirmed-or-corrected name/DOB — deny leaves
-    // the child's record untouched, same as the page this replaces.
+    // 2026-08-29 follow-up: a child registered through the normal Child
+    // happy path already has their DOB confirmed once, via the checkbox on
+    // the registration form itself (Decision 2) — re-showing editable
+    // fields here just to re-confirm the exact same thing was pure friction
+    // (flagged live-testing George Pig/Daddy Pig). So editing is only
+    // offered — and only required before Accept goes through — when the
+    // child's DOB isn't already on file, which happens on exactly one path:
+    // an existing-caregiver-account bypass linking to a brand-new pending
+    // child skips the registration form entirely (Requirement 2.2), so
+    // nothing ever collects that child's DOB anywhere else. Only an
+    // approval writes a correction; deny leaves the child's record
+    // untouched, same as the page this replaces.
     let correction: { firstName: string; lastName: string; dateOfBirth: string } | undefined;
     if (decision === 'approve') {
-      const edit = respondEdits[approvalId];
-      const errors = edit ? validateChildEdit(edit) : {};
-      if (!edit || Object.keys(errors).length > 0) {
-        setRespondErrors((prev) => ({ ...prev, [approvalId]: errors }));
-        return;
+      if (!entry.pendingChildDetails?.dateOfBirth) {
+        const edit = respondEdits[approvalId];
+        const errors = edit ? validateChildEdit(edit) : {};
+        if (!edit || Object.keys(errors).length > 0) {
+          setRespondErrors((prev) => ({ ...prev, [approvalId]: errors }));
+          return;
+        }
+        correction = edit;
       }
-      correction = edit;
+      // Else: DOB already confirmed at registration — approve as-is, no
+      // correction to send.
     }
 
     setRespondingApprovalId(approvalId);
@@ -697,12 +723,21 @@ export function TeamPage() {
                       !!entry.pendingApprovalId &&
                       roster.myLinkedChildIds.has(entry.userId);
 
+                    // 2026-08-29 — see handleRespondToJunior's own comment.
+                    // A DOB already on file means the caregiver already
+                    // confirmed it once, at registration; only the one
+                    // existing-caregiver-bypass path can reach here with no
+                    // DOB recorded anywhere, and that's the only case that
+                    // still needs editable fields.
+                    const detailsAlreadyConfirmed = !!entry.pendingChildDetails?.dateOfBirth;
+
                     return (
                       <RosterRow
                         key={entry.userId}
                         entry={entry}
                         capabilities={capabilities}
                         canRespondToRequest={canRespondToRequest}
+                        detailsAlreadyConfirmed={detailsAlreadyConfirmed}
                         respondEdit={
                           entry.pendingApprovalId
                             ? respondEdits[entry.pendingApprovalId]
@@ -825,6 +860,12 @@ interface RosterRowProps {
   /** streamlined-invites-and-child-access, Decision 1 — see the call site's
    *  own comment for exactly who this is true for. */
   canRespondToRequest: boolean;
+  /** 2026-08-29 — true when the child's DOB is already on file (confirmed
+   *  once already at registration), so Accept/Deny render with no editable
+   *  fields at all. False only for the one path that never collects a DOB
+   *  anywhere else (an existing-caregiver-account bypass onto a brand-new
+   *  pending child) — see `handleRespondToJunior`'s own comment. */
+  detailsAlreadyConfirmed: boolean;
   respondEdit: ChildEdit | undefined;
   respondErrors: ChildEditErrors;
   respondingThis: boolean;
@@ -849,6 +890,7 @@ function RosterRow({
   onToggleManageCaregivers,
   onRemoveCaregiver,
   canRespondToRequest,
+  detailsAlreadyConfirmed,
   respondEdit,
   respondErrors,
   respondingThis,
@@ -965,55 +1007,70 @@ function RosterRow({
           Deactivate, etc. — from everyone, including this caregiver). */}
       {entry.pending && canRespondToRequest && (
         <div className="mt-2 pt-2 border-t border-amber-100 space-y-2">
-          <p className="text-xs text-gray-500">
-            You've been listed as a caregiver for {entry.displayName} joining the team.
-            Confirm their details below and Accept to add them to the roster.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-[10px] text-gray-500 mb-0.5">First name</label>
-              <input
-                type="text"
-                value={respondEdit?.firstName ?? ''}
-                onChange={(e) => onUpdateRespondEdit('firstName', e.target.value)}
-                className={`w-full border rounded-md px-2 py-1.5 text-sm ${
-                  respondErrors.firstName ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                }`}
-              />
-              {respondErrors.firstName && (
-                <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.firstName}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-[10px] text-gray-500 mb-0.5">Last name</label>
-              <input
-                type="text"
-                value={respondEdit?.lastName ?? ''}
-                onChange={(e) => onUpdateRespondEdit('lastName', e.target.value)}
-                className={`w-full border rounded-md px-2 py-1.5 text-sm ${
-                  respondErrors.lastName ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                }`}
-              />
-              {respondErrors.lastName && (
-                <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.lastName}</p>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-[10px] text-gray-500 mb-0.5">Date of birth</label>
-            <input
-              type="date"
-              value={respondEdit?.dateOfBirth ?? ''}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => onUpdateRespondEdit('dateOfBirth', e.target.value)}
-              className={`w-full border rounded-md px-2 py-1.5 text-sm ${
-                respondErrors.dateOfBirth ? 'border-red-500 bg-red-50' : 'border-gray-300'
-              }`}
-            />
-            {respondErrors.dateOfBirth && (
-              <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.dateOfBirth}</p>
-            )}
-          </div>
+          {detailsAlreadyConfirmed ? (
+            // 2026-08-29 — the common case: this child registered through
+            // the normal Child happy path, so their name and DOB were
+            // already confirmed once, via the checkbox on the registration
+            // form itself. Re-showing editable fields here to re-confirm
+            // the exact same thing was pure friction — just show what's on
+            // file and let Accept/Deny go straight through.
+            <p className="text-xs text-gray-500">
+              {entry.displayName} ({formatDob(entry.pendingChildDetails?.dateOfBirth)}) is
+              waiting for your consent to join the team.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500">
+                You've been listed as a caregiver for {entry.displayName} joining the team.
+                Confirm their details below and Accept to add them to the roster.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">First name</label>
+                  <input
+                    type="text"
+                    value={respondEdit?.firstName ?? ''}
+                    onChange={(e) => onUpdateRespondEdit('firstName', e.target.value)}
+                    className={`w-full border rounded-md px-2 py-1.5 text-sm ${
+                      respondErrors.firstName ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {respondErrors.firstName && (
+                    <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.firstName}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Last name</label>
+                  <input
+                    type="text"
+                    value={respondEdit?.lastName ?? ''}
+                    onChange={(e) => onUpdateRespondEdit('lastName', e.target.value)}
+                    className={`w-full border rounded-md px-2 py-1.5 text-sm ${
+                      respondErrors.lastName ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {respondErrors.lastName && (
+                    <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.lastName}</p>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Date of birth</label>
+                <input
+                  type="date"
+                  value={respondEdit?.dateOfBirth ?? ''}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => onUpdateRespondEdit('dateOfBirth', e.target.value)}
+                  className={`w-full border rounded-md px-2 py-1.5 text-sm ${
+                    respondErrors.dateOfBirth ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                  }`}
+                />
+                {respondErrors.dateOfBirth && (
+                  <p className="mt-0.5 text-[10px] text-red-600">{respondErrors.dateOfBirth}</p>
+                )}
+              </div>
+            </>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => onRespond('approve')}

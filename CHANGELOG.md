@@ -2,7 +2,33 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
-## [2026-08-28] - Migration 061 + code fix: a brand-new caregiver couldn't reach their pending child's team at all
+## [2026-08-29] - Drop redundant re-confirmation fields from the pending-consent Accept/Deny
+
+Flagged live-testing George Pig/Daddy Pig, right after confirming migration
+061's fix worked end-to-end: the roster's inline Accept/Deny for a pending
+child (Decision 1) always showed editable name/DOB fields to fill in again,
+even though the caregiver had already typed and confirmed the exact same
+details once already — via the "I confirm these details are correct"
+checkbox added to the registration form itself (Decision 2, migration
+059). Re-typing the same thing twice was pure friction.
+
+- **Fix**: when the child's `date_of_birth` is already on file — true for
+  every normal Child happy path registration — Accept/Deny now render with
+  no editable fields at all, just a plain-text summary
+  (`{name} ({dob}) is waiting for your consent to join the team`).
+  `handleRespondToJunior` skips validation and sends no correction in this
+  case (`caregiversApi.approveJunior`'s `correction` param is already
+  optional; `undefined` means "approve as recorded").
+- **The one case that keeps the editable fields**: an *existing*-caregiver-
+  account bypass linking to a brand-new pending child skips the
+  registration form entirely (Requirement 2.2), so nothing ever collects
+  that child's DOB anywhere else — that's the only path where this screen
+  is still the sole place to enter or correct it, and it's untouched.
+
+Verified: `npm test` (211 passing/2 skipped, unchanged) and `npm run
+build` clean on a fresh clone.
+
+## [2026-08-29] - Migration 061 + code fix: a brand-new caregiver couldn't reach their pending child's team at all
 
 Found immediately after migration 060, live-testing a fresh child/caregiver
 pair (George Pig / Daddy Pig) as the real end-to-end confirmation of that
