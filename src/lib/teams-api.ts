@@ -91,8 +91,93 @@ export class TeamsApi extends ApiClient {
       return ownMemberships;
     }
 
-    return [...ownMemberships, ...((childMemberships ?? []) as unknown as TeamMemberWithTeam[])];
+    const activeChildMemberships = (childMemberships ?? []) as unknown as TeamMemberWithTeam[];
+
+    // 2026-08-28 follow-up fix: a linked child still awaiting caregiver
+    // consent has no `team_members` row at all yet -- `TeamPage.tsx`'s
+    // `fetchRoster` reads a pending child from `caregiver_approvals`, never
+    // `team_members` (see its own comment on this: "Pending children
+    // awaiting caregiver consent are not yet team_members"). Left as it was
+    // above, a caregiver whose ONLY linked child is still pending got zero
+    // rows from every query here and saw "not a member of any team" -- with
+    // no way to ever reach the roster's inline Accept/Deny row, since
+    // reaching it requires selecting the team first. This is a genuine
+    // chicken-and-egg gap introduced by retiring the old dedicated
+    // Approvals page (which read pending requests directly, independent of
+    // team membership) in favour of approving inline on the roster. Found
+    // live-testing a fresh child/caregiver pair (George Pig / Daddy Pig)
+    // immediately after the migration-060 RLS fix above -- Mortimer/Micky
+    // didn't hit this because Micky was already approved and active by the
+    // time that fix was verified.
+    //
+    // Fix: union in the team of every pending `add_child` approval for a
+    // linked child not already covered by an active membership, so the
+    // caregiver can at least open the team and act on the pending request.
+    const activeChildIds = new Set(activeChildMemberships.map((m) => m.user_id));
+    const pendingChildIds = childIds.filter((id) => !activeChildIds.has(id));
+
+    if (pendingChildIds.length === 0) {
+      return [...ownMemberships, ...activeChildMemberships];
+    }
+
+    const { data: pendingApprovals, error: pendingError } = await this.supabase
+      .from('caregiver_approvals')
+      .select('player_id, team_id')
+      .in('player_id', pendingChildIds)
+      .eq('request_kind', 'add_child')
+      .eq('status', 'pending');
+
+    if (pendingError) {
+      console.error('getMyTeams: pending caregiver_approvals lookup failed, pending-child teams omitted', pendingError);
+      return [...ownMemberships, ...activeChildMemberships];
+    }
+
+    const alreadyCoveredTeamIds = new Set([
+      ...ownMemberships.map((m) => m.team_id),
+      ...activeChildMemberships.map((m) => m.team_id),
+    ]);
+    const pendingTeamIds = Array.from(
+      new Set(
+        (pendingApprovals ?? [])
+          .map((row: { team_id: string | null }) => row.team_id)
+          .filter((teamId): teamId is string => Boolean(teamId) && !alreadyCoveredTeamIds.has(teamId as string))
+      )
+    );
+
+    if (pendingTeamIds.length === 0) {
+      return [...ownMemberships, ...activeChildMemberships];
+    }
+
+    // Requires migration 061 (a caregiver has no `team_members` row on a
+    // pending child's team, so migration 060's policy alone doesn't cover
+    // this read -- a separate policy keyed off `caregiver_approvals`).
+    const { data: pendingTeams, error: pendingTeamsError } = await this.supabase
+      .from('teams')
+      .select('*')
+      .in('id', pendingTeamIds);
+
+    if (pendingTeamsError) {
+      console.error('getMyTeams: pending-child team lookup failed, pending-child teams omitted', pendingTeamsError);
+      return [...ownMemberships, ...activeChildMemberships];
+    }
+
+    // Synthetic membership rows -- there is no real `team_members` row for
+    // these yet, so only the fields `buildTeamSelection` actually reads
+    // (`team_id`, `team`) are meaningful; the rest are placeholders never
+    // shown anywhere.
+    const pendingMemberships: TeamMemberWithTeam[] = (pendingTeams ?? []).map((team) => ({
+      id: `pending-${team.id}`,
+      team_id: team.id,
+      user_id: userId,
+      role: 'player',
+      created_at: '',
+      updated_at: '',
+      team: team as Team,
+    }));
+
+    return [...ownMemberships, ...activeChildMemberships, ...pendingMemberships];
   }
 }
+
 
 export const teamsApi = new TeamsApi();

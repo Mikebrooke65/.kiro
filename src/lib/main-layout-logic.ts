@@ -57,7 +57,22 @@ export function tabsForRole(role: UserRole | undefined, approvalsTab: ApprovalsT
 
   return [
     { key: 'home', to: '/', label: 'Home', color: '#0091f3', end: true },
-    { key: 'team', to: '/team', label: 'Team', color: '#8b5cf6' },
+    // streamlined-invites-and-child-access, Decision 1 — this used to be a
+    // separate "Approvals" tab pointing at the same `/team` destination as
+    // this one (a leftover from retiring the old dedicated Approvals page:
+    // its `to` was repointed here rather than removing the tab outright).
+    // With two tabs sharing one destination, "Approvals" read as a broken
+    // or confusing extra button rather than a helpful shortcut — flagged
+    // live-testing 2026-08-28. The badge now lives directly on this Team
+    // tab instead: still visible exactly when there's something pending
+    // (via `resolveApprovalsTab`), no separate tab needed.
+    {
+      key: 'team',
+      to: '/team',
+      label: 'Team',
+      color: '#8b5cf6',
+      badge: approvalsTab.visible ? approvalsTab.badge : undefined,
+    },
     ...(showCoaching
       ? [{ key: 'coaching' as const, to: '/coaching', label: 'Coaching', color: '#22c55e' }]
       : []),
@@ -66,23 +81,6 @@ export function tabsForRole(role: UserRole | undefined, approvalsTab: ApprovalsT
       : []),
     { key: 'schedule', to: '/schedule', label: 'Schedule', color: '#06b6d4' },
     { key: 'messages', to: '/messaging', label: 'Messages', color: '#545859' },
-    // streamlined-invites-and-child-access, Decision 1 — this tab now points
-    // at Team, not a dedicated Approvals page: the pending-consent decision
-    // lives inline on the roster row (TeamPage.tsx's RosterRow) so this is a
-    // shortcut to where the badge count is actually explained, not a
-    // separate destination. The badge itself (via resolveApprovalsTab) is
-    // unchanged — still visible exactly when there's something pending.
-    ...(approvalsTab.visible
-      ? [
-          {
-            key: 'approvals' as const,
-            to: '/team',
-            label: 'Approvals',
-            color: '#dc2626',
-            badge: approvalsTab.badge,
-          },
-        ]
-      : []),
   ];
 }
 

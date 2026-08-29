@@ -176,9 +176,12 @@ export function MainLayout() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   {ICONS[tab.key]}
                 </svg>
-                {/* Badge (Requirement 8.3/8.4) — only ever present when the
-                    tab itself is (tabsForRole only includes Approvals with a
-                    positive count), so no zero-badge case to hide here. */}
+                {/* Badge (Requirement 8.3/8.4) — lives on the Team tab
+                    itself (2026-08-28: previously a separate "Approvals"
+                    tab pointing at this same `/team` destination, retired
+                    as a confusing duplicate — see `tabsForRole`'s comment).
+                    `!!tab.badge` covers the zero/undefined case for every
+                    other tab, which never sets one. */}
                 {!!tab.badge && (
                   <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-white text-[10px] font-bold leading-none text-red-600">
                     {tab.badge > 99 ? '99+' : tab.badge}

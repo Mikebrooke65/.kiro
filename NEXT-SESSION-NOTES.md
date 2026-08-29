@@ -138,14 +138,22 @@ clean on the live pushed head: `npm test` (211 passing/2 skipped) and
    it); (b) Micky's `date_of_birth` was still `null` (registered while
    `redeem-invite` was stale, same timing as the DOB bug above, just never
    backfilled once the code was fixed) — a one-time `UPDATE` for that test
-   record, run and confirmed. **✅ Item 2 is now clean** with the
-   Mortimer/Micky pair. Full detail: `CHANGELOG.md`'s 2026-08-28 entries
-   and `caregiver-invite-flow-fix-plan.md`. **Worth doing once more with a
-   brand-new child/caregiver pair** (or James Corrigan's original invite
-   link, still reusable) to confirm a *fresh* redemption writes the DOB
-   correctly end-to-end on the first try, now that both Edge Functions are
-   genuinely current — not required to consider this item done, just the
-   cleanest possible confirmation.
+   record, run and confirmed. Item 2 looked clean with the Mortimer/Micky
+   pair at that point — **but a follow-up test with a brand-new
+   child/caregiver pair (George Pig / Daddy Pig) found an 8th, separate
+   bug**: a caregiver whose only linked child is still *pending* (not yet
+   approved) has no `team_members`-based connection to the team at all, so
+   `getMyTeams()` found nothing and Daddy Pig had no way to ever reach the
+   inline Accept/Deny row — a genuine chicken-and-egg gap in retiring the
+   old dedicated Approvals page. Fixed: `teamsApi.getMyTeams()` now also
+   unions in a pending child's team via `caregiver_approvals`, migration
+   061 adds the matching RLS grant, and the confusing leftover "Approvals"
+   nav tab (pointing at the same place as Team) was retired in favour of
+   the badge living on Team directly. **Migration 061 + this code patch
+   still need to be run/applied and George's approval re-tried** before
+   item 2 can be called fully clean — this is now the very next thing to
+   do. Full detail: `CHANGELOG.md`'s 2026-08-28 entries and
+   `caregiver-invite-flow-fix-plan.md`.
 3. **6.1 bounce-back** (Adult ticked, actually a Child) — not yet started.
 4. **6.2 conversion** (Child ticked, actually an Adult) — not yet started.
 5. **Device-code redemption + revocation** — not yet started.
@@ -704,7 +712,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
 | V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
 | Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **1 of 2 parked decisions resolved**: "Existing-User Invite Shortcut" — built via the Streamlined Invites spec's Task 4 (row below). **"Caregiver DOB Correction Threshold" is still open** — see the dedicated section near the top of this file |
-| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass items 1 (Adult) and 2 (Child) both ✅ done — item 2 needed 6 patches plus a migration (RLS gap) and a one-time data backfill, all found live-testing and now confirmed clean; items 3-6 not yet started. See the dedicated section near the top of this file |
+| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass item 1 (Adult) ✅ done; item 2 (Child) needed 6 patches, then migration 060 (RLS gap) + a data backfill, then an 8th bug (migration 061 + code fix — a caregiver of a still-pending child couldn't reach the team at all) — migration 061 still needs running + a clean re-test; items 3-6 not yet started. See the dedicated section near the top of this file |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
@@ -740,22 +748,27 @@ Streamlined Invites spec is 11/12 tasks done.
 
 ### PLAN FOR NEXT SESSION (updated 2026-08-28)
 
-**Do first — work through Task 12 items 3-6.** Automated checks are
-already clean on the live head. Items 1 and 2 are both now ✅ done — item 2
-took 6 patches (`6dcc185..dc499b5`), migration 059, both Edge Functions
-redeployed, then two more finds during the clean re-test: migration 060
-(an undocumented live RLS policy blocked a caregiver from reading their
-linked child's team at all) and a one-time data backfill (Micky's DOB
-never wrote because he was registered before the Edge Function redeploy).
-Both confirmed fixed live — Mortimer now sees Open Riverhead Frogs with
-Micky on it, caregiver contact showing correctly. Worth one more pass with
-a brand-new child/caregiver pair (or James Corrigan's original invite
-link, still reusable) just to confirm a *fresh* redemption writes the DOB
-right on the first try now, but that's a nice-to-have, not a blocker.
-**Next up: items 3 through 6** (6.1 bounce-back, 6.2 conversion,
-device-code redemption + revocation, existing-user bypass on all three
-call sites) — report results back so `tasks.md` can be closed out. Full
-detail: `CHANGELOG.md`'s 2026-08-28 entries, `task12-manual-test-script.md`,
+**Do first — run migration 061 + apply the matching code patch, then
+finish confirming Task 12 item #2, then work through items 3-6.**
+Automated checks are already clean on the live head. Item 1 is ✅ done.
+Item 2 took 6 patches (`6dcc185..dc499b5`), migration 059, both Edge
+Functions redeployed, then migration 060 (an undocumented live RLS policy
+blocked a caregiver from reading their *active* linked child's team) and a
+one-time data backfill (Micky's DOB never wrote because he was registered
+before the Edge Function redeploy) — both confirmed fixed live with the
+Mortimer/Micky pair. **Testing once more with a brand-new pair (George
+Pig / Daddy Pig) then found an 8th bug**: a caregiver whose only linked
+child is still *pending* has no way to reach the team at all, since a
+pending child has no `team_members` row yet — fixed via a `getMyTeams()`
+code change plus migration 061 (the matching RLS grant), and the
+confusing leftover "Approvals" nav tab (same destination as Team) was
+retired at the same time. **Run migration 061, apply the code patch, then
+retry George's approval as Daddy Pig** — that's the real confirmation this
+item needs before it can be called done. **Then: items 3 through 6** (6.1
+bounce-back, 6.2 conversion, device-code redemption + revocation,
+existing-user bypass on all three call sites) — report results back so
+`tasks.md` can be closed out. Full detail: `CHANGELOG.md`'s 2026-08-28
+entries, `task12-manual-test-script.md`,
 `caregiver-invite-flow-fix-plan.md`. This
 is the only thing left on that entire 12-task spec.
 

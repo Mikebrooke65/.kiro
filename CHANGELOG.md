@@ -2,6 +2,48 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-28] - Migration 061 + code fix: a brand-new caregiver couldn't reach their pending child's team at all
+
+Found immediately after migration 060, live-testing a fresh child/caregiver
+pair (George Pig / Daddy Pig) as the real end-to-end confirmation of that
+fix. Daddy Pig redeemed his caregiver invite successfully — the Manager's
+roster correctly showed George pending with Daddy Pig linked as his
+caregiver — but Daddy Pig's own Team page still read "not a member of any
+team yet."
+
+- **Root cause**: a pending child has no `team_members` row at all — only a
+  `caregiver_approvals` row (`TeamPage.tsx`'s `fetchRoster` already has its
+  own comment on this: "Pending children awaiting caregiver consent are not
+  yet team_members"). Migration 060 fixed a caregiver reading their
+  *active* child's team, but a caregiver whose ONLY linked child is still
+  pending has no `team_members`-based connection to the team at all, active
+  or otherwise — so `teamsApi.getMyTeams()` found nothing, and the
+  caregiver had zero way to ever open the team and reach the inline
+  Accept/Deny row that replaced the old dedicated Approvals page. A
+  genuine chicken-and-egg gap in that redesign: the old page read pending
+  requests directly, independent of team membership; the new inline
+  approach depends on opening the team first. Mortimer/Micky didn't hit
+  this earlier because Micky was already approved and active by the time
+  migration 060 was verified.
+- **Fix**: `teamsApi.getMyTeams()` now also unions in the team of any
+  pending `add_child` approval for a linked child not already covered by
+  an active membership, reading `caregiver_approvals` directly instead of
+  `team_members`. Migration 061 adds the matching RLS grant this new read
+  needs (migration 060's policy alone doesn't cover it, since it also
+  requires a `team_members` row that doesn't exist yet for a pending
+  child) — additive only, scoped to a caregiver's own named pending
+  requests.
+- **Also retired the leftover "Approvals" nav tab**, flagged as confusing
+  during this same test — it pointed at the exact same `/team` destination
+  as the Team tab itself (a leftover from repointing rather than removing
+  it when the dedicated Approvals page was retired earlier tonight), and
+  the two tabs shared a React key besides. The pending-count badge now
+  lives directly on the Team tab instead of a separate one.
+
+Verified: `npm test` (211 passing/2 skipped — 3 nav tests updated for the
+retired Approvals tab, count unchanged) and `npm run build` clean on a
+fresh clone. Migration 061 run via the Supabase SQL Editor.
+
 ## [2026-08-28] - Migration 060: caregivers couldn't read their linked child's team
 
 Found live during the clean re-test of Task 12 item #2, right after the

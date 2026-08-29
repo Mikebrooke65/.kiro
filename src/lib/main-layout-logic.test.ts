@@ -104,23 +104,30 @@ describe('tabsForRole — bottom-nav tab set by role (Requirement 7.2.1-7.2.4)',
     expect(keysFor(undefined)).toEqual(['home', 'team', 'schedule', 'messages']);
   });
 
-  it('appends Approvals, with its badge, independent of role, exactly when visible', () => {
+  it('puts the pending-approval badge on the Team tab, independent of role, exactly when visible', () => {
+    // 2026-08-28: this used to be a separate "Approvals" tab pointing at
+    // this same `/team` destination — a confusing duplicate, retired in
+    // favour of the badge living directly on Team (see tabsForRole's
+    // comment and CHANGELOG.md's 2026-08-28 entry).
     const approvalsTab = { visible: true, badge: 3 };
     for (const role of [UserRole.PLAYER, UserRole.ADMIN, UserRole.COACH, undefined]) {
       const tabs = tabsForRole(role, approvalsTab);
-      const approvals = tabs.find((t) => t.key === 'approvals');
-      expect(approvals).toBeDefined();
-      expect(approvals?.badge).toBe(3);
+      expect(tabs.find((t) => t.key === 'approvals')).toBeUndefined();
+      const team = tabs.find((t) => t.key === 'team');
+      expect(team).toBeDefined();
+      expect(team?.badge).toBe(3);
     }
   });
 
-  it('points Approvals at /team, not the retired dedicated Approvals page (streamlined-invites-and-child-access, Decision 1)', () => {
-    const tabs = tabsForRole(UserRole.CAREGIVER, { visible: true, badge: 1 });
-    const approvals = tabs.find((t) => t.key === 'approvals');
-    expect(approvals?.to).toBe('/team');
+  it('leaves the Team tab badge unset when nothing is pending', () => {
+    const tabs = tabsForRole(UserRole.CAREGIVER, { visible: false, badge: 0 });
+    const team = tabs.find((t) => t.key === 'team');
+    expect(team?.badge).toBeUndefined();
   });
 
-  it('never includes Approvals when not visible', () => {
+  it('never includes a separate Approvals tab, visible or not', () => {
     expect(keysFor(UserRole.ADMIN)).not.toContain('approvals');
+    const tabs = tabsForRole(UserRole.CAREGIVER, { visible: true, badge: 1 });
+    expect(tabs.find((t) => t.key === 'approvals')).toBeUndefined();
   });
 });
