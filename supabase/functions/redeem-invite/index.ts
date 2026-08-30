@@ -41,7 +41,7 @@
 // DEPLOYMENT: Edge Functions do NOT ship with `git push`. This fix is not live
 // until `supabase functions deploy redeem-invite` has been run.
 
-import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.39.3';
 import {
   ADD_PLAYER_MESSAGES,
   AGE_TICK_MESSAGES,
@@ -214,6 +214,122 @@ async function runCompensations(
 }
 
 // ---------------------------------------------------------------------------
+// Bounce-to-Manager side effects (2026-08-30, Task 12 item 3 follow-up)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal shape of an `invite_codes` row this file's bounce-handling code
+ * reads. Looser than {@link InviteRecordLike} (which only covers what
+ * `deriveInviteStatus` needs) because these two helpers also need
+ * `id`/`team_id`/`created_by`/the recipient name columns.
+ */
+interface BouncedInviteRow {
+  id: string;
+  team_id: string | null;
+  created_by: string | null;
+  recipient_first_name?: string | null;
+  recipient_last_name?: string | null;
+}
+
+/**
+ * Kills a bounced invite by backdating `expires_at` to now, rather than
+ * leaving it valid and reusable. Deliberately reuses the existing `expires_at`
+ * column/status instead of adding a new one: `deriveInviteStatus` already
+ * treats a past `expires_at` as `'expired'`, and the landing page already has
+ * copy for that ("Your coach/manager has been notified...") — which, as of
+ * this same change, is now actually true (see `notifyManagerOfBounce`).
+ *
+ * Best-effort: logged and swallowed on failure. The person mid-registration
+ * still needs to see the bounce screen even if this update fails; leaving a
+ * reusable code behind on a rare DB hiccup is a smaller problem than
+ * blocking that response.
+ */
+async function killBouncedInvite(admin: SupabaseClient, inviteId: string): Promise<void> {
+  try {
+    const { error } = await admin
+      .from('invite_codes')
+      .update({ expires_at: new Date().toISOString() })
+      .eq('id', inviteId);
+    if (error) throw error;
+  } catch (error) {
+    console.error('redeem-invite: failed to expire bounced invite', inviteId, error);
+  }
+}
+
+/**
+ * Tells the Manager who created the invite that a bounce happened, since
+ * nothing previously did — a genuine gap surfaced during Task 12 manual
+ * testing (2026-08-30): a Manager had no way to learn that someone they
+ * Adult-ticked in Add Player had actually self-declared as under 16, short
+ * of the registrant telling them directly.
+ *
+ * Sent as an ordinary in-app message (the same `messages`/`message_recipients`
+ * tables `MessagingApi.createMessage` writes to), addressed by the Manager to
+ * themselves — there is no "system" user in this schema to send it from, and
+ * every message row requires a real `sender_id`. Landing in their own
+ * Messages tab, attributed to their own name, is unusual but functional; it
+ * was chosen over adding a new notification table/column for a first cut of
+ * this fix.
+ *
+ * Best-effort, same reasoning as `killBouncedInvite`: never blocks or alters
+ * the bounce response back to the registrant.
+ */
+async function notifyManagerOfBounce(
+  admin: SupabaseClient,
+  invite: BouncedInviteRow,
+  reg: NormalizedRegistration
+): Promise<void> {
+  if (!invite.created_by || !invite.team_id) {
+    console.warn('redeem-invite: cannot notify Manager of bounce — invite missing created_by/team_id', invite.id);
+    return;
+  }
+
+  try {
+    const { data: team, error: teamError } = await admin
+      .from('teams')
+      .select('name, age_group')
+      .eq('id', invite.team_id)
+      .maybeSingle();
+    if (teamError) throw teamError;
+
+    const teamName = team ? `${team.age_group} ${team.name}`.trim() : 'your team';
+    // The name entered on the registration form is the best information
+    // available here — it's what the person just typed for themselves, and
+    // is more likely correct than whatever the Manager guessed at Add
+    // Player time (which is all `recipient_first_name`/`_last_name` holds).
+    const personName =
+      `${reg.first_name} ${reg.last_name}`.trim() ||
+      `${invite.recipient_first_name ?? ''} ${invite.recipient_last_name ?? ''}`.trim() ||
+      'This person';
+
+    const { data: message, error: msgError } = await admin
+      .from('messages')
+      .insert({
+        sender_id: invite.created_by,
+        team_id: invite.team_id,
+        title: `${personName} needs to be re-added as a Junior`,
+        body:
+          `You recently added ${personName} to ${teamName}. ${personName} received the invite, ` +
+          `but entering their date of birth showed they're actually under 16. Please re-enter them ` +
+          `as a Junior/Child and supply a caregiver's details — this invite link no longer works.`,
+        parent_message_id: null,
+      })
+      .select('id')
+      .single();
+    if (msgError) throw msgError;
+
+    const { error: recipError } = await admin.from('message_recipients').insert({
+      message_id: message.id,
+      targeting_type: 'individual',
+      recipient_user_ids: [invite.created_by],
+    });
+    if (recipError) throw recipError;
+  } catch (error) {
+    console.error('redeem-invite: failed to notify Manager of bounce', invite.id, error);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
@@ -379,7 +495,36 @@ Deno.serve(async (req) => {
       }
       if (outcome === 'bounce_to_manager') {
         // 6.1, RESOLVED: no inline caregiver-naming — stop here and send the
-        // person back to their Manager. Nothing has been written yet.
+        // person back to their Manager. No account/team-membership write
+        // happens on this path (still true — that part of the original
+        // comment held), but as of 2026-08-30 two side effects DO happen
+        // before the rejection is returned:
+        //
+        //   1. The invite is killed (`expires_at` backdated to now). Before
+        //      this fix the code was left fully valid — nothing here had
+        //      ever marked it redeemed or expired — so the same person
+        //      could reopen the identical link, re-enter a DOB of 16+, and
+        //      redeem normally as if the bounce never happened. That's the
+        //      wrong pathway: once a self-declared DOB has shown the
+        //      Manager ticked the wrong box, this person must go through
+        //      the Junior/caregiver flow, not silently retry the Adult one
+        //      on a second attempt. Reusing `expires_at` (rather than a new
+        //      column) means `deriveInviteStatus` already reports this
+        //      invite as `expired` afterwards, and the landing page already
+        //      has copy for that status.
+        //   2. The Manager who created the invite is sent an in-app message
+        //      (`notifyManagerOfBounce` below) telling them what happened
+        //      and that they need to re-add this person as a Junior with
+        //      caregiver details — otherwise nothing ever tells the Manager
+        //      a bounce occurred at all.
+        //
+        // Both are best-effort: a failure here is logged and swallowed
+        // rather than turned into a 500, because the person in front of the
+        // registration form still needs to see the bounce screen either way
+        // — that experience must not depend on the message/kill succeeding.
+        await killBouncedInvite(admin, invite.id);
+        await notifyManagerOfBounce(admin, invite, reg);
+
         throw new RedeemError(
           AGE_TICK_MESSAGES.bounce_to_manager,
           400,

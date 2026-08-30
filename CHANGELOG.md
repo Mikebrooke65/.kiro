@@ -2,6 +2,56 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-30] - A bounced invite stayed valid forever, and the Manager never heard about the bounce
+
+Found live-testing Task 12 item 3 (Section 6.1 — Adult ticked, actually a
+Child): Hewie Duck was Add-Player'd as an Adult, opened the invite, entered
+an under-16 DOB, and correctly hit the "Let's get your Manager to help"
+bounce screen with no account created — so far, exactly as designed. But
+Hewie then reopened the *same* invite link, re-entered a 16+ DOB, and it
+redeemed normally: same code, second attempt, silently allowed. Separately,
+nothing had ever told the Manager who created that invite that a bounce
+happened at all — no email, no in-app message, no `admin_action_items` row.
+
+Both traced to the same spot: `redeem-invite/index.ts`'s `bounce_to_manager`
+branch threw its rejection with a comment saying "nothing has been written
+yet" — true, and deliberately so (a rejection should have nothing to
+compensate), but it meant nobody ever touched `invite_codes` on this path
+either. `redeemed_by`/`redeemed_at` only get set at the very end of a
+*successful* redemption, so a bounced code's `expires_at` was untouched and
+`deriveInviteStatus` kept reporting it `valid` indefinitely.
+
+- **Fix — kill the code on bounce**: the `bounce_to_manager` branch now
+  backdates `invite_codes.expires_at` to "now" before throwing
+  (`killBouncedInvite`). No new column: this makes `deriveInviteStatus`
+  report the invite as `expired`, which the landing page already has copy
+  for ("This code has expired. Your coach/manager has been notified and can
+  send you a new one.") — copy that, as of this fix, is now actually true.
+  Decision, confirmed with the product owner: once a self-declared DOB shows
+  the Manager ticked the wrong box, the person must go through the Manager
+  again as a proper Junior/caregiver addition — not silently retry the
+  Adult path a second time on the same link.
+- **Fix — notify the Manager**: `notifyManagerOfBounce` sends the invite's
+  creator an in-app message (same `messages`/`message_recipients` tables the
+  Messages tab already reads) explaining what happened and that they need to
+  re-add the person as a Junior with caregiver details. There is no "system"
+  sender in this schema and every message row requires a real `sender_id`,
+  so it's addressed by the Manager to themselves — it will show their own
+  name as the sender in their own Messages tab. Unusual, but functional, and
+  avoids a new table/column for a first cut.
+- Both writes are best-effort (logged and swallowed on failure) — the person
+  standing at the registration form still needs to see the bounce screen
+  either way, so neither one is allowed to turn into a 500.
+
+Not yet re-tested live (needs `supabase functions deploy redeem-invite`
+first, then a fresh Add-Player-as-Adult/bounce/reopen-the-link cycle to
+confirm the second attempt is now refused and the Manager's Messages tab
+shows the new message). Verified so far: `deno check` on the Edge Function
+(clean — this file has no automated test coverage; `logic.ts`'s pure
+functions are unit-tested but `index.ts` itself only runs under Deno), plus
+`npm test` (211 passing/2 skipped, unchanged) and `npm run build` clean on a
+fresh clone.
+
 ## [2026-08-29] - Drop redundant re-confirmation fields from the pending-consent Accept/Deny
 
 Flagged live-testing George Pig/Daddy Pig, right after confirming migration

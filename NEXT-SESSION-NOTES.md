@@ -161,16 +161,37 @@ clean on the live pushed head: `npm test` (211 passing/2 skipped) and
    never collects a DOB anywhere else). **✅ Item 2 is now fully clean.**
    Full detail: `CHANGELOG.md`'s 2026-08-28/29 entries and
    `caregiver-invite-flow-fix-plan.md`.
-3. **6.1 bounce-back** (Adult ticked, actually a Child) — not yet started.
+3. **6.1 bounce-back** (Adult ticked, actually a Child) — **in progress,
+   2 of 3 checks done, 1 fix built but not yet deployed/tested.** Add
+   Player'd Hewie Duck as Adult, entered an under-16 DOB: got the "Let's
+   get your Manager to help" screen correctly, and confirmed no account
+   was created — both as expected. Then found two problems, neither in the
+   test script's remaining checks: (a) reopening the *same* invite link
+   and entering a 16+ DOB let a second, successful redemption through —
+   the code had never been marked expired/redeemed on a bounce, so it
+   just stayed valid; (b) the Manager who created the invite got no
+   notification of any kind that a bounce had happened. **Fixed** (not
+   yet deployed or live-tested): `redeem-invite/index.ts`'s
+   `bounce_to_manager` branch now backdates the invite's `expires_at` to
+   kill it, and sends the Manager an in-app message explaining what
+   happened and that they need to re-add the person as a Junior with
+   caregiver details. `deno check` clean; `npm test`/`npm run build`
+   unaffected (this file has no automated coverage — `logic.ts`'s pure
+   functions are tested, `index.ts` only runs under Deno). **Still
+   needed**: `supabase functions deploy redeem-invite`, then re-run this
+   exact scenario live to confirm the second attempt is now refused and
+   the Manager's Messages tab shows the new message. Full detail:
+   `CHANGELOG.md`'s 2026-08-30 entry.
 4. **6.2 conversion** (Child ticked, actually an Adult) — not yet started.
 5. **Device-code redemption + revocation** — not yet started.
 6. **Existing-user bypass**, all three call sites — not yet started.
 
 Also found and fixed along the way, unrelated to this spec: the
 Announcements admin modal crashed on every open (New or Edit) —
-`CHANGELOG.md`'s 2026-08-28 entry. **Repeating item 2 clean, then working
-through items 3-6, is the one thing standing between this spec and being
-fully closed out** — see "PLAN FOR NEXT SESSION" below.
+`CHANGELOG.md`'s 2026-08-28 entry. **Deploying and confirming item 3's
+fix, then working through items 4-6, is the one thing standing between
+this spec and being fully closed out** — see "PLAN FOR NEXT SESSION"
+below.
 
 ## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21; UX follow-up 2026-08-25)
 
@@ -753,28 +774,38 @@ V1.2, V1.3, V1.4, V1.5, and the Add Player / DOB age model spec are fully
 closed out** (bar the one open Decision-1 item carried forward above); the
 Streamlined Invites spec is 11/12 tasks done.
 
-### PLAN FOR NEXT SESSION (updated 2026-08-29)
+### PLAN FOR NEXT SESSION (updated 2026-08-30)
 
-**Do first — work through Task 12 items 3-6.** Automated checks are
-already clean on the live head. Items 1 and 2 are both **✅ fully done**.
-Item 2 took 6 patches (`6dcc185..dc499b5`), migration 059, both Edge
-Functions redeployed, migration 060 (an undocumented live RLS policy
-blocked a caregiver from reading their *active* linked child's team) plus
-a one-time data backfill, then an 8th bug found testing a brand-new pair
-(George Pig / Daddy Pig): a caregiver whose only linked child is still
-*pending* had no way to reach the team at all — fixed via a
-`getMyTeams()` code change plus migration 061, with the confusing leftover
-"Approvals" nav tab retired at the same time. All of it run, applied,
-pushed (`cfa5660`), and confirmed working end-to-end live — George's DOB
-persisted correctly on a completely fresh redemption with zero backfill
-needed. A UX polish landed on the same pass too: the Accept/Deny screen no
-longer re-asks for name/DOB the caregiver already confirmed once at
-registration. **Next up: items 3 through 6** (6.1 bounce-back, 6.2
-conversion, device-code redemption + revocation, existing-user bypass on
-all three call sites — note the existing-user-bypass path is also the one
-case that still shows editable fields on Accept/Deny, worth confirming
+**Do first — deploy item 3's fix and confirm it live, then finish items
+4-6.** Automated checks are already clean on the live head. Items 1 and 2
+are both **✅ fully done**. Item 2 took 6 patches (`6dcc185..dc499b5`),
+migration 059, both Edge Functions redeployed, migration 060 (an
+undocumented live RLS policy blocked a caregiver from reading their
+*active* linked child's team) plus a one-time data backfill, then an 8th
+bug found testing a brand-new pair (George Pig / Daddy Pig): a caregiver
+whose only linked child is still *pending* had no way to reach the team at
+all — fixed via a `getMyTeams()` code change plus migration 061, with the
+confusing leftover "Approvals" nav tab retired at the same time. All of it
+run, applied, pushed (`cfa5660`), and confirmed working end-to-end live —
+George's DOB persisted correctly on a completely fresh redemption with
+zero backfill needed. A UX polish landed on the same pass too: the
+Accept/Deny screen no longer re-asks for name/DOB the caregiver already
+confirmed once at registration.
+
+**Item 3 (6.1 bounce-back)** is mid-flight: the happy-path bounce screen
+itself works, but live-testing turned up two gaps — a bounced invite
+stayed reusable forever, and the Manager never learned a bounce happened.
+Both fixed in `redeem-invite/index.ts` (kill the code on bounce by
+backdating `expires_at`; send the Manager an in-app self-addressed message)
+but **not yet deployed** — needs `supabase functions deploy redeem-invite`,
+then repeat the Hewie Duck scenario (Add Player as Adult → bounce on
+under-16 DOB → reopen the same link with a 16+ DOB) to confirm the second
+attempt is now refused and the message shows up. **Then finish items 4-6**
+(6.2 conversion, device-code redemption + revocation, existing-user bypass
+on all three call sites — note the existing-user-bypass path is also the
+one case that still shows editable fields on Accept/Deny, worth confirming
 that still works right) — report results back so `tasks.md` can be closed
-out. Full detail: `CHANGELOG.md`'s 2026-08-28/29 entries,
+out. Full detail: `CHANGELOG.md`'s 2026-08-28/29/30 entries,
 `task12-manual-test-script.md`, `caregiver-invite-flow-fix-plan.md`. This
 is the only thing left on that entire 12-task spec.
 
