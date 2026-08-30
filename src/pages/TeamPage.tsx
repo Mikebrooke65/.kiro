@@ -19,6 +19,7 @@ import { UserRole } from '../types/database';
 import type { TeamRole, TeamType, TeamMemberWithUser } from '../types/database';
 import {
   buildTeamSelection,
+  canSelfRemoveCaregiver,
   contactFor,
   deriveAgeBand,
   deriveAgeBandForPerson,
@@ -39,6 +40,7 @@ import {
 } from '../lib/permissions-logic';
 import { AddPlayerModal, type AddPlayerOutcome } from '../components/team/AddPlayerModal';
 import { AddCaregiverModal } from '../components/team/AddCaregiverModal';
+import { RemoveMyCaregiverModal } from '../components/team/RemoveMyCaregiverModal';
 import { caregiversApi } from '../lib/caregivers-api';
 import { ApiError } from '../lib/api-client';
 import {
@@ -92,6 +94,21 @@ interface RosterData {
    * action). Absent/zero for an adult-band row, which never has caregivers.
    */
   caregiverCountByPlayer: Record<string, number>;
+  /**
+   * 2026-08-30, Task 12 item 4 follow-up — whether the CURRENT viewer (not
+   * any other row) may remove their own linked caregiver(s): true only once
+   * their own age band is 'adult' (16+) and they actually have at least one
+   * caregiver linked. See `roster-logic.ts`'s `canSelfRemoveCaregiver` for
+   * why this exists instead of the "convert in place" attempt Section 6.2
+   * originally tried at invite-redemption time.
+   */
+  canSelfRemoveCaregiver: boolean;
+  /**
+   * The caregiver(s) `canSelfRemoveCaregiver` above would remove — only
+   * used to populate `RemoveMyCaregiverModal`'s confirmation copy. Empty
+   * unless `canSelfRemoveCaregiver` is true.
+   */
+  ownCaregivers: Array<{ id: string; name: string }>;
 }
 
 /** One caregiver, as shown in the "manage caregivers" expandable list (Task 9). */
@@ -178,6 +195,13 @@ export function TeamPage() {
   const [caregiverManagement, setCaregiverManagement] = useState<
     Record<string, CaregiverManagementState>
   >({});
+
+  // 2026-08-30, Task 12 item 4 follow-up — the self-service "Remove My
+  // Caregiver" confirmation modal. Only one viewer's own row can ever
+  // trigger this (there is exactly one "self" on any roster), so unlike
+  // `addCaregiverFor`/`caregiverManagement` above this needs no per-row key
+  // — just whether it's open.
+  const [showRemoveMyCaregiver, setShowRemoveMyCaregiver] = useState(false);
 
   // streamlined-invites-and-child-access, Decision 1 — the caregiver's
   // confirm-or-correct copy of a pending child's name/DOB, and this row's
@@ -731,12 +755,20 @@ export function TeamPage() {
                     // still needs editable fields.
                     const detailsAlreadyConfirmed = !!entry.pendingChildDetails?.dateOfBirth;
 
+                    // 2026-08-30, Task 12 item 4 follow-up — only the
+                    // viewer's OWN row can ever offer this; `roster.
+                    // canSelfRemoveCaregiver` is already resolved for the
+                    // current viewer specifically, never any other row.
+                    const isOwnRow = entry.userId === user?.id;
+
                     return (
                       <RosterRow
                         key={entry.userId}
                         entry={entry}
                         capabilities={capabilities}
                         canRespondToRequest={canRespondToRequest}
+                        canRemoveOwnCaregiver={isOwnRow && roster.canSelfRemoveCaregiver}
+                        onRemoveOwnCaregiver={() => setShowRemoveMyCaregiver(true)}
                         detailsAlreadyConfirmed={detailsAlreadyConfirmed}
                         respondEdit={
                           entry.pendingApprovalId
@@ -821,6 +853,22 @@ export function TeamPage() {
           onSuccess={(outcome) => handleAddCaregiverSuccess(addCaregiverFor.displayName, outcome)}
         />
       )}
+
+      {/* 2026-08-30, Task 12 item 4 follow-up — reachable only via the
+          viewer's own row's "Remove My Caregiver" button, itself gated by
+          `roster.canSelfRemoveCaregiver` above; the actual delete is
+          re-checked at the data layer regardless (migration 062). */}
+      {showRemoveMyCaregiver && user?.id && roster && (
+        <RemoveMyCaregiverModal
+          playerId={user.id}
+          caregivers={roster.ownCaregivers}
+          onClose={() => setShowRemoveMyCaregiver(false)}
+          onSuccess={() => {
+            setActionMessage('Your caregiver has been removed.');
+            refreshRoster();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -857,6 +905,11 @@ interface RosterRowProps {
   caregiverManagement: CaregiverManagementState;
   onToggleManageCaregivers: () => void;
   onRemoveCaregiver: (caregiverId: string) => void;
+  /** 2026-08-30, Task 12 item 4 follow-up — true only on the viewer's OWN
+   *  row, once their own age band is 'adult' (16+) and they have at least
+   *  one caregiver linked. See `roster-logic.ts`'s `canSelfRemoveCaregiver`. */
+  canRemoveOwnCaregiver: boolean;
+  onRemoveOwnCaregiver: () => void;
   /** streamlined-invites-and-child-access, Decision 1 — see the call site's
    *  own comment for exactly who this is true for. */
   canRespondToRequest: boolean;
@@ -889,6 +942,8 @@ function RosterRow({
   caregiverManagement,
   onToggleManageCaregivers,
   onRemoveCaregiver,
+  canRemoveOwnCaregiver,
+  onRemoveOwnCaregiver,
   canRespondToRequest,
   detailsAlreadyConfirmed,
   respondEdit,
@@ -993,6 +1048,19 @@ function RosterRow({
                 className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
               >
                 {caregiverManagement.expanded ? 'Hide Caregivers' : 'Manage Caregivers'}
+              </button>
+            )}
+            {/* 2026-08-30, Task 12 item 4 follow-up — a player's own
+                self-service right over their own record, independent of
+                any team-level capability above; only ever true on the
+                viewer's own row (see `canRemoveOwnCaregiver`'s doc comment
+                on `RosterRowProps`). */}
+            {canRemoveOwnCaregiver && (
+              <button
+                onClick={onRemoveOwnCaregiver}
+                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Remove My Caregiver
               </button>
             )}
           </div>
@@ -1320,6 +1388,28 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     caregiverCountByPlayer[childId] = (caregiverLinksByPlayer[childId] ?? []).length;
   }
 
+  // 2026-08-30, Task 12 item 4 follow-up — the viewer's OWN caregiver
+  // link(s), regardless of `childCandidateIds` above (which only ever
+  // includes 'child'-band rows): the viewer might themselves be an
+  // 'adult'-band player who still has a caregiver linked — exactly the
+  // Section 6.2 scenario this follow-up addresses. Best-effort, same
+  // reasoning as `myLinkedChildIds` above — a lookup failure here should
+  // never break loading the roster; it just means the self-service button
+  // doesn't show for this load.
+  let ownCaregivers: Array<{ id: string; name: string }> = [];
+  try {
+    const ownLinks = await caregiversApi.getPlayerCaregivers(currentUserId);
+    ownCaregivers = ownLinks.map((link) => ({
+      id: link.caregiver_id,
+      name: `${link.caregiver?.first_name ?? ''} ${link.caregiver?.last_name ?? ''}`.trim(),
+    }));
+  } catch (err) {
+    console.error('Could not load own caregiver links:', err);
+  }
+
+  const selfMemberRow = memberRows.find((row) => row.user_id === currentUserId);
+  const ownAgeBand = ageBandFor(selfMemberRow?.user?.date_of_birth);
+
   return {
     entries,
     ageBand,
@@ -1329,6 +1419,8 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     playerMembershipIdByUser,
     myLinkedChildIds,
     caregiverCountByPlayer,
+    canSelfRemoveCaregiver: canSelfRemoveCaregiver(ownAgeBand, ownCaregivers.length),
+    ownCaregivers,
   };
 }
 

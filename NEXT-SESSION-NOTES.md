@@ -180,16 +180,39 @@ clean on the live pushed head: `npm test` (211 passing/2 skipped) and
    "Code Expired — your coach/manager has been notified and can send you a
    new one," and the Manager's Messages tab showed the new notification.
    Full detail: `CHANGELOG.md`'s 2026-08-30 entry.
-4. **6.2 conversion** (Child ticked, actually an Adult) — not yet started.
+4. **6.2 conversion** (Child ticked, actually an Adult) — **redesigned, not
+   yet deployed/live-tested.** Live-testing found the original "convert in
+   place" behavior broken: it assumes whoever redeems a Child-ticked invite
+   IS the subject (a 16-17 year old who put their own email in as "the
+   caregiver" for themselves) — but tested with a genuinely separate
+   caregiver (Goofy Dog / "Goofys mum," distinct real people, distinct
+   emails), it produced a `users` row with the caregiver's own name/email
+   but the *child's* date of birth. No reliable way to tell the two cases
+   apart from the submitted form data alone. **Product decision**: stop
+   guessing at redemption time — a Child-ticked registration now always
+   proceeds as an ordinary pending child regardless of declared DOB, and a
+   16+ player instead gets a self-service "Remove My Caregiver" action once
+   they have their own login (nothing forces this — a 16+ person staying
+   caregiver-linked is fine unless THEY choose otherwise). Built: retired
+   `resolveAgeTickOutcome`'s `convert_to_adult` outcome, new
+   `canSelfRemoveCaregiver` gate + `RemoveMyCaregiverModal.tsx` + migration
+   062 (new `player_caregivers` DELETE policy, additive to the existing
+   admin-only one). `npm test` (215 passing/2 skipped), `npm run build`,
+   `deno check`/`deno lint` all clean on a fresh clone. **Still needed**:
+   run migration 062, `supabase functions deploy redeem-invite`, then
+   re-test the Goofy Dog scenario end-to-end (registers as an ordinary
+   pending child now) and the new self-service button (issue Goofy his own
+   device access, log in as him, remove his caregiver, confirm it sticks).
+   Full detail: `CHANGELOG.md`'s 2026-08-30 entry.
 5. **Device-code redemption + revocation** — not yet started.
 6. **Existing-user bypass**, all three call sites — not yet started.
 
 Also found and fixed along the way, unrelated to this spec: the
 Announcements admin modal crashed on every open (New or Edit) —
-`CHANGELOG.md`'s 2026-08-28 entry. **Deploying and confirming item 3's
-fix, then working through items 4-6, is the one thing standing between
-this spec and being fully closed out** — see "PLAN FOR NEXT SESSION"
-below.
+`CHANGELOG.md`'s 2026-08-28 entry. **Deploying and confirming items 3 and
+4's fixes, then working through items 5-6, is the one thing standing
+between this spec and being fully closed out** — see "PLAN FOR NEXT
+SESSION" below.
 
 ## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21; UX follow-up 2026-08-25)
 
@@ -738,7 +761,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
 | V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
 | Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **1 of 2 parked decisions resolved**: "Existing-User Invite Shortcut" — built via the Streamlined Invites spec's Task 4 (row below). **"Caregiver DOB Correction Threshold" is still open** — see the dedicated section near the top of this file |
-| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass items 1 (Adult), 2 (Child), and 3 (6.1 bounce-back) all ✅ fully done — item 2 needed 6 patches, migration 060, a data backfill, migration 061 + a code fix, and a UX polish; item 3 needed a fix to kill a bounced invite and notify the Manager — all found live-testing and now confirmed clean end-to-end; items 4-6 not yet started. See the dedicated section near the top of this file |
+| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass items 1 (Adult) and 2 (Child) ✅ fully done, item 3 (6.1 bounce-back) ✅ fully done — item 2 needed 6 patches, migration 060, a data backfill, migration 061 + a code fix, and a UX polish; item 3 needed a fix to kill a bounced invite and notify the Manager — both confirmed clean end-to-end. Item 4 (6.2 conversion) **redesigned but not yet deployed/live-tested** — the original in-place-conversion approach broke for a genuinely separate caregiver, so it's replaced by always registering a Child-ticked invite as an ordinary pending child plus a new player-side self-service "Remove My Caregiver" action (migration 062) once they're 16+; items 5-6 not yet started. See the dedicated section near the top of this file |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
@@ -798,12 +821,27 @@ code on bounce by backdating `expires_at`; send the Manager an in-app
 self-addressed message), deployed, and re-confirmed end-to-end with a
 second fresh pair (Dewie Duck / West Coast Rangers): reopening a bounced
 link now shows "Code Expired," and the Manager's Messages tab shows the
-notification. **Next up — finish items 4-6**
-(6.2 conversion, device-code redemption + revocation, existing-user bypass
-on all three call sites — note the existing-user-bypass path is also the
-one case that still shows editable fields on Accept/Deny, worth confirming
-that still works right) — report results back so `tasks.md` can be closed
-out. Full detail: `CHANGELOG.md`'s 2026-08-28/29/30 entries,
+notification.
+
+**Item 4 (6.2 conversion) is redesigned but not yet deployed/live-tested.**
+The original "convert the redeemer into the player in place" approach
+turned out to only work when the redeemer IS the subject (a self-inviting
+16-17 year old) — live-testing with a genuinely separate caregiver (Goofy
+Dog / "Goofys mum") produced a mismatched-identity player record instead.
+Product decision: stop guessing at redemption time entirely. A Child-
+ticked registration now always proceeds as an ordinary pending child
+regardless of declared DOB; a 16+ player instead gets a self-service
+"Remove My Caregiver" action once they have their own login. Built and
+verified (`npm test` 215/2 skipped, `npm run build`, `deno check`/`deno
+lint`, all clean) but **not yet run/deployed**: needs migration 062, then
+`supabase functions deploy redeem-invite`, then live-testing both halves
+(Goofy's registration completing cleanly now; the new button actually
+working once he has device access). **Next up — deploy + confirm item 4,
+then finish items 5-6** (device-code redemption + revocation, existing-user
+bypass on all three call sites — note the existing-user-bypass path is
+also the one case that still shows editable fields on Accept/Deny, worth
+confirming that still works right) — report results back so `tasks.md` can
+be closed out. Full detail: `CHANGELOG.md`'s 2026-08-28/29/30 entries,
 `task12-manual-test-script.md`, `caregiver-invite-flow-fix-plan.md`. This
 is the only thing left on that entire 12-task spec.
 

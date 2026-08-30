@@ -2,6 +2,81 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-30] - Section 6.2 redesigned: stop guessing at redemption time, let a 16+ player self-serve out of a caregiver link instead
+
+Found live-testing Task 12 item 4 (Section 6.2 — Child ticked, actually an
+Adult): Add-Player'd Goofy Dog as a Child with a genuinely separate
+caregiver ("Goofys mum," a different real person, different email). On the
+caregiver's registration form, Goofy's own entered date of birth came back
+16+, which triggered the existing "convert in place" behavior — but that
+behavior assumes the *redeemer* IS the subject (a 16-17 year old who put
+their own email in as "the caregiver" for themselves, mistakenly Child-
+ticked by the Manager). Here the redeemer and the subject are two different
+real people, so converting the redeemer into the player produced a
+`users` row built from the caregiver's own name/email ("Goofys mum") but
+the *child's* date of birth — an internally inconsistent, mismatched
+identity. Goofy's own email was never collected anywhere, so there was no
+way to register him directly either. Meanwhile the original pending
+"Goofy Dog" child record was left behind forever (by design — nothing
+deletes it — but the test script expected it gone).
+
+**Root cause**: the two real-world cases — "redeemer IS the subject,
+mis-ticked" vs. "redeemer is a genuinely separate caregiver, subject is
+just older than the Manager guessed" — are indistinguishable from the
+submitted form data alone. There is no reliable signal to add at
+redemption time to tell them apart.
+
+**Decision (product owner, 2026-08-30)**: stop trying. A Child-ticked
+registration now always proceeds as an ordinary pending child, whatever
+date of birth is entered — nothing wrong with a 16+ person still being
+caregiver-linked, if that's how they came into the system. Instead, once
+that person has their own login (via device-code access), THEY get a
+self-service way to end the caregiver relationship whenever they choose —
+never automatic, and never guessed at on their behalf.
+
+- **Retired**: `resolveAgeTickOutcome`'s `'convert_to_adult'` outcome
+  (`redeem-invite/logic.ts`). A Child-ticked redemption is always `'ok'`
+  now once the DOB parses at all (`'invalid_date_of_birth'` still applies
+  to a genuinely unparseable date). `redeem-invite/index.ts`'s matching
+  branch, `convertedFromCaregiver` variable, and the `redemptionRole`
+  divergence it drove are removed; the `converted_from_caregiver` response
+  field is hardcoded `false` going forward rather than deleted outright, so
+  an older client build still gets the shape it expects — the client-side
+  "you were registered as yourself, not a caregiver" branch
+  (`LiteLandingPage.tsx`, `success-screen-logic.ts`) is now permanently
+  unreachable but left in place rather than torn out in the same pass.
+- **New**: a player who is 16 or older may remove their own caregiver
+  link(s) themselves.
+  - `src/lib/roster-logic.ts`'s `canSelfRemoveCaregiver(ageBand,
+    linkedCaregiverCount)` — pure, unit- and property-tested — gates a new
+    "Remove My Caregiver" button that only ever appears on the viewer's OWN
+    roster row.
+  - `src/components/team/RemoveMyCaregiverModal.tsx` — one explicit confirm
+    step (per product decision: click the button, read the consequence,
+    confirm) before anything is written. Removes every linked caregiver at
+    once (the intent is "no caregiver oversight," not fine-grained
+    per-caregiver management) via the existing
+    `caregiversApi.unlinkCaregiverFromPlayer`.
+  - `062_players_can_remove_own_caregiver.sql` — the data-layer half: a new
+    `player_caregivers` DELETE policy additive to the existing admin-only
+    one (migrations 036/057), scoped to `player_id = auth.uid()` and the
+    player's own recorded `date_of_birth` clearing 16. No change needed to
+    migration 056's removal-notification trigger — it already fires on ANY
+    delete regardless of who performed it, so a self-removal queues the
+    exact same `admin_action_items` review row an admin-initiated one does
+    today.
+
+Verified: `npm test` (215 passing/2 skipped, up from 211 — 4 new
+`canSelfRemoveCaregiver` tests), `npm run build`, and `deno check`/`deno
+lint` on the Edge Function, all clean on a fresh clone. **Not yet live-
+tested** — needs migration 062 run, `supabase functions deploy
+redeem-invite`, then: (1) confirm Goofy Dog's original registration now
+completes as an ordinary pending child regardless of his declared DOB, (2)
+issue Goofy his own device access, log in as him, confirm "Remove My
+Caregiver" appears and works, and (3) confirm it does NOT appear for an
+under-16 child's own view (should be structurally impossible via device-
+code login today, but worth a look).
+
 ## [2026-08-30] - A bounced invite stayed valid forever, and the Manager never heard about the bounce
 
 Found live-testing Task 12 item 3 (Section 6.1 — Adult ticked, actually a

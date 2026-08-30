@@ -712,7 +712,8 @@ export function classifySelfDeclaredDateOfBirth(
  * The outcome of validating a self-declared date of birth against the
  * effective role implied by the Manager's original Adult/Child tick:
  *
- * - `'ok'` — the DOB confirms the tick; proceed as normal.
+ * - `'ok'` — the DOB confirms the tick, OR (as of 2026-08-30, see below)
+ *   the Child-ticked path regardless of what the declared DOB says.
  * - `'bounce_to_manager'` — Adult was ticked (Requirement 6.1, RESOLVED:
  *   bounces to the Manager) but the DOB says under 16. No inline
  *   caregiver-naming — the redemption stops here and the person is
@@ -720,20 +721,30 @@ export function classifySelfDeclaredDateOfBirth(
  *   addition, because a named caregiver now carries ongoing authority
  *   (device codes, message visibility) that shouldn't be handed out via
  *   self-service.
- * - `'convert_to_adult'` — Child was ticked (Requirement 6.2) but the DOB
- *   says 16 or older; the flow converts the redemption in place into a
- *   normal self-registering adult account rather than requiring the
- *   person to act as their own caregiver.
  * - `'invalid_date_of_birth'` — the DOB itself couldn't be parsed. Reported
- *   distinctly from either wrong-tick outcome so the handler gives a plain
+ *   distinctly from `'bounce_to_manager'` so the handler gives a plain
  *   "enter a valid date" error rather than misreporting it as a tick
  *   mismatch.
+ *
+ * RETIRED 2026-08-30 (Task 12 item 4 follow-up,
+ * `.kiro/specs/streamlined-invites-and-child-access/`): a Child-ticked
+ * redemption used to also branch on the declared DOB — 16 or older
+ * produced `'convert_to_adult'`, converting the *redeemer* into the player
+ * in place. Live-testing found that broken whenever the redeemer is a
+ * genuinely separate caregiver (as opposed to a 16-17 year old who put
+ * their own email in as "the caregiver" for themselves): the two cases are
+ * indistinguishable from the submitted form data alone, and guessing wrong
+ * produced a player record built from the caregiver's own name/email but
+ * the child's date of birth — a mismatched identity. There is no reliable
+ * signal to add here to fix that; the fix instead moves downstream: a
+ * Child-ticked registration now always proceeds normally regardless of the
+ * declared DOB (nothing wrong with a 16+ person still being caregiver-
+ * linked, if that's how they came into the system), and that person gets a
+ * *self-service* way to end the caregiver relationship once they have
+ * their own login — see `src/lib/roster-logic.ts`'s
+ * `canSelfRemoveCaregiver` and migration 062.
  */
-export type AgeTickOutcome =
-  | 'ok'
-  | 'bounce_to_manager'
-  | 'convert_to_adult'
-  | 'invalid_date_of_birth';
+export type AgeTickOutcome = 'ok' | 'bounce_to_manager' | 'invalid_date_of_birth';
 
 export function resolveAgeTickOutcome(
   effectiveRole: IntendedRole,
@@ -744,8 +755,10 @@ export function resolveAgeTickOutcome(
   if (band === 'invalid') return 'invalid_date_of_birth';
 
   if (effectiveRole === 'caregiver') {
-    // Child-ticked path (Requirement 5.2): must resolve to under 16.
-    return band === 'child' ? 'ok' : 'convert_to_adult';
+    // Child-ticked path (Requirement 5.2, 2026-08-30 update): always 'ok'
+    // once the DOB parses at all — see the RETIRED note above for why this
+    // no longer branches on the declared age band.
+    return 'ok';
   }
   // Adult-ticked path (Requirement 5.1): must resolve to 16 or older.
   return band === 'adult' ? 'ok' : 'bounce_to_manager';
@@ -785,10 +798,6 @@ export const AGE_TICK_MESSAGES = {
    *  inline caregiver-naming. */
   bounce_to_manager:
     "Your date of birth says you're under 16. Please ask your team Manager to add you as a Junior instead.",
-  /** 6.2 — Child ticked, DOB says 16 or older: converts in place to a
-   *  normal adult registration. */
-  convert_to_adult:
-    "This looks like an adult date of birth. You'll be registered as your own account, not as a caregiver.",
   /** The DOB itself couldn't be parsed — a plain validation message, not a
    *  tick-mismatch outcome. */
   invalid_date_of_birth: "Enter a valid date of birth that isn't in the future.",

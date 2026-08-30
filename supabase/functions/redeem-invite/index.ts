@@ -460,12 +460,15 @@ Deno.serve(async (req) => {
     // spec this replaces).
     //
     // `redemptionRole`/`finalDateOfBirth` are what every later step uses —
-    // never `invitedRole` directly — because Requirement 6.2's conversion
-    // changes which role and whose date of birth apply for the rest of this
-    // invocation, without changing what the invite itself originally said.
-    let redemptionRole = invitedRole;
+    // never `invitedRole` directly. Requirement 6.2's in-place conversion
+    // used to be why `redemptionRole` could diverge from `invitedRole`
+    // (retired 2026-08-30 — see `resolveAgeTickOutcome`'s doc comment in
+    // `logic.ts`), so `redemptionRole` is a `const` now; kept as its own
+    // name anyway (rather than reading `invitedRole` directly below) so a
+    // future requirement that reintroduces a divergence doesn't need to
+    // re-plumb every later reference.
+    const redemptionRole = invitedRole;
     let finalDateOfBirth: string | null = null;
-    let convertedFromCaregiver = false;
 
     if (profileAlreadyExisted) {
       // Requirement 2.2 — an existing account joining a further team (or
@@ -532,8 +535,8 @@ Deno.serve(async (req) => {
           'bounce_to_manager'
         );
       }
-      // outcome === 'ok' — 'convert_to_adult' cannot occur for a non-caregiver
-      // invitedRole (resolveAgeTickOutcome only returns it for 'caregiver').
+      // outcome === 'ok' — the only other possibility once
+      // 'invalid_date_of_birth' is ruled out (Adult-ticked path).
       finalDateOfBirth = reg.date_of_birth;
     } else {
       // Child-ticked path (Requirement 5.2/5.3): the child's DOB and name,
@@ -555,20 +558,12 @@ Deno.serve(async (req) => {
           'invalid_date_of_birth'
         );
       }
-      if (outcome === 'convert_to_adult') {
-        // 6.2, RESOLVED: convert in place. The person completing this form
-        // is an adult, not a caregiver — redeem as a normal self-registering
-        // adult instead of linking to the child record Add Player created.
-        // That child record is left exactly as it was (inactive, unlinked)
-        // — nothing here deletes or repurposes it; Requirement 8.4's
-        // consent-timeout job is what eventually clears a stale one.
-        redemptionRole = 'player';
-        finalDateOfBirth = reg.subject_date_of_birth;
-        convertedFromCaregiver = true;
-      } else {
-        // outcome === 'ok' — genuinely a child, as ticked.
-        finalDateOfBirth = null; // never set on a caregiver's own profile row
-      }
+      // outcome === 'ok' — the only other possibility once
+      // 'invalid_date_of_birth' is ruled out. Registers as a pending child
+      // exactly as ticked, regardless of what the declared DOB says — see
+      // `resolveAgeTickOutcome`'s doc comment (2026-08-30 RETIRED note) for
+      // why this no longer branches into an in-place adult conversion.
+      finalDateOfBirth = null; // never set on a caregiver's own profile row
     }
 
     // --- 3. Resolve the user (writes) ------------------------------------
@@ -943,13 +938,14 @@ Deno.serve(async (req) => {
       // caregiver_approvals row; false (not omitted) on every other path, so
       // the client never needs to distinguish "false" from "not present".
       has_pending_approval: hasPendingApproval,
-      // streamlined-invites-and-child-access Requirement 6.2 — true only
-      // when this redemption converted from a Child-ticked caregiver invite
-      // into a normal adult registration. `user.role` already reflects the
-      // converted role ('player'); this is an explicit signal so the client
-      // can show the "you were registered as yourself, not a caregiver"
-      // messaging without inferring it from role alone.
-      converted_from_caregiver: convertedFromCaregiver,
+      // streamlined-invites-and-child-access Requirement 6.2 — RETIRED
+      // 2026-08-30 (see `resolveAgeTickOutcome`'s doc comment in
+      // `logic.ts`): a Child-ticked redemption never converts to an adult
+      // registration in place any more, so this is always false. Kept
+      // (rather than omitted) so an older client build still gets the
+      // field shape it expects; `LiteLandingPage.tsx`'s "registered as
+      // yourself, not a caregiver" branch is unreachable now regardless.
+      converted_from_caregiver: false,
       // Present only on the non-matching path: the server-generated link the
       // caller sends via `send-email`, and whether that email could be sent at
       // all. `confirmation_email_sent: false` is the "confirmation required but

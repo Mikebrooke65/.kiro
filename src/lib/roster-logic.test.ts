@@ -12,7 +12,12 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 
-import { contactFor, deriveAgeBand, deriveAgeBandForPerson } from './roster-logic';
+import {
+  canSelfRemoveCaregiver,
+  contactFor,
+  deriveAgeBand,
+  deriveAgeBandForPerson,
+} from './roster-logic';
 import type { CaregiverLink } from './roster-logic';
 
 describe('deriveAgeBandForPerson — prefers a personal date of birth (Requirement 2.1-2.3, 2.5)', () => {
@@ -127,4 +132,35 @@ describe('contactFor — no viewer-role gate on contact details (Req 3.7, 3.8, 3
   // Section 7.2 describes a gate that doesn't exist, and why that doesn't
   // change what a child's account is allowed to see: it inherits exactly
   // this function's `'player'`-role behaviour, same as any adult Player.
+});
+
+describe('canSelfRemoveCaregiver — self-service opt-out, 16+ only (2026-08-30, Task 12 item 4 follow-up)', () => {
+  it('is false for a child-band viewer, however many caregivers they have', () => {
+    expect(canSelfRemoveCaregiver('child', 1)).toBe(false);
+    expect(canSelfRemoveCaregiver('child', 3)).toBe(false);
+  });
+
+  it('is false for an adult-band viewer with no caregiver linked', () => {
+    expect(canSelfRemoveCaregiver('adult', 0)).toBe(false);
+  });
+
+  it('is true for an adult-band viewer with at least one caregiver linked', () => {
+    expect(canSelfRemoveCaregiver('adult', 1)).toBe(true);
+    expect(canSelfRemoveCaregiver('adult', 2)).toBe(true);
+  });
+
+  it('Property: true iff band is adult AND count > 0', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('adult', 'child'),
+        fc.integer({ min: 0, max: 10 }),
+        (band, count) => {
+          expect(canSelfRemoveCaregiver(band as 'adult' | 'child', count)).toBe(
+            band === 'adult' && count > 0
+          );
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
 });

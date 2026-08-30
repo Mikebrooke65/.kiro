@@ -1031,8 +1031,16 @@ describe('resolveAgeTickOutcome — symmetric validation + wrong-tick outcomes (
     expect(resolveAgeTickOutcome('caregiver', CHILD_DOB, REFERENCE)).toBe('ok');
   });
 
-  it('caregiver role (Child-ticked) + adult DOB → converts in place to adult (Requirement 6.2, RESOLVED)', () => {
-    expect(resolveAgeTickOutcome('caregiver', ADULT_DOB, REFERENCE)).toBe('convert_to_adult');
+  it('caregiver role (Child-ticked) + adult DOB → still ok (Requirement 6.2, RETIRED 2026-08-30)', () => {
+    // Used to return 'convert_to_adult' and convert the redeemer into the
+    // player in place. Retired: live-testing found that broken for a
+    // genuinely separate caregiver (indistinguishable from a self-inviting
+    // 16-17 year old using the submitted form data alone) — see
+    // `resolveAgeTickOutcome`'s doc comment for the full reasoning. A
+    // Child-ticked registration now always proceeds normally regardless of
+    // the declared DOB; the self-service `canSelfRemoveCaregiver`
+    // (`src/lib/roster-logic.ts`) is the replacement mechanism.
+    expect(resolveAgeTickOutcome('caregiver', ADULT_DOB, REFERENCE)).toBe('ok');
   });
 
   it('an unparseable DOB is always invalid_date_of_birth, regardless of role — never silently treated as a confirmed child', () => {
@@ -1056,7 +1064,9 @@ describe('resolveAgeTickOutcome — symmetric validation + wrong-tick outcomes (
         const outcome = resolveAgeTickOutcome(effectiveRole, dob, REFERENCE);
 
         if (effectiveRole === 'caregiver') {
-          expect(outcome).toBe(band === 'child' ? 'ok' : 'convert_to_adult');
+          // 2026-08-30 RETIRED: always 'ok' now, regardless of band — see
+          // the dedicated test above for why.
+          expect(outcome).toBe('ok');
         } else {
           expect(outcome).toBe(band === 'adult' ? 'ok' : 'bounce_to_manager');
         }

@@ -204,6 +204,36 @@ function ageFromDateOfBirth(dateOfBirth: string | null | undefined): number | nu
 }
 
 /**
+ * Whether the current viewer may remove their own linked caregiver(s)
+ * (2026-08-30, Task 12 item 4 follow-up — `.kiro/specs/streamlined-invites-
+ * and-child-access/`).
+ *
+ * Origin: Section 6.2 ("Child ticked, actually an Adult") tried to solve
+ * this at invite-redemption time by detecting a 16+ DOB on a Child-ticked
+ * form and converting the *redeemer* into the player in place. Live-testing
+ * found that broken for a genuinely separate caregiver (as opposed to a
+ * 16-17 year old who self-invited using their own email as "the
+ * caregiver"): the two cases are indistinguishable from the submitted form
+ * data alone, and guessing wrong produces a player record built from the
+ * wrong person's name/email. Resolution: stop guessing at redemption time.
+ * A Child-ticked registration always proceeds as an ordinary pending child,
+ * whatever DOB was entered — nothing wrong with a 16+ person still being
+ * caregiver-linked, if that's how they came into the system. Instead, once
+ * that person has their own login, THEY decide whether to end the
+ * arrangement, via this self-service action.
+ *
+ * `ageBand` must be the viewer's own (`deriveAgeBandForPerson` on their own
+ * date of birth) — never the team's, and never another row's. `'adult'`
+ * matches this same file's/`add-player-logic.ts`'s 16-year threshold
+ * exactly, so this lines up with every other adult/child boundary in the
+ * app. Requires at least one linked caregiver — nothing to remove
+ * otherwise.
+ */
+export function canSelfRemoveCaregiver(ageBand: AgeBand, linkedCaregiverCount: number): boolean {
+  return ageBand === 'adult' && linkedCaregiverCount > 0;
+}
+
+/**
  * Contact of record for a roster member, by age band (Req 3.7, 3.8, 3.11).
  *
  * Moved here from `TeamPage.tsx` (`.kiro/specs/streamlined-invites-and-
