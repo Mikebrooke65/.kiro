@@ -43,14 +43,17 @@ either. `redeemed_by`/`redeemed_at` only get set at the very end of a
   standing at the registration form still needs to see the bounce screen
   either way, so neither one is allowed to turn into a 500.
 
-Not yet re-tested live (needs `supabase functions deploy redeem-invite`
-first, then a fresh Add-Player-as-Adult/bounce/reopen-the-link cycle to
-confirm the second attempt is now refused and the Manager's Messages tab
-shows the new message). Verified so far: `deno check` on the Edge Function
-(clean — this file has no automated test coverage; `logic.ts`'s pure
-functions are unit-tested but `index.ts` itself only runs under Deno), plus
-`npm test` (211 passing/2 skipped, unchanged) and `npm run build` clean on a
-fresh clone.
+Deployed and **confirmed live end-to-end** with a second fresh pair (Dewie
+Duck / West Coast Rangers, different email): the bounce screen showed
+correctly, reopening the same link afterward now shows "Code Expired —
+your coach/manager has been notified and can send you a new one" instead
+of letting a second registration through, and the Manager's Messages tab
+showed the new notification. Verified before deploy: `deno check` on the
+Edge Function (clean — this file has no automated test coverage;
+`logic.ts`'s pure functions are unit-tested but `index.ts` itself only
+runs under Deno), plus `npm test` (211 passing/2 skipped, unchanged) and
+`npm run build` clean on a fresh clone. **Task 12 item 3 is now fully
+done.**
 
 ## [2026-08-29] - Drop redundant re-confirmation fields from the pending-consent Accept/Deny
 

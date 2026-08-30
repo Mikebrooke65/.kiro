@@ -161,27 +161,25 @@ clean on the live pushed head: `npm test` (211 passing/2 skipped) and
    never collects a DOB anywhere else). **✅ Item 2 is now fully clean.**
    Full detail: `CHANGELOG.md`'s 2026-08-28/29 entries and
    `caregiver-invite-flow-fix-plan.md`.
-3. **6.1 bounce-back** (Adult ticked, actually a Child) — **in progress,
-   2 of 3 checks done, 1 fix built but not yet deployed/tested.** Add
-   Player'd Hewie Duck as Adult, entered an under-16 DOB: got the "Let's
-   get your Manager to help" screen correctly, and confirmed no account
-   was created — both as expected. Then found two problems, neither in the
-   test script's remaining checks: (a) reopening the *same* invite link
-   and entering a 16+ DOB let a second, successful redemption through —
-   the code had never been marked expired/redeemed on a bounce, so it
-   just stayed valid; (b) the Manager who created the invite got no
-   notification of any kind that a bounce had happened. **Fixed** (not
-   yet deployed or live-tested): `redeem-invite/index.ts`'s
+3. **6.1 bounce-back** (Adult ticked, actually a Child) — **✅ fully done,
+   confirmed live.** Add Player'd Hewie Duck as Adult, entered an
+   under-16 DOB: got the "Let's get your Manager to help" screen
+   correctly, and confirmed no account was created — both as expected.
+   Live-testing also turned up two problems, neither in the test script's
+   original checks: (a) reopening the *same* invite link and entering a
+   16+ DOB let a second, successful redemption through — the code had
+   never been marked expired/redeemed on a bounce, so it just stayed
+   valid; (b) the Manager who created the invite got no notification of
+   any kind that a bounce had happened. **Fixed**: `redeem-invite/index.ts`'s
    `bounce_to_manager` branch now backdates the invite's `expires_at` to
    kill it, and sends the Manager an in-app message explaining what
    happened and that they need to re-add the person as a Junior with
-   caregiver details. `deno check` clean; `npm test`/`npm run build`
-   unaffected (this file has no automated coverage — `logic.ts`'s pure
-   functions are tested, `index.ts` only runs under Deno). **Still
-   needed**: `supabase functions deploy redeem-invite`, then re-run this
-   exact scenario live to confirm the second attempt is now refused and
-   the Manager's Messages tab shows the new message. Full detail:
-   `CHANGELOG.md`'s 2026-08-30 entry.
+   caregiver details. Deployed and **re-confirmed live end-to-end** with a
+   second fresh pair (Dewie Duck / West Coast Rangers, different email):
+   the bounce screen showed correctly, reopening the same link now shows
+   "Code Expired — your coach/manager has been notified and can send you a
+   new one," and the Manager's Messages tab showed the new notification.
+   Full detail: `CHANGELOG.md`'s 2026-08-30 entry.
 4. **6.2 conversion** (Child ticked, actually an Adult) — not yet started.
 5. **Device-code redemption + revocation** — not yet started.
 6. **Existing-user bypass**, all three call sites — not yet started.
@@ -740,7 +738,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
 | V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
 | Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **1 of 2 parked decisions resolved**: "Existing-User Invite Shortcut" — built via the Streamlined Invites spec's Task 4 (row below). **"Caregiver DOB Correction Threshold" is still open** — see the dedicated section near the top of this file |
-| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass items 1 (Adult) and 2 (Child) both ✅ fully done — item 2 needed 6 patches, migration 060, a data backfill, migration 061 + a code fix, and a UX polish, all found live-testing and now confirmed clean end-to-end; items 3-6 not yet started. See the dedicated section near the top of this file |
+| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass items 1 (Adult), 2 (Child), and 3 (6.1 bounce-back) all ✅ fully done — item 2 needed 6 patches, migration 060, a data backfill, migration 061 + a code fix, and a UX polish; item 3 needed a fix to kill a bounced invite and notify the Manager — all found live-testing and now confirmed clean end-to-end; items 4-6 not yet started. See the dedicated section near the top of this file |
 | V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
 | V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
@@ -792,15 +790,15 @@ zero backfill needed. A UX polish landed on the same pass too: the
 Accept/Deny screen no longer re-asks for name/DOB the caregiver already
 confirmed once at registration.
 
-**Item 3 (6.1 bounce-back)** is mid-flight: the happy-path bounce screen
-itself works, but live-testing turned up two gaps — a bounced invite
-stayed reusable forever, and the Manager never learned a bounce happened.
-Both fixed in `redeem-invite/index.ts` (kill the code on bounce by
-backdating `expires_at`; send the Manager an in-app self-addressed message)
-but **not yet deployed** — needs `supabase functions deploy redeem-invite`,
-then repeat the Hewie Duck scenario (Add Player as Adult → bounce on
-under-16 DOB → reopen the same link with a 16+ DOB) to confirm the second
-attempt is now refused and the message shows up. **Then finish items 4-6**
+**Item 3 (6.1 bounce-back)** is now **✅ fully done, confirmed live**: the
+happy-path bounce screen works, and live-testing's two follow-on gaps — a
+bounced invite staying reusable forever, and the Manager never learning a
+bounce happened — are both fixed in `redeem-invite/index.ts` (kill the
+code on bounce by backdating `expires_at`; send the Manager an in-app
+self-addressed message), deployed, and re-confirmed end-to-end with a
+second fresh pair (Dewie Duck / West Coast Rangers): reopening a bounced
+link now shows "Code Expired," and the Manager's Messages tab shows the
+notification. **Next up — finish items 4-6**
 (6.2 conversion, device-code redemption + revocation, existing-user bypass
 on all three call sites — note the existing-user-bypass path is also the
 one case that still shows editable fields on Accept/Deny, worth confirming
