@@ -2,6 +2,73 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-31] - A 16+ player who self-removes their only caregiver could get permanently locked out of device access
+
+Found immediately after Aella Dog's own "Remove My Caregiver" test
+(previous entries): trying to issue her a **second** device code (to check
+Task 6's revocation behavior — generating a new code should sign out the
+old session) turned up that her caregiver, "Aella mum," could no longer see
+the "Issue Device Access" button at all. Correct — the modal warned exactly
+that removal means losing visibility into her activity — but tracing it
+further showed the button was gated purely on
+`myLinkedChildIds.has(entry.userId)`, with no admin/coach/manager fallback
+at all. Once a 16+ player has zero linked caregivers, **nobody** —
+caregiver, Coach, Manager, or club Admin — could issue them a fresh code.
+Harmless today (Aella is still signed in), but a real production lockout
+risk: if she ever loses that session (new device, cleared browser), there
+was no way back in.
+
+- **Fix**: new pure function `canIssueDeviceAccess` in
+  `permissions-logic.ts`, same authority model `canAddCaregiver` already
+  uses for this class of problem — a linked caregiver, OR club-wide Admin,
+  OR a Coach/Manager on the team, may issue a code (External League teams
+  stay read-only for everyone, as always). Wired into `TeamPage.tsx`
+  replacing the old caregiver-only check. The real authorization gate
+  (`generate-device-code` Edge Function, under service role) got the
+  matching fallback: linked caregiver, OR `users.role = 'admin'`, OR a
+  `team_members` row with role `coach`/`manager` on any team the child
+  plays on — a client-side "show the button" change alone would have been
+  unenforceable.
+- Verified: `deno check`/`deno lint` on the Edge Function (clean); `npm
+  test` (220 passing/2 skipped, 5 new tests); `npm run build` (clean).
+  **Not yet deployed or live-tested** — needs `supabase functions deploy
+  generate-device-code` alongside the usual `git am` for the client/Edge
+  Function code (no migration needed, this is a pure code fix).
+
+## [2026-08-30] - Migration 063: the caregiver-removal admin notification never actually existed live
+
+Found live-testing the new self-service "Remove My Caregiver" feature
+(previous entry, same date): Aella Dog's own removal confirmed working
+correctly at the data layer — a direct query showed her `player_caregivers`
+row genuinely gone — but the Admin "Caregiver Removal Reviews" screen
+showed nothing, and a `pg_trigger` query confirmed why:
+`on_player_caregiver_removed` (migration 056) does not exist on the live
+database at all, despite being in that migration's file.
+
+Same failure pattern this project has hit repeatedly — migration 057's own
+header documents four earlier cases of a migration's `CREATE POLICY` never
+actually applying live. This one slipped past that audit because a trigger
+isn't a policy, so `pg_policies` never surfaced it. Net effect: **every**
+caregiver removal to date — admin-initiated or self-service — has silently
+never notified an admin, even though `TeamPage.tsx`'s "An admin has been
+notified to review device access" message and the review screen itself
+both assumed it did.
+
+- **Fix**: `063_restore_caregiver_removed_trigger.sql` recreates the
+  trigger + function verbatim from migration 056's own definition
+  (idempotent `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER`) — no behavior
+  change from what was always intended, just actually applying it. No data
+  recovery for removals that already happened before this runs; they're
+  just gone without ever having been reviewed. Every removal going forward
+  — including the new self-service path — will queue the
+  `admin_action_items` row as designed.
+
+Verified: confirmed missing via a direct `pg_trigger` diagnostic query
+before writing the fix (not guessed from the migration file, per this
+project's own established gotcha about live/file drift). Not yet
+re-verified live after running 063 — next removal (admin-initiated or
+self-service) should show up on the Caregiver Removal Reviews screen.
+
 ## [2026-08-30] - Section 6.2 redesigned: stop guessing at redemption time, let a 16+ player self-serve out of a caregiver link instead
 
 Found live-testing Task 12 item 4 (Section 6.2 — Child ticked, actually an

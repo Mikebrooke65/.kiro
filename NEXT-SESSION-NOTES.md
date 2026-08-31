@@ -180,31 +180,65 @@ clean on the live pushed head: `npm test` (211 passing/2 skipped) and
    "Code Expired — your coach/manager has been notified and can send you a
    new one," and the Manager's Messages tab showed the new notification.
    Full detail: `CHANGELOG.md`'s 2026-08-30 entry.
-4. **6.2 conversion** (Child ticked, actually an Adult) — **redesigned, not
-   yet deployed/live-tested.** Live-testing found the original "convert in
-   place" behavior broken: it assumes whoever redeems a Child-ticked invite
-   IS the subject (a 16-17 year old who put their own email in as "the
-   caregiver" for themselves) — but tested with a genuinely separate
-   caregiver (Goofy Dog / "Goofys mum," distinct real people, distinct
-   emails), it produced a `users` row with the caregiver's own name/email
-   but the *child's* date of birth. No reliable way to tell the two cases
-   apart from the submitted form data alone. **Product decision**: stop
-   guessing at redemption time — a Child-ticked registration now always
-   proceeds as an ordinary pending child regardless of declared DOB, and a
-   16+ player instead gets a self-service "Remove My Caregiver" action once
-   they have their own login (nothing forces this — a 16+ person staying
-   caregiver-linked is fine unless THEY choose otherwise). Built: retired
+4. **6.2 conversion** (Child ticked, actually an Adult) — **✅ redesign
+   confirmed working live**, plus one pre-existing gap found and fixed
+   along the way. Live-testing found the original "convert in place"
+   behavior broken: it assumes whoever redeems a Child-ticked invite IS the
+   subject (a 16-17 year old who put their own email in as "the caregiver"
+   for themselves) — but tested with a genuinely separate caregiver (Goofy
+   Dog / "Goofys mum," distinct real people, distinct emails), it produced
+   a `users` row with the caregiver's own name/email but the *child's* date
+   of birth. No reliable way to tell the two cases apart from the submitted
+   form data alone. **Product decision**: stop guessing at redemption
+   time — a Child-ticked registration now always proceeds as an ordinary
+   pending child regardless of declared DOB, and a 16+ player instead gets
+   a self-service "Remove My Caregiver" action once they have their own
+   login (nothing forces this — a 16+ person staying caregiver-linked is
+   fine unless THEY choose otherwise). Built: retired
    `resolveAgeTickOutcome`'s `convert_to_adult` outcome, new
    `canSelfRemoveCaregiver` gate + `RemoveMyCaregiverModal.tsx` + migration
    062 (new `player_caregivers` DELETE policy, additive to the existing
-   admin-only one). `npm test` (215 passing/2 skipped), `npm run build`,
-   `deno check`/`deno lint` all clean on a fresh clone. **Still needed**:
-   run migration 062, `supabase functions deploy redeem-invite`, then
-   re-test the Goofy Dog scenario end-to-end (registers as an ordinary
-   pending child now) and the new self-service button (issue Goofy his own
-   device access, log in as him, remove his caregiver, confirm it sticks).
-   Full detail: `CHANGELOG.md`'s 2026-08-30 entry.
-5. **Device-code redemption + revocation** — not yet started.
+   admin-only one). Deployed and **live-tested end-to-end** with a fresh
+   pair (Aella Dog / "Aella mum," DOB 16+): registration completed as an
+   ordinary pending child with no conversion notice, mum approved her
+   normally, device access was issued, Aella signed in on her own device,
+   saw "Remove My Caregiver" on her own row, confirmed through the modal,
+   and a direct DB query confirmed her `player_caregivers` row was
+   genuinely deleted (not just hidden from view). One confirmed non-issue
+   along the way: an adult-band player's roster row never shows "(caregiver)"
+   regardless of whether a link exists — `contactFor` always shows an
+   adult-band row's own contact — confirmed as intended behavior, not a
+   bug, per product decision ("they're over 16"). **One real gap found**:
+   migration 056's caregiver-removal `admin_action_items` trigger doesn't
+   actually exist live (same "migration never fully applied" pattern as
+   earlier tonight) — confirmed via a direct `pg_trigger` query, not
+   assumed. **Fixed**: `063_restore_caregiver_removed_trigger.sql`,
+   idempotent, restores it verbatim. **Not yet run/re-verified** — see
+   `CHANGELOG.md`'s two 2026-08-30 entries for full detail on both. Also
+   captured, not yet built: three small UX polish items on "Issue Device
+   Access" (bland button styling + unclear label; the generated link has
+   no instructions on what to do with it or who should open it; needs a
+   Copy button next to the link).
+5. **Device-code redemption + revocation** — 🟡 partially covered as a
+   byproduct of testing item 4, remainder outstanding. Issuing Aella's
+   device code, opening it fresh in another browser, and landing signed in
+   as her with scoped child nav (script steps 1-4) is confirmed working —
+   that was exactly the mechanism item 4's live test exercised. Reopening
+   the same one-time link a second time (steps 5-6) was explicitly
+   re-tested and **confirmed failing as expected** — not valid a second
+   time. Attempting steps 7-8 (the revocation check) found a real gap
+   instead: Aella's caregiver had lost the "Issue Device Access" button
+   entirely after Aella removed her (correct — that's the point of removal)
+   but there was **no fallback for Admin/Coach/Manager at all**, so nobody
+   could issue her a fresh code. **Fixed** (not yet deployed): new
+   `canIssueDeviceAccess` gate (client + `generate-device-code` Edge
+   Function) — see `CHANGELOG.md`'s 2026-08-31 entry. **Still outstanding**
+   once that deploys: the actual steps 7-8 revocation check — generating a
+   *second* device code for the same child and confirming the *first*
+   device session gets signed out. Script: `task12-manual-test-script.md`
+   section 5; also section 5's step 9 (Admin "Caregiver Reviews" queue) is
+   worth re-checking once migration 063 (below) actually runs, since that's
+   the same review screen.
 6. **Existing-user bypass**, all three call sites — not yet started.
 
 Also found and fixed along the way, unrelated to this spec: the
@@ -823,27 +857,69 @@ second fresh pair (Dewie Duck / West Coast Rangers): reopening a bounced
 link now shows "Code Expired," and the Manager's Messages tab shows the
 notification.
 
-**Item 4 (6.2 conversion) is redesigned but not yet deployed/live-tested.**
-The original "convert the redeemer into the player in place" approach
-turned out to only work when the redeemer IS the subject (a self-inviting
-16-17 year old) — live-testing with a genuinely separate caregiver (Goofy
-Dog / "Goofys mum") produced a mismatched-identity player record instead.
-Product decision: stop guessing at redemption time entirely. A Child-
-ticked registration now always proceeds as an ordinary pending child
-regardless of declared DOB; a 16+ player instead gets a self-service
-"Remove My Caregiver" action once they have their own login. Built and
-verified (`npm test` 215/2 skipped, `npm run build`, `deno check`/`deno
-lint`, all clean) but **not yet run/deployed**: needs migration 062, then
-`supabase functions deploy redeem-invite`, then live-testing both halves
-(Goofy's registration completing cleanly now; the new button actually
-working once he has device access). **Next up — deploy + confirm item 4,
-then finish items 5-6** (device-code redemption + revocation, existing-user
-bypass on all three call sites — note the existing-user-bypass path is
-also the one case that still shows editable fields on Accept/Deny, worth
-confirming that still works right) — report results back so `tasks.md` can
-be closed out. Full detail: `CHANGELOG.md`'s 2026-08-28/29/30 entries,
-`task12-manual-test-script.md`, `caregiver-invite-flow-fix-plan.md`. This
-is the only thing left on that entire 12-task spec.
+**Item 4 (6.2 conversion) is now ✅ redesigned, deployed, and confirmed
+live.** The original "convert the redeemer into the player in place"
+approach turned out to only work when the redeemer IS the subject (a
+self-inviting 16-17 year old) — live-testing with a genuinely separate
+caregiver (Goofy Dog / "Goofys mum") produced a mismatched-identity player
+record instead. Product decision: stop guessing at redemption time
+entirely. A Child-ticked registration now always proceeds as an ordinary
+pending child regardless of declared DOB; a 16+ player instead gets a
+self-service "Remove My Caregiver" action once they have their own login.
+Migration 062 run, `redeem-invite` redeployed, and both halves live-tested
+end-to-end with a fresh pair (Aella Dog / "Aella mum," DOB 16+): clean
+pending-child registration with no conversion notice, mum approved
+normally, device access issued, Aella signed in on her own device, saw and
+used "Remove My Caregiver," and a direct DB query confirmed the
+`player_caregivers` row was genuinely deleted. **One real gap found along
+the way, not yet fixed live**: migration 056's caregiver-removal
+`admin_action_items` trigger never actually existed on the live database
+(confirmed via a direct `pg_trigger` query — same "migration file vs. live
+drift" pattern as migrations 056/057 earlier), so no caregiver removal —
+admin-initiated or self-service — has ever queued an admin review. Fix is
+written (`063_restore_caregiver_removed_trigger.sql`, idempotent, restores
+migration 056's function + trigger verbatim) but **still needs to be
+delivered to the repo owner and run in the Supabase SQL Editor**, then
+re-verified with `check-caregiver-removed-trigger-exists.sql` and ideally
+one more caregiver removal to confirm a fresh `admin_action_items` row
+appears on the Caregiver Removal Reviews screen. Three UX polish items on
+"Issue Device Access" were also captured but explicitly not built yet per
+the repo owner's own instruction each time: bland button styling/unclear
+copy, no usage instructions on the generated device link, and no Copy
+button next to it.
+
+**Item 5 (device-code redemption + revocation) is 🟡 partially covered, plus
+a real gap found and fixed (not yet deployed).** Testing item 4 already
+exercised most of its mechanism live: issuing Aella's device code, opening
+the link fresh in another browser, and landing signed in as her with scoped
+child nav (script steps 1-4) all worked. Re-testing the same link a second
+time was explicitly re-checked and **confirmed correctly rejected**
+(one-time use, steps 5-6). Trying to do the steps 7-8 revocation check
+(generate a *second* device code, confirm the first session dies) surfaced
+that Aella's caregiver "Aella mum" can no longer see "Issue Device Access"
+at all — correct, since removing her caregiver is supposed to lose her that
+visibility, but tracing it further found the button (and its Edge Function)
+were gated **purely** on being a linked caregiver, with no Admin/Coach/
+Manager fallback — meaning a 16+ player with zero caregivers could never be
+issued a new code by anyone, a real lockout risk if they ever lose their
+session. **Fixed**: new `canIssueDeviceAccess` in `permissions-logic.ts`
+(same authority model as `canAddCaregiver` — caregiver, OR Admin, OR
+Coach/Manager on the team) wired into `TeamPage.tsx`, with the matching
+server-side fallback added to `generate-device-code`. Verified (`deno
+check`/`lint`, `npm test` 220/2 skipped, `npm run build`, all clean) but
+**not yet deployed or live-tested**. **Still outstanding once that's
+live**: the actual steps 7-8 revocation check (on a fresh child/caregiver
+pair, or on Aella now that a Manager/Admin can issue her a code too), and
+step 9, re-checking the Admin "Caregiver Reviews" screen once migration 063
+above actually runs. **Next up — run migration 063, deploy the device-access
+fix (`git am` + `supabase functions deploy generate-device-code`), finish
+item 5's remaining revocation check, then item 6** (existing-user bypass on
+all three call sites — note this path is also the one case that still
+shows editable fields on Accept/Deny, worth confirming that still works
+right) — report results back so `tasks.md` can be closed out. Full detail:
+`CHANGELOG.md`'s 2026-08-28/29/30/31 entries, `task12-manual-test-script.md`,
+`caregiver-invite-flow-fix-plan.md`. This is the only thing left on that
+entire 12-task spec.
 
 **Then — decide and build the one remaining parked decision** (dedicated
 section near the top of this file): **"Caregiver DOB Correction

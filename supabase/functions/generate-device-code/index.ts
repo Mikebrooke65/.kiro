@@ -10,11 +10,19 @@
 //
 // SECURITY POSTURE — read before changing:
 //   * Caller must be authenticated (their own session JWT, decoded the same
-//     lightweight way `create-auth-user` does) AND linked to the child via
-//     `player_caregivers` — checked here under service role, never trusted
-//     from the request body. `child_device_codes` itself has no direct
-//     authenticated INSERT policy (migration 055) specifically so this check
-//     cannot be bypassed by writing the row directly from the client.
+//     lightweight way `create-auth-user` does) AND authorized for this
+//     child — checked here under service role, never trusted from the
+//     request body. `child_device_codes` itself has no direct authenticated
+//     INSERT policy (migration 055) specifically so this check cannot be
+//     bypassed by writing the row directly from the client.
+//   * Authorized means: linked to the child via `player_caregivers`, OR
+//     club-wide Admin (`users.role = 'admin'`), OR a `team_members` row with
+//     role `coach`/`manager` on any team the child is on. The admin/coach/
+//     manager branch was added 2026-08-31, found testing the Section 6.2
+//     self-service "Remove My Caregiver" follow-up (migration 062): a 16+
+//     player who removes their only caregiver used to leave NOBODY able to
+//     issue them a fresh code — not even a club Admin. Same authority model
+//     `link-player-caregiver` already uses for this class of problem.
 //   * Requirement 7.4.6, RESOLVED: generating a fresh code immediately
 //     revokes any existing session for this child — "a lost/stolen device
 //     stops working the moment a replacement code is issued", not only once
@@ -140,7 +148,10 @@ Deno.serve(async (req) => {
       return json({ error: 'Invalid request' }, 400);
     }
 
-    // --- Authorization: caller must be a linked caregiver for this child ---
+    // --- Authorization: linked caregiver, OR club Admin, OR a Coach/Manager
+    // on one of this child's teams (2026-08-31 — see header comment). -------
+    let authorized = false;
+
     const linkResp = await fetch(
       `${SUPABASE_URL}/rest/v1/player_caregivers?caregiver_id=eq.${callerId}&player_id=eq.${childUserId}&select=player_id`,
       { headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY } }
@@ -150,8 +161,53 @@ Deno.serve(async (req) => {
       return json({ error: 'Service temporarily unavailable. Please try again shortly.' }, 500);
     }
     const linkRows = await linkResp.json();
-    if (!Array.isArray(linkRows) || linkRows.length === 0) {
-      console.error(`generate-device-code rejected: caller ${callerId} is not a linked caregiver of ${childUserId}`);
+    authorized = Array.isArray(linkRows) && linkRows.length > 0;
+
+    if (!authorized) {
+      const roleResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/users?id=eq.${callerId}&select=role`,
+        { headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY } }
+      );
+      if (!roleResp.ok) {
+        console.error(`generate-device-code role lookup failed: ${roleResp.status} ${await roleResp.text()}`);
+        return json({ error: 'Service temporarily unavailable. Please try again shortly.' }, 500);
+      }
+      const roleRows = await roleResp.json();
+      authorized = Array.isArray(roleRows) && roleRows[0]?.role === 'admin';
+    }
+
+    if (!authorized) {
+      const childTeamsResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/team_members?user_id=eq.${childUserId}&select=team_id`,
+        { headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY } }
+      );
+      if (!childTeamsResp.ok) {
+        console.error(
+          `generate-device-code child-teams lookup failed: ${childTeamsResp.status} ${await childTeamsResp.text()}`
+        );
+        return json({ error: 'Service temporarily unavailable. Please try again shortly.' }, 500);
+      }
+      const childTeamRows = await childTeamsResp.json();
+      const teamIds: string[] = Array.isArray(childTeamRows)
+        ? childTeamRows.map((row: { team_id?: string }) => row.team_id).filter((id: unknown): id is string => typeof id === 'string')
+        : [];
+
+      if (teamIds.length > 0) {
+        const memberResp = await fetch(
+          `${SUPABASE_URL}/rest/v1/team_members?user_id=eq.${callerId}&team_id=in.(${teamIds.join(',')})&role=in.(coach,manager)&select=id&limit=1`,
+          { headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY } }
+        );
+        if (!memberResp.ok) {
+          console.error(`generate-device-code member lookup failed: ${memberResp.status} ${await memberResp.text()}`);
+          return json({ error: 'Service temporarily unavailable. Please try again shortly.' }, 500);
+        }
+        const memberRows = await memberResp.json();
+        authorized = Array.isArray(memberRows) && memberRows.length > 0;
+      }
+    }
+
+    if (!authorized) {
+      console.error(`generate-device-code rejected: caller ${callerId} is not authorized for child ${childUserId}`);
       return json({ error: 'You are not authorized to do this for this child.' }, 403);
     }
 

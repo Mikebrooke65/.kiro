@@ -158,6 +158,51 @@ export function canAddCaregiver(input: {
 }
 
 /**
+ * Whether the current viewer may issue a child a fresh device-access code
+ * (Requirement 7.4, `streamlined-invites-and-child-access` Task 6).
+ *
+ * Found 2026-08-31, testing the Section 6.2 self-service "Remove My
+ * Caregiver" follow-up (migration 062): this used to be gated purely on
+ * "is the viewer a linked caregiver of this child" (`myLinkedChildIds` in
+ * `TeamPage.tsx`). That works fine right up until a 16+ player exercises
+ * their new self-service removal and ends up with zero linked caregivers —
+ * at which point NOBODY could issue them a new code any more, not even a
+ * Coach, Manager, or club Admin. A caregiver-less adult who ever loses
+ * their session (new device, cleared browser) would have had no way back
+ * in at all.
+ *
+ * Fix: same authority model `canAddCaregiver` already uses for this exact
+ * class of problem — club-wide Admin, or a Coach/Manager on this specific
+ * team, can act here too, in addition to (not instead of) a linked
+ * caregiver. External League teams stay fully read-only for everyone, same
+ * as every other roster-modifying action.
+ *
+ * This is a client-side convenience only — it decides whether to SHOW the
+ * button, never the actual authority to call the Edge Function. The real
+ * gate lives server-side in `generate-device-code`, which independently
+ * checks linked-caregiver / admin / team coach-manager status under
+ * service role before minting a code.
+ */
+export function canIssueDeviceAccess(input: {
+  isClubAdmin: boolean;
+  teamRoles: readonly PermissionRole[];
+  teamType: TeamType;
+  isLinkedCaregiver: boolean;
+}): boolean {
+  if (input.teamType === 'external_league') {
+    return false;
+  }
+
+  if (input.isLinkedCaregiver) {
+    return true;
+  }
+
+  return (
+    input.isClubAdmin || input.teamRoles.includes('coach') || input.teamRoles.includes('manager')
+  );
+}
+
+/**
  * The minimal shape required to perform an active/inactive transition. Any
  * record carrying an identity and an `active` flag qualifies; the generic
  * parameter ensures all other fields are preserved unchanged.

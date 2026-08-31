@@ -35,6 +35,7 @@ import {
 import {
   resolveCapabilities,
   canAddCaregiver,
+  canIssueDeviceAccess,
   type ActionCapabilities,
   type PermissionRole,
 } from '../lib/permissions-logic';
@@ -796,7 +797,12 @@ export function TeamPage() {
                           entry.roles.includes('player') &&
                           !entry.roles.includes('manager')
                         }
-                        canIssueDeviceAccess={roster.myLinkedChildIds.has(entry.userId)}
+                        canIssueDeviceAccess={canIssueDeviceAccess({
+                          isClubAdmin,
+                          teamRoles: roster.currentUserRoles,
+                          teamType: roster.teamType,
+                          isLinkedCaregiver: roster.myLinkedChildIds.has(entry.userId),
+                        })}
                         issuingDeviceAccess={issuingDeviceAccessFor === entry.userId}
                         onIssueDeviceAccess={() => handleIssueDeviceAccess(entry)}
                         canAddCaregiver={
