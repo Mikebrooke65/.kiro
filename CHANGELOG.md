@@ -2,6 +2,26 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-31] - Device link box: clearer instructions + a Copy button
+
+Two of the three "Issue Device Access" polish items captured earlier
+tonight and explicitly parked ("don't do anything yet, let's just capture
+that") — built now on request. Third (button styling/copy on "Issue Device
+Access" itself) still parked, not part of this change.
+
+- Copy text changed from "share this with them once. They'll be signed in
+  on that device from then on." to "share this with them to open on their
+  own device. It'll automatically sign them in to the app on that device
+  from then on." — makes explicit that the link is meant to be opened *on
+  the child's own device*, not the caregiver's.
+- Added a "Copy Link" button under the generated link, same pattern as
+  `CompetitionsPage.tsx`'s existing `copyInviteLink` (`navigator.clipboard.writeText`
+  + a confirmation `alert`) — no new pattern introduced.
+
+Verified: `npm test` (220 passing/2 skipped, unaffected), `npm run build`
+(clean). Pure copy/UI change, no data-layer or Edge Function involvement —
+just the client patch, no migration or redeploy needed.
+
 ## [2026-08-31] - A 16+ player who self-removes their only caregiver could get permanently locked out of device access
 
 Found immediately after Aella Dog's own "Remove My Caregiver" test
@@ -65,9 +85,13 @@ both assumed it did.
 
 Verified: confirmed missing via a direct `pg_trigger` diagnostic query
 before writing the fix (not guessed from the migration file, per this
-project's own established gotcha about live/file drift). Not yet
-re-verified live after running 063 — next removal (admin-initiated or
-self-service) should show up on the Caregiver Removal Reviews screen.
+project's own established gotcha about live/file drift). **Re-verified live
+2026-08-31**: the same diagnostic query now returns
+`on_player_caregiver_removed`, enabled (`tgenabled = 'O'`), definition
+matching migration 056's original exactly. Next caregiver removal
+(admin-initiated or self-service) should now show up on the Caregiver
+Removal Reviews screen — not yet exercised with a fresh removal to confirm
+end-to-end.
 
 ## [2026-08-30] - Section 6.2 redesigned: stop guessing at redemption time, let a 16+ player self-serve out of a caregiver link instead
 

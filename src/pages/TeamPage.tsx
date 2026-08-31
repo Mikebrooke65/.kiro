@@ -397,6 +397,18 @@ export function TeamPage() {
   };
 
   /**
+   * Copy a generated device link to the clipboard — same pattern as
+   * `CompetitionsPage.tsx`'s `copyInviteLink` (plain `navigator.clipboard`
+   * + a confirmation `alert`), added 2026-08-31 per a captured UX polish
+   * item on this screen (see `CHANGELOG.md`'s entry for the full list of
+   * three items this touches).
+   */
+  const handleCopyDeviceLink = (link: string) => {
+    navigator.clipboard.writeText(link);
+    alert('Device link copied to clipboard!');
+  };
+
+  /**
    * Fetch (or re-fetch) a child's caregiver list for the "manage
    * caregivers" disclosure (Requirement 7.5, Task 9). Kept separate from
    * the toggle handler below so a post-removal refresh can reuse it without
@@ -706,7 +718,8 @@ export function TeamPage() {
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm text-green-800">
                       Device link for <span className="font-medium">{deviceCodeResult.childName}</span> —
-                      share this with them once. They'll be signed in on that device from then on.
+                      share this with them to open on their own device. It'll automatically sign
+                      them in to the app on that device from then on.
                     </p>
                     <button
                       onClick={() => setDeviceCodeResult(null)}
@@ -719,6 +732,12 @@ export function TeamPage() {
                   <p className="text-sm font-mono break-all bg-white rounded px-2 py-1 border border-green-200">
                     {deviceCodeResult.link}
                   </p>
+                  <button
+                    onClick={() => handleCopyDeviceLink(deviceCodeResult.link)}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Copy Link
+                  </button>
                 </div>
               )}
 
