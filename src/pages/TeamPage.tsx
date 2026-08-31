@@ -1053,7 +1053,14 @@ function RosterRow({
                 disabled={issuingDeviceAccess}
                 className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
               >
-                {issuingDeviceAccess ? 'Creating...' : 'Issue Device Access'}
+                {/* 2026-08-31 — "Issue Device Access" tested as too technical
+                    ("token"/"device" language isn't how a caregiver thinks
+                    about this). Deliberately not "Give your child app
+                    access" — this button is also reachable by a Coach,
+                    Manager, or Admin (2026-08-31's canIssueDeviceAccess
+                    fix), for whom the player on this row isn't "their
+                    child". */}
+                {issuingDeviceAccess ? 'Setting up...' : 'Give App Access'}
               </button>
             )}
             {/* Requirement 7.5 (Task 9) — visibility already resolved by the
