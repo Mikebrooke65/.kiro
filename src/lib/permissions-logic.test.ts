@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { canAddCaregiver, canIssueDeviceAccess } from './permissions-logic';
+import { canAddCaregiver, canIssueDeviceAccess, canRemoveTeamMember } from './permissions-logic';
 
 describe('canAddCaregiver — admin-only gate on a second-or-later caregiver (Requirement 7.5)', () => {
   it('lets a club Admin add a caregiver whether the child has none or several already', () => {
@@ -208,6 +208,74 @@ describe('canIssueDeviceAccess — closes the caregiver-less-adult lockout gap (
         teamRoles: ['manager'],
         teamType: 'external_league',
         isLinkedCaregiver: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('canRemoveTeamMember — the "Remove" roster action (decided 2026-08-31, replacing Deactivate as the undo mechanism)', () => {
+  it('lets anyone remove their own row, with no other authority required', () => {
+    expect(
+      canRemoveTeamMember({
+        isOwnRow: true,
+        hasEditAuthority: false,
+        isFirstManager: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('lets a Coach/Manager/Admin (hasEditAuthority) remove someone else\'s row — no tiering between them', () => {
+    expect(
+      canRemoveTeamMember({
+        isOwnRow: false,
+        hasEditAuthority: true,
+        isFirstManager: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('blocks a plain Player/Caregiver (no edit authority) from removing someone else', () => {
+    expect(
+      canRemoveTeamMember({
+        isOwnRow: false,
+        hasEditAuthority: false,
+        isFirstManager: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(false);
+  });
+
+  it("protects the team's first Manager from being removed by anyone else, even another Manager/Admin", () => {
+    expect(
+      canRemoveTeamMember({
+        isOwnRow: false,
+        hasEditAuthority: true,
+        isFirstManager: true,
+        teamType: 'club_tournament',
+      })
+    ).toBe(false);
+  });
+
+  it('still lets the first Manager remove themselves', () => {
+    expect(
+      canRemoveTeamMember({
+        isOwnRow: true,
+        hasEditAuthority: true,
+        isFirstManager: true,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('blocks Remove entirely on External League teams, even self-removal or the combination that would otherwise allow it', () => {
+    expect(
+      canRemoveTeamMember({
+        isOwnRow: true,
+        hasEditAuthority: true,
+        isFirstManager: false,
+        teamType: 'external_league',
       })
     ).toBe(false);
   });

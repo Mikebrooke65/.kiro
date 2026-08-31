@@ -2,6 +2,99 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-31] - New roster "Remove" action, replacing Deactivate for undoing a mistaken add (built autonomously while the repo owner was away)
+
+Built end-to-end following the repo owner's explicit "yes lets get thios
+soprted!" go-ahead (full design recap in the previous session's discussion,
+now superseded by "DECIDED, NOT YET BUILT — Roster 'Remove' redesign" in
+`NEXT-SESSION-NOTES.md`, which this entry marks as now built) and "im
+heading off, you work on this in the background!" — no further questions
+asked since nobody was available to answer them; judgment calls made along
+the way are documented below and in code comments for review.
+
+**Not yet live-tested or deployed** — verified via `npm test` (226 passing,
+2 pre-existing skips), `npm run build`, and `deno check`/`deno lint` on the
+new Edge Function (all clean), per this project's usual pre-delivery bar,
+but nothing here has touched the actual Supabase project yet.
+
+- **`canRemoveTeamMember`** (`permissions-logic.ts`) — self-removal always
+  allowed; otherwise Coach/Manager/Admin, no tiering between them, EXCEPT
+  the team's first Manager (earliest `team_members` row with
+  `role='manager'`, by `created_at`) can only remove themselves. External
+  League teams block Remove entirely, same as every other roster-modifying
+  action. 6 new tests.
+- **`remove-team-member`** (new Edge Function) — the server-side
+  enforcement of that same rule, under service role. Deliberately NOT
+  relying on RLS: migration 036 already has a blanket
+  `team_members` FOR ALL policy letting any global admin/coach/manager
+  touch any team's memberships, unscoped — Postgres OR's every applicable
+  policy together, so a new, narrower one can't take that access back. This
+  pre-existing gap is flagged here and in the Edge Function's own header
+  comment as a known, separate issue — not silently fixed (risks breaking
+  `roles-api.ts`'s plain `addTeamMember`/`updateTeamMemberRole`/
+  `removeTeamMember`, which still rely on it for `UserManagement.tsx`'s own
+  team-assignment UI) and not silently ignored either.
+- **Cascade (judgment call — flagged for the repo owner to confirm intent
+  matches)**: removing a Player's LAST remaining `team_members` row
+  anywhere also deletes their `player_caregivers` links; a player still on
+  at least one other team keeps their caregiver link, since that link isn't
+  team-scoped in this schema and severing it over one team's Remove would
+  affect every team they're on.
+- **`TeamPage.tsx`**: Deactivate/Reactivate are gone from this page —
+  replaced by a "Remove" button per role a person holds on the team (one
+  button in the common case; two only if someone holds e.g. both Coach and
+  Player on the same team, each gated independently). Two-step confirm via
+  new `RemoveTeamMemberModal.tsx`, mirroring `RemoveMyCaregiverModal.tsx`'s
+  pattern exactly.
+- **`UserManagement.tsx`**: Deactivate/Reactivate now live here instead
+  (Admin-only, whole-account), and for the first time are actually wired to
+  the database. Found and fixed two pre-existing bugs while doing this: the
+  Status toggle/edit-dropdown were bound to a `status` field that doesn't
+  exist on the `User` interface (only `active: boolean` does — so neither
+  ever had any real effect on save); and the toggle handler itself only
+  ever mutated local React state, never calling Supabase. `handleDelete` on
+  the same screen is a separate, still-broken, pre-existing no-op —
+  deliberately left as-is, flagged in a code comment, since a real "Delete"
+  needs its own design decision well beyond this change's scope.
+
+## [2026-08-31] - Zero-click existing-user assignment: confirmed working — the earlier "failure" was a wrong test email, not a bug
+
+Resolved the entry below via direct SQL rather than more guessing (this
+project's established discipline, paid off again): querying `auth.users`
+and `public.users` for `mandcbrooke1+care2@gmail.com` returned **zero rows
+in both** — that address was never a real account at all. `Mortimer
+Mouse`'s actual registered email is `mandcbrooke1+care2@gmail.com`'s
+neighbour, `mandcbrooke1+care1@gmail.com` (`+care1`, confirmed via a
+`public.users` lookup by name). `check-invite-recipient` was answering
+"no account" correctly the whole time — the test itself used an address
+that had never been created.
+
+Re-tested live with the correct email: Mortimer was added directly, no
+invite email sent, no click required from him. **Task 12 item 6's first
+call site (Add Player, adult route) is now ✅ confirmed working live.**
+Second call site (assign-existing-Manager on Competitions) still needs a
+live test; third (Add Caregiver) was already correct before tonight, per
+the earlier entry below.
+
+## [2026-08-31] - Zero-click existing-user assignment: still not working live after redeploy, root cause not yet found
+
+Deployed the fix below (`checkInviteRecipient` + `joinExistingAccount` at
+Add Player's adult route), then redeployed `check-invite-recipient`
+(suspected stale — separate entry below) as the first thing to rule out.
+Retested live with a second existing account (Mortimer Mouse, an existing
+caregiver) via Add Player: **still got sent a registration invite email**,
+meaning the zero-click path did not fire. The fallback did its job (Mortimer
+wasn't lost), but the underlying cause is still open. Two candidates, not
+yet distinguished: (a) `checkInviteRecipient` is still answering "no
+account" for a real account even after redeploying the function, or (b)
+`joinExistingAccount` itself throws and the code correctly (if silently)
+falls back to the old invite-email path. **Next step**: check the browser
+console for a `"Existing-account auto-join failed"` warning (logs the
+actual thrown error if (b)); if absent, dig into whether
+`public.users.email` and the `auth.users` email GoTrue's admin API matches
+on actually agree for these test accounts — a direct SQL check, not an
+assumption, given tonight's repeated pattern of assumed-vs-actual gaps.
+
 ## [2026-08-31] - Existing-user invites (Add Player adult route, assign-existing-Manager) now complete with zero clicks from the invitee
 
 Found live-testing Task 12 item 6 (existing-user bypass): adding Daddy Pig

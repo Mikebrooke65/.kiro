@@ -203,6 +203,73 @@ export function canIssueDeviceAccess(input: {
 }
 
 /**
+ * Whether the current viewer may permanently remove a specific
+ * (person, role, team) association — one `team_members` row, or the
+ * equivalent caregiver link — from the roster (product decision 2026-08-31,
+ * surfaced testing Task 12 item 6's existing-user bypass and the resulting
+ * question of how to undo a mistaken Add).
+ *
+ * This supersedes `Deactivate` as the roster page's "undo" mechanism.
+ * `Deactivate`/`Reactivate` toggle `users.active` — the WHOLE account,
+ * every team and role at once (confirmed by reading `handleDeactivate` /
+ * `handleReactivate` in `TeamPage.tsx`) — which is too blunt for "I added
+ * the wrong person" or "I want to leave this one team": it would also kill
+ * any unrelated roles the same person holds elsewhere (e.g. removing a
+ * mistaken Player-add for someone who is also a caregiver on another team
+ * would kill their caregiver access too). `Remove` instead deletes exactly
+ * one membership row, matching how caregiver self-removal already works
+ * (migration 062) — this function is that same rule, generalized to every
+ * team-membership role.
+ *
+ * Rules encoded (decided by the user 2026-08-31):
+ * - External League teams stay fully read-only for everyone, same as every
+ *   other roster-modifying action (Req 4.3/5.17) — nobody can Remove there,
+ *   not even themselves. This also sidesteps the "bulk-imported league
+ *   teams may have no clear first Manager" edge case, since the whole
+ *   question never arises for a team type where Remove never shows at all.
+ * - Any user may Remove their OWN row(s) — self-removal from a role they
+ *   hold on that team — with exactly one exception below.
+ * - A Coach/Manager/Admin may Remove ANY row on the roster. Deliberately NO
+ *   TIERING between Coach/Manager/Admin for this action, unlike some other
+ *   capabilities in this file — the user was explicit that any of the
+ *   three should be able to remove any of the others.
+ * - EXCEPT: the team's very first Manager (the earliest `team_members` row
+ *   with `role = 'manager'` for that team, by `created_at` — derived by the
+ *   caller and passed in as `isFirstManager`, since "first Manager" isn't
+ *   stored anywhere as its own flag) can only ever be removed by
+ *   themselves. This is the one case where `hasEditAuthority` alone is not
+ *   enough — self-removal still works even for the first Manager, since a
+ *   person must always be able to remove themselves from a team, but no one
+ *   else, however senior, can remove the first Manager on their behalf.
+ *
+ * This is a client-side convenience only — it decides whether to SHOW the
+ * Remove control, never the actual authority to call the Edge Function. The
+ * real gate lives server-side in `remove-team-member`, which independently
+ * re-derives self-removal, Admin/Coach/Manager status, and first-Manager
+ * protection under service role before deleting anything — see that
+ * function's own header comment for why this can't safely be enforced by
+ * RLS alone (a pre-existing, overly-broad `team_members` policy from
+ * migration 036 already grants blanket access that a new, narrower policy
+ * cannot take back, since Postgres OR's every applicable policy together).
+ */
+export function canRemoveTeamMember(input: {
+  isOwnRow: boolean;
+  hasEditAuthority: boolean;
+  isFirstManager: boolean;
+  teamType: TeamType;
+}): boolean {
+  if (input.teamType === 'external_league') {
+    return false;
+  }
+
+  if (input.isFirstManager) {
+    return input.isOwnRow;
+  }
+
+  return input.isOwnRow || input.hasEditAuthority;
+}
+
+/**
  * The minimal shape required to perform an active/inactive transition. Any
  * record carrying an identity and an `active` flag qualifies; the generic
  * parameter ensures all other fields are preserved unchanged.

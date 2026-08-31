@@ -122,7 +122,8 @@ export function UserManagement() {
       user.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRole = filterRole === 'all' || user.role === filterRole;
-    const matchesStatus = filterStatus === 'all' || user.status === filterStatus;
+    const matchesStatus =
+      filterStatus === 'all' || (filterStatus === 'active' ? user.active : !user.active);
     const matchesUserType = filterUserType === 'all' || user.user_type === filterUserType;
     return matchesSearch && matchesRole && matchesStatus && matchesUserType;
   });
@@ -264,20 +265,51 @@ export function UserManagement() {
     }
   };
 
+  /**
+   * 2026-08-31 — pre-existing bug, found while relocating Deactivate/
+   * Reactivate here from the Team Page (see `permissions-logic.ts`'s
+   * `canRemoveTeamMember` doc comment for why they moved). This button has
+   * always been local-state-only: it filters `users` in memory and never
+   * calls the database, so refreshing the page (or `fetchUsers()` running
+   * again) undoes it silently. NOT fixed as part of this change — a real
+   * "Delete" here would need its own design decision (hard-delete the
+   * account? cascade to every team/caregiver link? this is a much bigger
+   * question than relocating Deactivate/Reactivate) — flagged here and in
+   * CHANGELOG.md as a known, separate gap rather than silently patched or
+   * silently left undocumented.
+   */
   const handleDelete = (userId: string) => {
     if (confirm('Are you sure you want to delete this user?')) {
       setUsers(users.filter((u) => u.id !== userId));
     }
   };
 
-  const handleToggleStatus = (userId: string) => {
-    setUsers(
-      users.map((u) =>
-        u.id === userId
-          ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
-          : u
-      )
-    );
+  /**
+   * 2026-08-31 — now a real, DB-persisting whole-account Deactivate/
+   * Reactivate, relocated here from the Team Page's roster row (see
+   * `permissions-logic.ts`'s `canRemoveTeamMember` doc comment for why:
+   * this flips `users.active` account-wide, every team and role at once —
+   * a genuinely different, coarser action than the new per-role "Remove").
+   *
+   * This was previously local-state-only, like `handleDelete` above, AND
+   * had a second, independent bug: it read/wrote `u.status`, a field that
+   * doesn't exist on the `User` interface (`active: boolean` is the real
+   * field) — so it silently did nothing to any real data even in memory.
+   * Both are fixed together here since a genuinely functional Deactivate/
+   * Reactivate is the whole point of moving it to this Admin-only screen.
+   */
+  const handleToggleStatus = async (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return;
+    const nextActive = !target.active;
+    try {
+      const { error } = await supabase.from('users').update({ active: nextActive }).eq('id', userId);
+      if (error) throw new Error(error.message);
+      setUsers(users.map((u) => (u.id === userId ? { ...u, active: nextActive } : u)));
+    } catch (error: any) {
+      console.error('Error updating user status:', error);
+      alert(`Error: ${error.message}`);
+    }
   };
 
   const handleImport = async () => {
@@ -566,12 +598,12 @@ export function UserManagement() {
                     <button
                       onClick={() => handleToggleStatus(user.id)}
                       className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        user.status === 'active'
+                        user.active
                           ? 'bg-green-100 text-green-700 hover:bg-green-200'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      {user.status === 'active' ? 'Active' : 'Inactive'}
+                      {user.active ? 'Active' : 'Inactive'}
                     </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.last_login}</td>
@@ -718,13 +750,19 @@ export function UserManagement() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
                   <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    value={formData.active ? 'active' : 'inactive'}
+                    onChange={(e) => setFormData({ ...formData, active: e.target.value === 'active' })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0091f3]"
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
+                  {/* 2026-08-31 — previously bound to `formData.status`, a
+                      field that doesn't exist on this form's state (only
+                      `active: boolean` does), so this dropdown silently had
+                      no effect on save at all — `handleSubmit` already only
+                      ever read `formData.active`. Fixed as part of
+                      relocating Deactivate/Reactivate to this screen. */}
                 </div>
               </div>
 

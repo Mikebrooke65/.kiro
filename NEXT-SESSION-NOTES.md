@@ -213,33 +213,73 @@ clean on the live pushed head: `npm test` (211 passing/2 skipped) and
    actually exist live (same "migration never fully applied" pattern as
    earlier tonight) — confirmed via a direct `pg_trigger` query, not
    assumed. **Fixed**: `063_restore_caregiver_removed_trigger.sql`,
-   idempotent, restores it verbatim. **Not yet run/re-verified** — see
-   `CHANGELOG.md`'s two 2026-08-30 entries for full detail on both. Also
-   captured, not yet built: three small UX polish items on "Issue Device
-   Access" (bland button styling + unclear label; the generated link has
-   no instructions on what to do with it or who should open it; needs a
-   Copy button next to the link).
-5. **Device-code redemption + revocation** — 🟡 partially covered as a
-   byproduct of testing item 4, remainder outstanding. Issuing Aella's
-   device code, opening it fresh in another browser, and landing signed in
-   as her with scoped child nav (script steps 1-4) is confirmed working —
-   that was exactly the mechanism item 4's live test exercised. Reopening
-   the same one-time link a second time (steps 5-6) was explicitly
-   re-tested and **confirmed failing as expected** — not valid a second
-   time. Attempting steps 7-8 (the revocation check) found a real gap
-   instead: Aella's caregiver had lost the "Issue Device Access" button
-   entirely after Aella removed her (correct — that's the point of removal)
-   but there was **no fallback for Admin/Coach/Manager at all**, so nobody
-   could issue her a fresh code. **Fixed** (not yet deployed): new
-   `canIssueDeviceAccess` gate (client + `generate-device-code` Edge
-   Function) — see `CHANGELOG.md`'s 2026-08-31 entry. **Still outstanding**
-   once that deploys: the actual steps 7-8 revocation check — generating a
-   *second* device code for the same child and confirming the *first*
-   device session gets signed out. Script: `task12-manual-test-script.md`
-   section 5; also section 5's step 9 (Admin "Caregiver Reviews" queue) is
-   worth re-checking once migration 063 (below) actually runs, since that's
-   the same review screen.
-6. **Existing-user bypass**, all three call sites — not yet started.
+   idempotent, restores it verbatim. **Run and confirmed live 2026-08-31**:
+   a direct `pg_trigger` re-check shows `on_player_caregiver_removed`
+   enabled, definition matching migration 056's original — see
+   `CHANGELOG.md`'s 2026-08-30/31 entries for full detail on both. Not yet
+   exercised end-to-end with a fresh removal (i.e. an actual
+   `admin_action_items` row appearing on the Caregiver Removal Reviews
+   screen after this). Also captured, not yet built: three small UX polish
+   items on "Issue Device Access" (bland button styling + unclear label;
+   the generated link has no instructions on what to do with it or who
+   should open it; needs a Copy button next to the link).
+5. **Device-code redemption + revocation** — ✅ fully confirmed live
+   2026-08-31. Issuing Aella's device code, opening it fresh in another
+   browser, and landing signed in as her with scoped child nav (script
+   steps 1-4) worked first, on item 4's own test. Reopening the same
+   one-time link a second time (steps 5-6) was explicitly re-tested and
+   **confirmed failing as expected** — not valid a second time. Attempting
+   steps 7-8 (the revocation check) on Aella found a real gap first: her
+   caregiver had lost the "Issue Device Access" button entirely after Aella
+   removed her (correct — that's the point of removal) but there was **no
+   fallback for Admin/Coach/Manager at all**, so nobody could issue her a
+   fresh code. **Fixed and deployed**: new `canIssueDeviceAccess` gate
+   (client + `generate-device-code` Edge Function, redeployed via `npx
+   supabase functions deploy`). With that live, the actual steps 7-8 check
+   was **run and confirmed on a fresh pair (George Pig / Daddy Pig)**:
+   Daddy issued George's second code and George's first session was
+   correctly signed out. Two more polish items landed on the same pass, per
+   live feedback: the device-link box now says explicitly to open it on the
+   child's own device and has a Copy Link button; the button itself is now
+   labeled "Give App Access" instead of "Issue Device Access" (not "Give
+   your child app access" — Coach/Manager/Admin can trigger it too now, and
+   the player isn't necessarily "their child"). **Only remaining loose
+   end**: confirming a fresh caregiver removal now actually queues an
+   `admin_action_items` row (migration 063) — not yet exercised end-to-end.
+   Full detail: `CHANGELOG.md`'s 2026-08-31 entries.
+6. **Existing-user bypass**, all three call sites — 🟡 in progress, first
+   call site now ✅ confirmed working live. Testing started by adding Daddy
+   Pig (an existing caregiver account) as a Player via Add Player: instead
+   of Requirement 2.2's intended lightweight "you already have an account,
+   join?" screen, it showed the **full** registration form (new password,
+   DOB, fresh privacy checkbox) — a real bug. Investigating that also
+   raised a sharper product question directly: should an existing,
+   already-verified account need to click through *anything* when a
+   Manager/Admin explicitly names them? **Product decision: no — zero
+   clicks.** The Manager/Admin's own action is authority enough; there's
+   nothing left for that person to agree to that they didn't already agree
+   to when their account was first created. **Built and deployed**:
+   `AddPlayerModal.tsx`'s adult route and `CompetitionsPage.tsx`'s
+   assign-existing-Manager flow now call `checkInviteRecipient` right after
+   creating the invite, and if the email already has an account,
+   immediately call `joinExistingAccount` instead of sending a registration
+   email (`redeem-invite`'s own existing-profile branch already creates
+   nothing and just adds the membership — confirmed by reading its logic
+   directly, not assumed). The "Add Caregiver to a child" call site was
+   checked and already did exactly this (direct `player_caregivers` link,
+   no invite) — no change needed there. Also found and fixed along the way:
+   `check-invite-recipient` was suspected stale and redeployed (turned out
+   to be unnecessary, but harmless). **First live test (Mortimer Mouse)
+   appeared to fail** — he got a registration invite email — but a direct
+   SQL check (`auth.users`/`public.users`, zero rows both) showed the test
+   itself used a nonexistent email (`+care2` instead of his real `+care1`
+   address); `check-invite-recipient` had been answering correctly all
+   along. **Re-tested with his correct email and confirmed working**:
+   added directly, no invite sent, no click required. **Still
+   outstanding**: the assign-existing-Manager call site (Competitions page)
+   hasn't been live-tested yet — same mechanism, same code path pattern, so
+   expected to work, but not yet proven. Full detail: `CHANGELOG.md`'s
+   2026-08-31 entries.
 
 Also found and fixed along the way, unrelated to this spec: the
 Announcements admin modal crashed on every open (New or Edit) —
@@ -247,6 +287,124 @@ Announcements admin modal crashed on every open (New or Edit) —
 4's fixes, then working through items 5-6, is the one thing standing
 between this spec and being fully closed out** — see "PLAN FOR NEXT
 SESSION" below.
+
+### ✅ BUILT, NOT YET LIVE-TESTED — Roster "Remove" redesign (surfaced testing item 6, 2026-08-31)
+
+**Built autonomously while the repo owner was away this session, following
+their explicit "yes lets get thios soprted!" go-ahead and "im heading off,
+you work on this in the background!" instruction.** Everything below is
+written, verified (`npm test`, `npm run build`, `deno check`/`deno lint` on
+the new Edge Function — all clean), and delivered as a patch — but **has
+not yet been live-tested against Supabase**, per this project's own
+discipline that nothing counts as done until proven live. That is the very
+next thing to do next session.
+
+**What shipped:**
+- `canRemoveTeamMember` (`src/lib/permissions-logic.ts`) — the pure rule:
+  self-removal always allowed; otherwise Coach/Manager/Admin (no tiering)
+  UNLESS the row is the team's first Manager, who may only remove
+  themselves; External League always blocks Remove entirely. 6 new tests,
+  all passing.
+- `remove-team-member` (new Edge Function) — the privileged server-side
+  twin of that rule. Re-derives self-removal, Admin/Coach-Manager-on-this-
+  team status, and first-Manager protection independently under service
+  role (never trusts the client), then deletes exactly the one
+  `team_members` row. **Not yet deployed** — needs
+  `npx supabase functions deploy remove-team-member` after the patch is
+  applied, same as every other Edge Function change this project makes.
+- **Cascade judgment call (flagged for review, not explicitly specified
+  this precisely by the repo owner)**: removing a Player's LAST remaining
+  `team_members` row anywhere in the app also deletes their
+  `player_caregivers` links, so no caregiver link survives with zero team
+  membership behind it. A player still on at least one OTHER team keeps
+  their caregiver link untouched, since `player_caregivers` isn't
+  team-scoped in this schema — severing it over a single team's Remove
+  would affect every team the child is on. **Worth confirming this
+  interpretation matches intent** once live-tested.
+- `RemoveTeamMemberModal.tsx` (new) — two-step confirm, same pattern as
+  `RemoveMyCaregiverModal.tsx`.
+- `TeamPage.tsx` — Deactivate/Reactivate are **gone from this page
+  entirely**, replaced by one "Remove" button per role a person holds on
+  the team (usually just one; two only when someone holds e.g. both Coach
+  and Player on the same team — each role's Remove is gated independently,
+  since first-Manager protection applies per membership row, not per
+  person).
+- `UserManagement.tsx` — Deactivate/Reactivate now live here instead
+  (Admin-only, whole-account, via the Status column/button and the edit
+  modal's Status dropdown), and are now **actually wired to the database**
+  for the first time. Found and fixed two pre-existing bugs along the way,
+  both flagged in code comments: (1) the Status toggle button and the edit
+  modal's Status dropdown were bound to `user.status`/`formData.status`, a
+  field that doesn't exist on the `User` interface (only `active: boolean`
+  does) — so neither ever had any real effect; (2) `handleToggleStatus` was
+  local-React-state-only, never calling Supabase at all. Both fixed
+  together since a genuinely functional Deactivate/Reactivate was the
+  point of moving it here. **`handleDelete` on this same screen is a
+  separate, still-unfixed, pre-existing no-op** (local-state-only, never
+  calls the database) — deliberately NOT touched, since a real "Delete"
+  raises its own design questions (hard-delete? cascade to every team/
+  caregiver link?) well beyond this change's scope. Flagged in code and
+  here rather than silently fixed or silently left undocumented.
+- **A known, separate, pre-existing security gap, found while designing
+  this — NOT fixed, deliberately**: migration 036 created a `team_members`
+  RLS policy that lets ANY user whose GLOBAL `users.role` is
+  admin/coach/manager manage (insert/update/delete) ANY `team_members` row
+  for ANY team, completely unscoped to teams they actually belong to.
+  Postgres OR's every applicable RLS policy together, so a new, narrower
+  policy cannot take that access back — it's why `remove-team-member` had
+  to be a privileged Edge Function rather than "just add an RLS policy."
+  This pre-existing looseness also still applies to `roles-api.ts`'s
+  plain `addTeamMember`/`updateTeamMemberRole`/`removeTeamMember` (used by
+  `UserManagement.tsx`'s own team-assignment UI), which were left as-is.
+  **Worth a dedicated look in a future session** — narrowing it risks
+  breaking those other flows, so it wasn't attempted here.
+
+Original design discussion, kept for context on what was decided and why:
+
+Came up live: once an existing account can be added to a role/team with
+zero clicks (above), the repo owner asked what undoes a mistaken add. That
+led to checking what today's "Deactivate" button actually does — it flips
+`users.active` for the **whole account**, every team and role that person
+has, not just one membership. Using it to undo a single mistaken add (e.g.
+Daddy Pig wrongly added as a Player) would also kill his unrelated
+caregiver access to George Pig. Too blunt for this purpose. Discussed and
+decided, but **no code written yet**:
+
+- New **"Remove"** action, distinct from Deactivate, scoped to exactly one
+  `(person, role, team)` association — a **real delete** of that one
+  `team_members` row (or `player_caregivers` link for a caregiver role),
+  same semantics as caregiver removal already has (migration 062/063), not
+  a soft flag. No roster-table trace afterward; any audit trail is
+  whatever gets logged to `admin_action_items`, same as caregiver removal.
+- **Visibility**: any user sees "Remove" on their **own** row(s) — self-
+  removal from a role they hold on that team. A Coach/Manager/Admin sees
+  "Remove" on **every** row (no tiering between Coach/Manager/Admin for
+  this) — **except** the team's very first Manager, who can only remove
+  *themselves*, not be removed by anyone else. (External League teams stay
+  fully read-only for everyone as always, so this never applies there —
+  also sidesteps the "bulk-imported league teams may have no clear first
+  Manager" edge case the repo owner flagged.) "First Manager" isn't stored
+  anywhere today — needs deriving (earliest `team_members` row with
+  `role = 'manager'` for that team, by `created_at`) or a new column, for
+  `club_tournament` teams only.
+- Removing a **child Player** row cascades to automatically remove that
+  child's linked caregiver(s) too (no orphaned caregiver link with no
+  child).
+- An adult-band (16+) player additionally sees "Remove" for their own
+  linked caregiver(s) specifically — this **is** the already-shipped
+  "Remove My Caregiver" feature (migration 062), just reframed as part of
+  this same unified action set rather than a one-off.
+- Two-step confirm (click, then a confirmation modal) for every one of
+  these — same UX pattern as the existing "Remove My Caregiver" modal.
+- **Deactivate/Reactivate move off the Team roster page entirely** —
+  become Admin-only, on a separate Admin Users screen (possibly
+  `pages/desktop/UserManagement.tsx` — not yet checked whether that
+  already has something to extend), for genuinely disabling someone's
+  whole account everywhere. Distinct purpose from "Remove."
+
+Built this session (see "BUILT, NOT YET LIVE-TESTED" summary above) —
+delivered as its own follow-up patch after item 6's zero-click bug was
+resolved and confirmed live.
 
 ## ✅ Add Player / DOB Age Model — FULLY BUILT, APPLIED & DEPLOYED (2026-08-21; UX follow-up 2026-08-25)
 
@@ -876,50 +1034,77 @@ the way, not yet fixed live**: migration 056's caregiver-removal
 `admin_action_items` trigger never actually existed on the live database
 (confirmed via a direct `pg_trigger` query — same "migration file vs. live
 drift" pattern as migrations 056/057 earlier), so no caregiver removal —
-admin-initiated or self-service — has ever queued an admin review. Fix is
-written (`063_restore_caregiver_removed_trigger.sql`, idempotent, restores
-migration 056's function + trigger verbatim) but **still needs to be
-delivered to the repo owner and run in the Supabase SQL Editor**, then
-re-verified with `check-caregiver-removed-trigger-exists.sql` and ideally
-one more caregiver removal to confirm a fresh `admin_action_items` row
-appears on the Caregiver Removal Reviews screen. Three UX polish items on
-"Issue Device Access" were also captured but explicitly not built yet per
-the repo owner's own instruction each time: bland button styling/unclear
-copy, no usage instructions on the generated device link, and no Copy
-button next to it.
+admin-initiated or self-service — has ever queued an admin review. **Fixed
+and confirmed live 2026-08-31**: `063_restore_caregiver_removed_trigger.sql`
+run in the Supabase SQL Editor, then re-verified with
+`check-caregiver-removed-trigger-exists.sql` — now returns
+`on_player_caregiver_removed`, enabled, matching migration 056's original
+definition. Not yet exercised with an actual fresh removal to confirm an
+`admin_action_items` row appears on the Caregiver Removal Reviews screen
+end-to-end. Three UX polish items on "Issue Device Access" were also
+captured but explicitly not built yet per the repo owner's own instruction
+each time: bland button styling/unclear copy, no usage instructions on the
+generated device link, and no Copy button next to it.
 
-**Item 5 (device-code redemption + revocation) is 🟡 partially covered, plus
-a real gap found and fixed (not yet deployed).** Testing item 4 already
-exercised most of its mechanism live: issuing Aella's device code, opening
-the link fresh in another browser, and landing signed in as her with scoped
-child nav (script steps 1-4) all worked. Re-testing the same link a second
-time was explicitly re-checked and **confirmed correctly rejected**
-(one-time use, steps 5-6). Trying to do the steps 7-8 revocation check
-(generate a *second* device code, confirm the first session dies) surfaced
-that Aella's caregiver "Aella mum" can no longer see "Issue Device Access"
-at all — correct, since removing her caregiver is supposed to lose her that
+**Item 5 (device-code redemption + revocation) is now ✅ fully confirmed
+live**, plus a real gap found, fixed, deployed, and two more UX polish
+items landed along the way. Testing item 4 already exercised most of its
+mechanism live: issuing Aella's device code, opening the link fresh in
+another browser, and landing signed in as her with scoped child nav (script
+steps 1-4) all worked. Re-testing the same link a second time was
+explicitly re-checked and **confirmed correctly rejected** (one-time use,
+steps 5-6). Trying to do the steps 7-8 revocation check (generate a
+*second* device code, confirm the first session dies) surfaced that Aella's
+caregiver "Aella mum" could no longer see "Issue Device Access" at all —
+correct, since removing her caregiver is supposed to lose her that
 visibility, but tracing it further found the button (and its Edge Function)
 were gated **purely** on being a linked caregiver, with no Admin/Coach/
 Manager fallback — meaning a 16+ player with zero caregivers could never be
 issued a new code by anyone, a real lockout risk if they ever lose their
-session. **Fixed**: new `canIssueDeviceAccess` in `permissions-logic.ts`
-(same authority model as `canAddCaregiver` — caregiver, OR Admin, OR
-Coach/Manager on the team) wired into `TeamPage.tsx`, with the matching
-server-side fallback added to `generate-device-code`. Verified (`deno
-check`/`lint`, `npm test` 220/2 skipped, `npm run build`, all clean) but
-**not yet deployed or live-tested**. **Still outstanding once that's
-live**: the actual steps 7-8 revocation check (on a fresh child/caregiver
-pair, or on Aella now that a Manager/Admin can issue her a code too), and
-step 9, re-checking the Admin "Caregiver Reviews" screen once migration 063
-above actually runs. **Next up — run migration 063, deploy the device-access
-fix (`git am` + `supabase functions deploy generate-device-code`), finish
-item 5's remaining revocation check, then item 6** (existing-user bypass on
-all three call sites — note this path is also the one case that still
-shows editable fields on Accept/Deny, worth confirming that still works
-right) — report results back so `tasks.md` can be closed out. Full detail:
-`CHANGELOG.md`'s 2026-08-28/29/30/31 entries, `task12-manual-test-script.md`,
-`caregiver-invite-flow-fix-plan.md`. This is the only thing left on that
-entire 12-task spec.
+session. **Fixed and deployed**: new `canIssueDeviceAccess` in
+`permissions-logic.ts` (same authority model as `canAddCaregiver` —
+caregiver, OR Admin, OR Coach/Manager on the team) wired into
+`TeamPage.tsx`, with the matching server-side fallback added to
+`generate-device-code` and redeployed via `npx supabase functions deploy`.
+With that live, **the actual steps 7-8 check was run and confirmed on a
+fresh pair (George Pig / Daddy Pig)**: Daddy issued a second code and
+George's first session was correctly signed out on the next load. Two more
+long-parked UX polish items were built on request during this same live
+pass: the device-link box now says explicitly to open the link on the
+child's own device and has a Copy Link button; the button itself is now
+labeled "Give App Access" instead of "Issue Device Access" (deliberately
+not "Give your child app access," since Coach/Manager/Admin can trigger it
+too now). **Only remaining loose end**: confirming a fresh caregiver
+removal now actually queues an `admin_action_items` row (migration 063,
+confirmed live above) — not yet exercised end-to-end.
+
+**Item 6 (existing-user bypass)** is ✅ confirmed working live for its first
+call site (Add Player, adult route — the Mortimer Mouse retest, correct
+email this time). Second call site (assign-existing-Manager on
+Competitions) still needs a live test; third (Add Caregiver) was already
+correct before this work, per the earlier entry in `CHANGELOG.md`.
+
+**Next up — first, deploy and live-test the new "Remove" roster action**
+(built this session while the repo owner was away — see the "✅ BUILT, NOT
+YET LIVE-TESTED" section above for the full list of what shipped and the
+one cascade judgment call worth double-checking). Needs, in order: apply
+the patch, `npx supabase functions deploy remove-team-member`, then a live
+pass covering — a Manager removing a Coach; a Player removing themselves;
+a Coach/Manager attempting to remove the team's first Manager (should be
+refused); the first Manager removing themselves (should succeed); a child
+Player's removal cascading to their caregiver link when it's their last
+team, and NOT cascading when they're still on another team; and confirming
+Deactivate/Reactivate on the Admin Users screen (`UserManagement.tsx`) now
+actually persists to the database (previously silently didn't). **Then**
+confirm migration 063's admin-queue effect with one more caregiver removal,
+then finish item 6's second call site (assign-existing-Manager) — note the
+existing-user-bypass path is also the one case that still shows editable
+fields on Accept/Deny, worth confirming that still works right — report
+results back so `tasks.md` can be closed out. Full detail: `CHANGELOG.md`'s
+2026-08-28/29/30/31 entries, `task12-manual-test-script.md`,
+`caregiver-invite-flow-fix-plan.md`. Once the Remove redesign and item 6's
+last call site are both confirmed live, this is the only thing left on
+that entire 12-task spec.
 
 **Then — decide and build the one remaining parked decision** (dedicated
 section near the top of this file): **"Caregiver DOB Correction

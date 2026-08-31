@@ -36,12 +36,14 @@ import {
   resolveCapabilities,
   canAddCaregiver,
   canIssueDeviceAccess,
+  canRemoveTeamMember,
   type ActionCapabilities,
   type PermissionRole,
 } from '../lib/permissions-logic';
 import { AddPlayerModal, type AddPlayerOutcome } from '../components/team/AddPlayerModal';
 import { AddCaregiverModal } from '../components/team/AddCaregiverModal';
 import { RemoveMyCaregiverModal } from '../components/team/RemoveMyCaregiverModal';
+import { RemoveTeamMemberModal } from '../components/team/RemoveTeamMemberModal';
 import { caregiversApi } from '../lib/caregivers-api';
 import { ApiError } from '../lib/api-client';
 import {
@@ -78,6 +80,28 @@ interface RosterData {
   currentUserRoles: PermissionRole[];
   /** team_members row id of each user's player membership (for promotion). */
   playerMembershipIdByUser: Record<string, string>;
+  /**
+   * 2026-08-31 — every `team_members` row (id + role) each user holds on
+   * this team, keyed by user id. Unlike `playerMembershipIdByUser` above
+   * (player-only, for promotion), this covers every role a person might
+   * simultaneously hold on the SAME team (e.g. a Coach who is also a
+   * Player), because the new "Remove" action deletes exactly one
+   * (person, role, team) association — it needs the specific row id for
+   * whichever role's Remove control was clicked, not just "this user
+   * somewhere on this team". See `canRemoveTeamMember` (`permissions-
+   * logic.ts`) and `remove-team-member` (Edge Function).
+   */
+  membershipsByUser: Record<string, Array<{ id: string; role: TeamRole }>>;
+  /**
+   * The `team_members.id` of this team's first Manager (earliest row with
+   * `role = 'manager'`, by `created_at`) — `null` if the team has no
+   * Manager yet. Only meaningful for `club_tournament` teams; an External
+   * League team never shows Remove at all, so this is never consulted
+   * there. "First Manager" isn't stored anywhere as its own flag, so it's
+   * derived here from the same `memberRows` fetch already in hand, rather
+   * than a second round-trip.
+   */
+  firstManagerMembershipId: string | null;
   /**
    * Requirement 7.4.1 — child user ids the CURRENT viewer is a linked
    * caregiver for (`player_caregivers`), independent of this team's own
@@ -204,6 +228,18 @@ export function TeamPage() {
   // — just whether it's open.
   const [showRemoveMyCaregiver, setShowRemoveMyCaregiver] = useState(false);
 
+  // 2026-08-31 — the roster page's new "Remove" action (replaces
+  // Deactivate/Reactivate here; see `permissions-logic.ts`'s
+  // `canRemoveTeamMember`). Set when a row's Remove control is clicked;
+  // `null` while the confirmation modal is closed. Only one row/role can be
+  // mid-confirmation at a time.
+  const [removeTarget, setRemoveTarget] = useState<{
+    membershipId: string;
+    memberName: string;
+    roleLabel: string;
+    isOwnRow: boolean;
+  } | null>(null);
+
   // streamlined-invites-and-child-access, Decision 1 — the caregiver's
   // confirm-or-correct copy of a pending child's name/DOB, and this row's
   // approve/deny state, keyed by `caregiver_approvals.id`. Folds what
@@ -319,34 +355,36 @@ export function TeamPage() {
     if (selection.selectedTeamId) loadRoster(selection.selectedTeamId);
   };
 
-  const handleDeactivate = async (entry: RosterEntry) => {
+  /**
+   * 2026-08-31 — opens the "Remove" confirmation for one role on one row.
+   * Deactivate/Reactivate (whole-account `users.active`) are gone from this
+   * page entirely — see `permissions-logic.ts`'s `canRemoveTeamMember` doc
+   * comment for why they were too blunt for "undo a mistaken Add", and
+   * `UserManagement.tsx` for where a genuine whole-account disable now
+   * lives (Admin-only, a distinct purpose from Remove).
+   */
+  const handleOpenRemove = (
+    membershipId: string,
+    role: TeamRole,
+    entry: RosterEntry,
+    isOwnRow: boolean
+  ) => {
     setActionMessage(null);
-    try {
-      const { error } = await supabase
-        .from('users')
-        .update({ active: false })
-        .eq('id', entry.userId);
-      if (error) throw new Error(error.message);
-      setActionMessage(`${entry.displayName} is now inactive.`);
-      refreshRoster();
-    } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : 'Could not update the member.');
-    }
+    setRemoveTarget({
+      membershipId,
+      memberName: entry.displayName,
+      roleLabel: ROLE_LABELS[role],
+      isOwnRow,
+    });
   };
 
-  const handleReactivate = async (entry: RosterEntry) => {
-    setActionMessage(null);
-    try {
-      const { error } = await supabase
-        .from('users')
-        .update({ active: true })
-        .eq('id', entry.userId);
-      if (error) throw new Error(error.message);
-      setActionMessage(`${entry.displayName} is now active.`);
-      refreshRoster();
-    } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : 'Could not update the member.');
-    }
+  const handleRemoveSuccess = (memberName: string, roleLabel: string, cascadedCaregiverRemoval: boolean) => {
+    setActionMessage(
+      cascadedCaregiverRemoval
+        ? `Removed ${memberName} as ${roleLabel}. As that was their last team, their caregiver link was removed too.`
+        : `Removed ${memberName} as ${roleLabel}.`
+    );
+    refreshRoster();
   };
 
   const handlePromoteToManager = async (entry: RosterEntry) => {
@@ -808,8 +846,23 @@ export function TeamPage() {
                           updateRespondEdit(entry.pendingApprovalId, field, value)
                         }
                         onRespond={(decision) => handleRespondToJunior(entry, decision)}
-                        onDeactivate={() => handleDeactivate(entry)}
-                        onReactivate={() => handleReactivate(entry)}
+                        removableMemberships={(roster.membershipsByUser[entry.userId] ?? []).map(
+                          (membership) => ({
+                            ...membership,
+                            canRemove: canRemoveTeamMember({
+                              isOwnRow,
+                              hasEditAuthority:
+                                isClubAdmin ||
+                                roster.currentUserRoles.includes('coach') ||
+                                roster.currentUserRoles.includes('manager'),
+                              isFirstManager: membership.id === roster.firstManagerMembershipId,
+                              teamType: roster.teamType,
+                            }),
+                          })
+                        )}
+                        onRemove={(membershipId, role) =>
+                          handleOpenRemove(membershipId, role, entry, isOwnRow)
+                        }
                         onPromote={() => handlePromoteToManager(entry)}
                         canPromoteThisMember={
                           !!roster.playerMembershipIdByUser[entry.userId] &&
@@ -894,6 +947,23 @@ export function TeamPage() {
           }}
         />
       )}
+
+      {/* 2026-08-31 — the roster page's new "Remove" action, reachable only
+          via a row's own Remove control, itself gated by `canRemoveTeamMember`
+          above; the actual delete is re-checked at the data layer regardless
+          (`remove-team-member` Edge Function). */}
+      {removeTarget && (
+        <RemoveTeamMemberModal
+          membershipId={removeTarget.membershipId}
+          memberName={removeTarget.memberName}
+          roleLabel={removeTarget.roleLabel}
+          isOwnRow={removeTarget.isOwnRow}
+          onClose={() => setRemoveTarget(null)}
+          onSuccess={(cascadedCaregiverRemoval) =>
+            handleRemoveSuccess(removeTarget.memberName, removeTarget.roleLabel, cascadedCaregiverRemoval)
+          }
+        />
+      )}
     </div>
   );
 }
@@ -910,8 +980,15 @@ interface RosterRowProps {
   entry: RosterEntry;
   capabilities: ActionCapabilities;
   canPromoteThisMember: boolean;
-  onDeactivate: () => void;
-  onReactivate: () => void;
+  /**
+   * 2026-08-31 — every `team_members` row this entry holds on this team,
+   * each pre-resolved to whether the current viewer may Remove it
+   * (`canRemoveTeamMember`, already evaluated by the parent). Replaces
+   * `onDeactivate`/`onReactivate` here entirely — see `permissions-logic
+   * .ts`'s `canRemoveTeamMember` doc comment for why.
+   */
+  removableMemberships: Array<{ id: string; role: TeamRole; canRemove: boolean }>;
+  onRemove: (membershipId: string, role: TeamRole) => void;
   onPromote: () => void;
   /** Requirement 7.4.1 — true when the current viewer is a linked caregiver
    *  of this row's child, regardless of any team-level capability. */
@@ -955,8 +1032,8 @@ function RosterRow({
   entry,
   capabilities,
   canPromoteThisMember,
-  onDeactivate,
-  onReactivate,
+  removableMemberships,
+  onRemove,
   onPromote,
   canIssueDeviceAccess,
   issuingDeviceAccess,
@@ -1027,22 +1104,25 @@ function RosterRow({
                 Make Manager
               </button>
             )}
-            {capabilities.canDeactivate && entry.active && (
-              <button
-                onClick={onDeactivate}
-                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                Deactivate
-              </button>
-            )}
-            {capabilities.canReactivate && !entry.active && (
-              <button
-                onClick={onReactivate}
-                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                Reactivate
-              </button>
-            )}
+            {/* 2026-08-31 — one Remove control per role this person holds on
+                this team (usually just one). Each is independently gated by
+                `canRemoveTeamMember`, already resolved by the parent — a
+                row with two roles (e.g. Coach + Player) can show Remove for
+                one and not the other (the first-Manager protection applies
+                per membership row, not per person). */}
+            {removableMemberships
+              .filter((membership) => membership.canRemove)
+              .map((membership) => (
+                <button
+                  key={membership.id}
+                  onClick={() => onRemove(membership.id, membership.role)}
+                  className="text-xs px-2.5 py-1 rounded-md border border-red-300 text-red-700 hover:bg-red-50"
+                >
+                  {removableMemberships.length > 1
+                    ? `Remove as ${ROLE_LABELS[membership.role]}`
+                    : 'Remove'}
+                </button>
+              ))}
             {/* Requirement 7.4.1 — a linked caregiver's own right over their
                 child's record, independent of any team-level capability
                 above (a caregiver need not be a Coach/Manager/Admin to see
@@ -1398,6 +1478,25 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     if (row.role === 'player') playerMembershipIdByUser[row.user_id] = row.id;
   }
 
+  // 2026-08-31 — every membership row (id + role) each user holds on this
+  // team, for the new "Remove" action (see the RosterData field's own doc
+  // comment for why this needs to be per-role, not just per-user).
+  const membershipsByUser: Record<string, Array<{ id: string; role: TeamRole }>> = {};
+  for (const row of memberRows) {
+    (membershipsByUser[row.user_id] ??= []).push({ id: row.id, role: row.role });
+  }
+
+  // First Manager (earliest `role = 'manager'` row, by `created_at`) — the
+  // one membership the new Remove action protects from anyone but
+  // themselves. `getTeamMembers` doesn't guarantee `created_at` ordering
+  // (it orders by `role`), so this sorts explicitly rather than assuming
+  // the fetch order already reflects it.
+  const managerRowsByCreatedAt = memberRows
+    .filter((row) => row.role === 'manager')
+    .slice()
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const firstManagerMembershipId = managerRowsByCreatedAt[0]?.id ?? null;
+
   // Requirement 7.4.1 — independent of this team's roster data: which
   // children (on any team) is the current viewer a linked caregiver for.
   // Best-effort: a lookup failure here should never break loading the
@@ -1449,6 +1548,8 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     managerCount,
     currentUserRoles,
     playerMembershipIdByUser,
+    membershipsByUser,
+    firstManagerMembershipId,
     myLinkedChildIds,
     caregiverCountByPlayer,
     canSelfRemoveCaregiver: canSelfRemoveCaregiver(ownAgeBand, ownCaregivers.length),

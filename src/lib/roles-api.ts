@@ -57,7 +57,14 @@ class RolesApi extends ApiClient {
     return data as TeamMember;
   }
 
-  /** Remove a team membership */
+  /**
+   * Remove a team membership directly (no Edge Function). Used today by
+   * `UserManagement.tsx`'s Admin team-assignment screen only. Its
+   * authorization rests entirely on the `team_members` RLS policy from
+   * migration 036 — deliberately unchanged here; see
+   * `removeTeamMemberSecure`'s comment for why the roster page's own
+   * "Remove" action does NOT reuse this method.
+   */
   async removeTeamMember(membershipId: string): Promise<void> {
     const { error } = await this.supabase
       .from('team_members')
@@ -65,6 +72,46 @@ class RolesApi extends ApiClient {
       .eq('id', membershipId);
 
     if (error) throw new ApiError(error.message);
+  }
+
+  /**
+   * Remove exactly one (person, role, team) association via the privileged
+   * `remove-team-member` Edge Function — the data-layer half of the roster
+   * page's "Remove" action (product decision 2026-08-31; see
+   * `permissions-logic.ts`'s `canRemoveTeamMember` for the full rule set).
+   *
+   * Deliberately NOT the plain `removeTeamMember` above: that method is a
+   * direct client-side delete whose only authorization is the existing,
+   * overly-broad `team_members` RLS policy (migration 036) — it cannot
+   * enforce "not the team's first Manager," and cannot be trusted to
+   * correctly scope a Coach/Manager to only their own team, since Postgres
+   * OR's that blanket policy in regardless of any narrower one added
+   * alongside it. `remove-team-member` re-derives self-removal,
+   * Admin/Coach/Manager-on-this-team status, and first-Manager protection
+   * itself, server-side, under service role — see that function's header
+   * comment for the full explanation of the underlying RLS gap.
+   *
+   * DEPLOYMENT: Edge Functions do NOT ship with `git push`. This call fails
+   * until `supabase functions deploy remove-team-member` has been run.
+   */
+  async removeTeamMemberSecure(
+    membershipId: string
+  ): Promise<{ cascadedCaregiverRemoval: boolean }> {
+    const { data: result, error } = await this.supabase.functions.invoke(
+      'remove-team-member',
+      { body: { membership_id: membershipId } }
+    );
+
+    if (error) {
+      throw new ApiError(await extractFunctionError(error));
+    }
+    if (result?.error) {
+      throw new ApiError(
+        typeof result.error === 'string' ? result.error : 'Could not remove this team member.'
+      );
+    }
+
+    return { cascadedCaregiverRemoval: Boolean(result?.cascadedCaregiverRemoval) };
   }
 
   /** Promote a lite user to full user (preserves all team memberships) */
@@ -105,6 +152,27 @@ class RolesApi extends ApiClient {
       ),
     }));
   }
+}
+
+/**
+ * `functions.invoke` surfaces non-2xx responses as an opaque error — the useful
+ * message is in the response body, read off `error.context`. Same approach as
+ * `caregivers-api.ts` / `email-api.ts` / `invites-api.ts`; kept local so the
+ * fallback message suits this file's own calls.
+ */
+async function extractFunctionError(error: unknown): Promise<string> {
+  const context = (error as { context?: Response })?.context;
+  if (context && typeof context.json === 'function') {
+    try {
+      const body = await context.json();
+      if (body?.error) {
+        return typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+      }
+    } catch {
+      // Body wasn't JSON — fall through to the generic message.
+    }
+  }
+  return error instanceof Error ? error.message : 'Could not remove this team member.';
 }
 
 export const rolesApi = new RolesApi();
