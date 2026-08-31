@@ -1489,6 +1489,12 @@ async function fetchCaregiverLinks(
 /** Feedback text for the roster page's action banner after Add Player succeeds. */
 function addPlayerSuccessMessage(outcome: AddPlayerOutcome): string {
   if (outcome.route === 'adult') {
+    // 2026-08-31 — Requirement 2.4's existing-user bypass: this email
+    // already had an account, so they were added directly with no invite
+    // sent at all (see AddPlayerModal's adult-route comment).
+    if (outcome.existingAccount) {
+      return 'They already had an account — added to the team directly, no invite needed.';
+    }
     return outcome.emailFailed
       ? "Adult invite created, but the invite email couldn't be sent — let them know directly."
       : 'Adult self-registration invite sent.';

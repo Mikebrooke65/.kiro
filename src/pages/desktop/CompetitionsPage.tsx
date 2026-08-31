@@ -31,7 +31,7 @@ export function CompetitionsPage() {
   const [managerEmail, setManagerEmail] = useState('');
   const [managerPhone, setManagerPhone] = useState('');
   const [addTeamLoading, setAddTeamLoading] = useState(false);
-  const [addTeamResult, setAddTeamResult] = useState<{ teamName: string; email: string; code: string } | null>(null);
+  const [addTeamResult, setAddTeamResult] = useState<{ teamName: string; email: string; code: string; existingAccount: boolean } | null>(null);
 
   // Invite email state - tracked per invite code so each row can show its
   // own Sending/Sent state without a single global spinner.
@@ -240,10 +240,32 @@ export function CompetitionsPage() {
         'manager'
       );
 
+      // 2026-08-31 — Requirement 2.4's existing-user bypass, call site #3
+      // (Task 12 item 6): if managerEmail already belongs to a real
+      // account, an Admin naming them here as this brand-new team's
+      // Manager is authority enough on its own — there's nothing left for
+      // them to agree to. Same mechanism as `AddPlayerModal`'s adult route
+      // (2026-08-31): `checkInviteRecipient` gates it, `joinExistingAccount`
+      // completes it immediately via `redeem-invite`'s own existing-profile
+      // branch, which creates nothing and never touches their real
+      // password. Falls through to the ordinary invite-link path below on
+      // any failure — the invite row already exists either way.
+      let existingAccount = false;
+      try {
+        existingAccount = await invitesApi.checkInviteRecipient(invite.code);
+        if (existingAccount) {
+          await invitesApi.joinExistingAccount(invite.code, managerEmail);
+        }
+      } catch (err) {
+        console.warn('Existing-account auto-join failed, falling back to invite link:', err);
+        existingAccount = false;
+      }
+
       setAddTeamResult({
         teamName: `${newTeamAgeGroup || 'Open'} ${newTeamName}`.trim(),
         email: managerEmail,
         code: invite.code,
+        existingAccount,
       });
 
       // Refresh data
@@ -574,35 +596,56 @@ export function CompetitionsPage() {
               <div className="text-center">
                 <div className="mb-4">
                   <p className="text-sm text-gray-600 mb-2">Team "{addTeamResult.teamName}" created and linked!</p>
-                  <p className="text-sm text-gray-600 mb-2">Manager invite code:</p>
-                  <p className="text-2xl font-mono font-bold text-blue-600">{addTeamResult.code}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 mb-4">
-                  <p className="text-xs text-gray-500 mb-1">Share this link with the team manager:</p>
-                  <p className="text-sm font-mono break-all">{window.location.origin}/invite/{addTeamResult.code}</p>
-                </div>
-                <p className="text-xs text-gray-500 mb-4">
-                  The manager registers via this link, then they can share it with their players to onboard them.
-                </p>
-                {sentCodes.includes(addTeamResult.code) && (
-                  <p className="text-sm text-green-700 mb-3">Invite emailed to {addTeamResult.email}</p>
+                {addTeamResult.existingAccount ? (
+                  // 2026-08-31 — existing-user bypass (Requirement 2.4, call
+                  // site #3): managerEmail already had an account, so they
+                  // were added as this team's Manager immediately — no
+                  // invite code, no link, nothing left to send.
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-green-800">
+                      {addTeamResult.email} already has an account — they've been added as this
+                      team's Manager directly. Nothing more to send.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 mb-2">Manager invite code:</p>
+                      <p className="text-2xl font-mono font-bold text-blue-600">{addTeamResult.code}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                      <p className="text-xs text-gray-500 mb-1">Share this link with the team manager:</p>
+                      <p className="text-sm font-mono break-all">{window.location.origin}/invite/{addTeamResult.code}</p>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-4">
+                      The manager registers via this link, then they can share it with their players to onboard them.
+                    </p>
+                    {sentCodes.includes(addTeamResult.code) && (
+                      <p className="text-sm text-green-700 mb-3">Invite emailed to {addTeamResult.email}</p>
+                    )}
+                  </>
                 )}
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => sendInviteLink({
-                      code: addTeamResult.code,
-                      email: addTeamResult.email,
-                      teamName: addTeamResult.teamName,
-                    })}
-                    disabled={sendingCode === addTeamResult.code}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-                    {sendLabel(addTeamResult.code)}
-                  </button>
-                  <button onClick={() => copyInviteLink(addTeamResult.code)} 
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                    Copy Link
-                  </button>
-                  <button onClick={() => { setShowAddTeamModal(false); setAddTeamResult(null); }} 
+                  {!addTeamResult.existingAccount && (
+                    <>
+                      <button
+                        onClick={() => sendInviteLink({
+                          code: addTeamResult.code,
+                          email: addTeamResult.email,
+                          teamName: addTeamResult.teamName,
+                        })}
+                        disabled={sendingCode === addTeamResult.code}
+                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                        {sendLabel(addTeamResult.code)}
+                      </button>
+                      <button onClick={() => copyInviteLink(addTeamResult.code)}
+                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        Copy Link
+                      </button>
+                    </>
+                  )}
+                  <button onClick={() => { setShowAddTeamModal(false); setAddTeamResult(null); }}
                     className="flex-1 px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
                     Done
                   </button>

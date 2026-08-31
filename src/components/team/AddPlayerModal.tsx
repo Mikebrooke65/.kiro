@@ -34,7 +34,7 @@ import {
 
 /** Outcome reported to the parent so it can show a tailored confirmation. */
 export type AddPlayerOutcome =
-  | { route: 'adult'; emailFailed: boolean }
+  | { route: 'adult'; emailFailed: boolean; existingAccount: boolean }
   | { route: 'junior'; caregiverInvited: boolean };
 
 interface AddPlayerModalProps {
@@ -168,22 +168,58 @@ export function AddPlayerModal({
           form.firstName.trim(),
           form.lastName.trim()
         );
-        let emailFailed = false;
+
+        // 2026-08-31 — Requirement 2.4's existing-user bypass, done at the
+        // moment of ADDING rather than left for the invitee to click
+        // through (found broken live: the intended lightweight "Join"
+        // confirmation screen wasn't rendering at all, and separately,
+        // product decision was to skip even that click for this call
+        // site). A Manager/Admin naming an email that already belongs to a
+        // real account is authority enough on its own — there's nothing
+        // left for that person to agree to that they didn't already agree
+        // to when their account was first created. `redeem-invite`'s own
+        // existing-profile branch (see its 2a/3 comments) already creates
+        // nothing and just adds the membership when the email matches a
+        // real account, so triggering it immediately here — via the same
+        // `joinExistingAccount` the lite-landing "Join" button itself
+        // calls — is safe: it never touches that account's real password
+        // (a throwaway one is generated and never used) and never asks
+        // them anything. Any failure here (the existence check, or the
+        // join itself) falls through to the ordinary invite-email path
+        // below rather than losing the Add Player action — the invite row
+        // already exists either way.
+        let existingAccount = false;
         try {
-          await emailApi.sendTeamInvite({
-            to: email,
-            recipientName: form.firstName.trim(),
-            teamName: teamLabel,
-            inviteCode: invite.code,
-          });
+          existingAccount = await invitesApi.checkInviteRecipient(invite.code);
+          if (existingAccount) {
+            await invitesApi.joinExistingAccount(invite.code, email, {
+              firstName: form.firstName.trim(),
+              lastName: form.lastName.trim(),
+            });
+          }
         } catch (err) {
-          // The invite exists either way; a send failure is surfaced to the
-          // Manager (below) but doesn't undo the invite (mirrors addJunior's
-          // own fire-and-forget email handling).
-          emailFailed = true;
-          console.warn('Failed to send adult self-registration invite email:', err);
+          console.warn('Existing-account auto-join failed, falling back to invite email:', err);
+          existingAccount = false;
         }
-        onSuccess?.({ route: 'adult', emailFailed });
+
+        let emailFailed = false;
+        if (!existingAccount) {
+          try {
+            await emailApi.sendTeamInvite({
+              to: email,
+              recipientName: form.firstName.trim(),
+              teamName: teamLabel,
+              inviteCode: invite.code,
+            });
+          } catch (err) {
+            // The invite exists either way; a send failure is surfaced to the
+            // Manager (below) but doesn't undo the invite (mirrors addJunior's
+            // own fire-and-forget email handling).
+            emailFailed = true;
+            console.warn('Failed to send adult self-registration invite email:', err);
+          }
+        }
+        onSuccess?.({ route: 'adult', emailFailed, existingAccount });
       } else {
         // Requirement 1.3 — no date of birth passed through: the child's DOB
         // and confirmed name are collected for the first time at redemption,

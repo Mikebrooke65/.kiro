@@ -2,6 +2,89 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-08-31] - Existing-user invites (Add Player adult route, assign-existing-Manager) now complete with zero clicks from the invitee
+
+Found live-testing Task 12 item 6 (existing-user bypass): adding Daddy Pig
+(an existing caregiver account) as a Player via Add Player showed the full
+"create your account" registration form — new password, DOB, fresh privacy
+checkbox — instead of the intended lightweight "you already have an
+account, join?" screen from Requirement 2.2. That screen not rendering at
+all is a separate bug (see below), but investigating it also raised the
+sharper product question directly: does an existing, already-verified
+account need to click through *anything* when a Manager/Admin explicitly
+names them by email? Product decision: no — the Manager/Admin's own action
+is authority enough. There's nothing left for that person to agree to that
+they didn't already agree to when their account was first created.
+
+- **Fix**: `AddPlayerModal.tsx`'s adult route and `CompetitionsPage.tsx`'s
+  "add tournament team + Manager" flow both now call
+  `invitesApi.checkInviteRecipient` right after creating the invite, and if
+  the email already has an account, immediately call
+  `invitesApi.joinExistingAccount` — the same call the (separate) lite-
+  landing "Join" button uses — instead of sending a registration email.
+  This is safe because `redeem-invite`'s own existing-profile branch
+  already creates nothing and just adds the membership when the email
+  matches a real account (confirmed by reading its 2a/3 logic directly, not
+  assumed) — `joinExistingAccount` sends a throwaway password that's never
+  used and asks the person nothing. Any failure in the check or the join
+  falls through to the ordinary invite-email path, so a genuinely new
+  person is never affected. `AddPlayerOutcome`/`addTeamResult` both gained
+  an `existingAccount` flag so the Manager/Admin sees "added directly, no
+  invite needed" instead of an invite code/link with nothing to do with it.
+- **Confirmed already correct, no change needed**: the "Add Caregiver to a
+  child" call site (both `addJunior`'s caregiver branch and
+  `addCaregiverToExistingChild`) already did exactly this — direct
+  `player_caregivers` link via `link-player-caregiver`, no invite at all —
+  for an existing account. Only the adult Add Player route and the
+  assign-existing-Manager flow were still invite-only.
+- Verified: `npm test` (220/2 skipped, unaffected), `npm run build`
+  (clean). **Not yet live-tested** — and this whole mechanism depends on
+  `check-invite-recipient` actually working, which is the same function
+  that's separately suspected broken/stale (see next entry) — needs that
+  resolved first or this will silently fall back to the old invite-email
+  behavior every time.
+
+## [2026-08-31] - "Issue Device Access" screen showed the full registration form instead of the existing-user "Join" screen (suspected stale/undeployed Edge Function)
+
+Found testing the above: `check-invite-recipient` — the Edge Function that
+answers "does this invite's email already have an account?" — appears to
+be failing, silently, for a known-existing account (Daddy Pig). Its client
+wrapper (`invitesApi.checkInviteRecipient`) is deliberately fail-safe: any
+error at all is swallowed and treated as "no account found," so the
+symptom is just the full form rendering with no visible error anywhere.
+Matches this project's repeated "Edge Function code committed to git but
+never actually deployed" pattern (`redeem-invite`/`respond-junior-approval`
+earlier in this same spec). Asked the repo owner to try
+`npx supabase functions deploy check-invite-recipient` first, as the
+cheapest explanation to rule out — **not yet confirmed fixed**.
+
+## [2026-08-31] - "Give App Access" replaces "Issue Device Access" on the roster button
+
+Third and last of the parked "Issue Device Access" polish items, built on
+request after live-testing surfaced the same feedback again: "token"/
+"device" language isn't how a caregiver thinks about this action.
+Deliberately not "Give your child app access" — the button is now also
+reachable by a Coach, Manager, or Admin (2026-08-31's `canIssueDeviceAccess`
+fix, above), for whom the player on that row isn't necessarily "their
+child". Loading state changed to match ("Setting up..." instead of
+"Creating..."). Button background/styling itself was not touched — not
+asked for this pass.
+
+Verified: `npm test` (220/2 skipped, unaffected), `npm run build` (clean).
+Pure copy change, no data-layer or Edge Function involvement.
+
+## [2026-08-31] - Task 12 item 5 (device-code redemption + revocation) confirmed fully live
+
+The last outstanding piece of item 5 — generating a second device code and
+confirming the first device session gets signed out — was tested live on
+George Pig / Daddy Pig once the `canIssueDeviceAccess` fix (above) was
+deployed: Daddy issued George's second code, and George's existing signed-in
+session was confirmed logged out. Combined with the already-confirmed
+steps 1-6 (issuing, fresh redemption, one-time-use rejection), **all of
+item 5's device-code mechanics are now confirmed working end-to-end.**
+Section 5's step 9 (Admin "Caregiver Reviews" queue, tied to migration 063
+above) is a separate check, not yet exercised with a fresh removal.
+
 ## [2026-08-31] - Device link box: clearer instructions + a Copy button
 
 Two of the three "Issue Device Access" polish items captured earlier
