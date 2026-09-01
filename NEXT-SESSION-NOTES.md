@@ -288,7 +288,89 @@ Announcements admin modal crashed on every open (New or Edit) —
 between this spec and being fully closed out** — see "PLAN FOR NEXT
 SESSION" below.
 
-### ✅ BUILT, NOT YET LIVE-TESTED — Roster "Remove" redesign (surfaced testing item 6, 2026-08-31)
+### ✅ BUILT, DEPLOYED, LIVE-TESTED — Roster "Remove" redesign (surfaced testing item 6, 2026-08-31)
+
+**Confirmed live end-to-end, 2026-08-31 evening**: self-removal, the
+cascade rule (both the "last team → caregiver link goes too" case AND a
+non-cascading separate caregiver relationship surviving untouched), and
+first-Manager protection (refused for anyone else, allowed for the first
+Manager themselves) all tested and working exactly as designed. Two minor
+variants not yet tried (same mechanism, low risk): removing someone from
+one of several teams they belong to, and a plain Coach (rather than a
+Manager) removing someone else's row.
+
+**Update, same evening**: the patch was applied (`git am`), pushed (`6722785`),
+and `remove-team-member` deployed (`npx supabase functions deploy
+remove-team-member`) — all confirmed clean, no errors.
+
+**Live-testing started, same evening:**
+- ✅ Promote-to-Manager cap confirmed working as a side effect of testing
+  (George Pig promoted to Manager alongside Mike Brooke; `Make Manager`
+  correctly greyed out on the remaining Player rows once at the 2-Manager
+  cap) — not new, but re-confirmed live incidentally.
+- ✅ Remove confirmed working on a Player row, AND confirmed at the database
+  level, not just in the UI: repo owner clicked Remove on Aella Dog, got
+  the two-step confirmation modal, confirmed, and Aella disappeared from
+  the roster. `check-aella-removal.sql` then confirmed directly against
+  Supabase — zero rows in `team_members` for her (the delete genuinely
+  happened, not just a UI refresh hiding a stale row) and zero rows in
+  `player_caregivers` (expected — she'd already self-removed her only
+  caregiver earlier this spec, so this test didn't exercise the
+  cascade-delete-caregiver-links branch at all, since there was nothing
+  left to cascade).
+- ✅ Cascade rule fully confirmed with a second, more thorough test: removed
+  Micky Mouse (a child Player whose caregiver, Mortimer Mouse, is ALSO a
+  separate Player on the same team). Result, confirmed both in the roster
+  UI and via direct SQL (`check-micky-removal-cascade.sql`): Micky's
+  `team_members` row is gone, the `player_caregivers` link to Mortimer was
+  cascade-deleted along with it (this WAS his last team membership), and —
+  critically — Mortimer's own separate Player `team_members` row was
+  completely untouched (confirmed still present, same `created_at`, same
+  role). This is the cleanest possible proof the cascade only ever touches
+  the caregiver link, never another person's own membership.
+- ✅ First-Manager protection confirmed live: logged in as George Pig (a
+  Manager on Open Riverhead Frogs, but not the first one — Mike Brooke is),
+  George's own row shows Remove as expected, but Mike Brooke's row shows
+  only "Give App Access" — no Remove button at all, confirming the client
+  correctly refuses to offer Remove on the first Manager's row to anyone
+  but themselves. (This confirms the client-side gate; the server-side
+  refusal in `remove-team-member` itself hasn't been separately forced,
+  but the button being absent is the practical protection for the normal
+  UI flow.)
+- ✅ First-Manager self-removal confirmed live: Mike Brooke (the first
+  Manager on Open Riverhead Frogs) removed himself successfully — the one
+  exception to the rule above worked as designed. One thing that looked
+  odd at first but turned out to be correct, not a bug: after removing
+  himself, Mike still sees Open Riverhead Frogs in his own team list, and
+  it survived a hard refresh. Root cause (confirmed by reading
+  `teams-api.ts`'s `getMyTeams`, not assumed): Mike is ALSO Amy Brook's
+  linked caregiver (`player_caregivers`), and Amy is still an active
+  Player on that team — `getMyTeams` correctly unions in a caregiver's
+  linked children's teams independently of the caregiver's own
+  `team_members` rows, so losing his own Manager membership had no effect
+  on that separate relationship. He correctly no longer appears as his own
+  roster row (no `team_members` row of his own left there), matching how
+  every other pure-caregiver relationship already displays. This is the
+  same "one association removed cleanly, a separate one untouched"
+  principle already confirmed with Mortimer/Micky, just observed from the
+  other direction.
+- **Still untested**: someone still on more than one team being removed
+  from just one of them (to confirm the caregiver link is correctly left
+  alone when it's NOT their last team membership); a plain Coach removing
+  someone else's row (only Manager-vs-Manager has been tried so far).
+
+**Two related gaps found live-testing the deployed Remove action, same
+evening — the repo owner has decided these get folded into V1.R rather
+than tackled as their own small fixes** (2026-08-31: "i think we need to
+manage 3,4 and V1.R together as one piece fully scoped"). Full detail,
+including the repo owner's own decisions on the cascade judgment call and
+the migration 036 RLS gap, has moved to **V1.R's own section** further
+down this file, alongside V1.R's existing data-retention scoping — see
+that section for everything: the missing "Demote to Player" / "Make
+Coach" roster controls, the migration 036 RLS scoping fix (also still
+conceptually linked to V1.M's messaging bug), and how they all touch the
+same underlying question V1.R was already scoping (how team/role
+associations get modeled, scoped, and torn down).
 
 **Built autonomously while the repo owner was away this session, following
 their explicit "yes lets get thios soprted!" go-ahead and "im heading off,
@@ -938,54 +1020,54 @@ Full Capacitor scoping: `docs/project/CAPACITOR-SCOPING.md`
 
 ---
 
-## V1 — Where Things Stand (updated 2026-08-27)
+## V1 — Where Things Stand (updated 2026-08-31 evening)
 
 One-line status per item. Detail is in the sections further down.
 
 | Item | Status | What's left |
 |------|--------|-------------|
 | V1.0 Product domain | ✅ DONE | — |
-| V1.1 Capacitor + push | ✅ DONE | Confirmed live on-device 2026-08-19/20: sound, vibration, foreground toast, tap-to-navigate all working |
-| V1.1a Android testing | ✅ DONE | All 10 checklist items confirmed live on the Oppo (CPH2477, Android 12) |
-| V1.M Messaging — send to Admins | 🔴 Bug | "Send to Admins" not delivered to an admin. (Team-scoped threads are correct by design — not a bug.) See the V1.M section |
+| V1.1 Capacitor + push | ✅ DONE | — |
+| V1.1a Android testing | ✅ DONE | — |
 | V1.1b iOS testing | ⬜ Blocked | Needs a borrowed Mac + Xcode |
-| V1.2 Email service | ✅ DONE | Only `EMAIL_REPLY_TO` (Decision 1b) |
-| V1.3 Self-registration fix | ✅ DONE & browser-confirmed | 3 small follow-ups (see V1.3) |
-| V1.4 Welcome + Team page | 🟢 Task 1 DONE & live-confirmed | Add-junior RLS bug + the bigger roster gap behind it fixed, deployed, and live-tested 2026-08-20 (Approve path confirmed on-device; Deny path not yet tested). Nav link to Caregiver Approvals — **DONE 2026-08-21**, see the Add Player / DOB row below. Remaining: logo; 32 optional tests |
-| Add Player / DOB age model | ✅ DONE 2026-08-21; two UX follow-ups shipped 2026-08-25 | Both Adult and Junior paths live-tested successfully. **1 of 2 parked decisions resolved**: "Existing-User Invite Shortcut" — built via the Streamlined Invites spec's Task 4 (row below). **"Caregiver DOB Correction Threshold" is still open** — see the dedicated section near the top of this file |
-| **Streamlined Invites & Child Account Access** | 🟢 **11/12 tasks done** | Child accounts, device-code login, existing-user bypass, wrong-tick self-correction, multi-caregiver admin gate, consent-timeout auto-dropoff — all built, applied, deployed. **Task 12 (final checkpoint) in progress**: automated tests/build clean on the live head; manual pass items 1 (Adult) and 2 (Child) ✅ fully done, item 3 (6.1 bounce-back) ✅ fully done — item 2 needed 6 patches, migration 060, a data backfill, migration 061 + a code fix, and a UX polish; item 3 needed a fix to kill a bounced invite and notify the Manager — both confirmed clean end-to-end. Item 4 (6.2 conversion) **redesigned but not yet deployed/live-tested** — the original in-place-conversion approach broke for a genuinely separate caregiver, so it's replaced by always registering a Child-ticked invite as an ordinary pending child plus a new player-side self-service "Remove My Caregiver" action (migration 062) once they're 16+; items 5-6 not yet started. See the dedicated section near the top of this file |
-| V1.5 Role-aware nav | ✅ DONE & deployed | Per-role tabs + Team tab; Decision 4 resolved |
-| V1.6 Invite page branding | ⬜ Not started | Independent. Team name now renders (migration 045) |
-| V1.7 RSVP / availability | 🟠 Mostly built | RSVP UI, optimistic updates, past/upcoming split, attendee list, validation all fixed/confirmed 2026-08-20. Left: RSVP reminder pushes; caregiver multi-child RSVP — **design agreed 2026-08-20, build queued alongside Task 1**; Decision 5 open |
+| V1.2 Email service | ✅ DONE | — |
+| V1.3 Self-registration fix | ✅ DONE | 3 small follow-ups |
+| V1.4 Welcome + Team page | ✅ DONE | Logo; 32 optional tests |
+| Add Player / DOB age model | ✅ DONE | "Caregiver DOB Correction Threshold" decision still open |
+| **Streamlined Invites & Child Account Access (Task 12)** | 🟢 **Effectively closed** | 5 of 6 test sections fully confirmed live; item 6 confirmed on its first call site. **2 quick verification loose ends left**: confirm the migration-063 admin-review trigger fires on a fresh caregiver removal, and live-test the Competitions page's assign-existing-Manager path (same mechanism as the working Add Player path, just not clicked through) |
+| **Roster "Remove" action** (new, surfaced from Task 12 item 6) | ✅ **Built, deployed, live-tested** | Self-removal, the caregiver cascade (both directions), and first-Manager protection all confirmed live 2026-08-31. 2 minor untested variants left (multi-team removal; a plain Coach doing the removing) — low risk, same mechanism |
+| V1.5 Role-aware nav | ✅ DONE | — |
+| V1.6 Invite page branding | ⬜ Not started | Independent |
+| V1.7 RSVP / availability | 🟠 Mostly built | RSVP reminder pushes; caregiver multi-child RSVP build (design already agreed) |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
-| V1.9 Store + privacy policy | 🟠 **Privacy policy rewrite now confirmed required, not just "likely"** | Store accounts + assets need V1.1a/b. The child-account redesign above is now actually **built and live** — children have their own DOB on file, their own login, and can message a coach directly — so the existing privacy draft's "no child login, minimal child data" assumption is now factually wrong, not just at-risk. See V1.9 section for the full gate checklist. `club_settings.app_url` still needs updating to the real store listing at go-live |
-| V1.R Data retention & deletion | ⬜ Scoping | Gates the privacy policy. Decisions open in `docs/data-retention-scoping.md`; best as its own spec once locked |
-| V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample (Decision 6) |
+| V1.M Messaging — send to Admins | 🔴 Bug, root cause confirmed | A message addressed to "Admins" can't even be stored today (`messages.team_id` is mandatory, every messaging RLS rule is team-scoped) — needs a nullable `team_id` + new RLS for teams-less messages. Conceptually linked to V1.R's migration-036 fix below (same "how is scope modeled" question), but its own separate build |
+| **V1.R Data retention & deletion — now a combined, fully-scoped piece** | 🟠 Scoping, bigger than before | **2026-08-31: explicitly combined with two gaps found testing Remove** — the migration-036 `team_members` RLS gap (Coach/Manager can edit ANY team, not just their own) and the missing "Demote to Player" / "Make Coach" roster controls. All three are the same underlying question (how team/role associations get modeled, scoped, and torn down) and should be designed as one piece, not three small fixes. See V1.R's own section for the full write-up |
+| V1.9 Store + privacy policy | 🟠 Rewrite now confirmed required | Gate before store submission — the child-account model is live now, not hypothetical. Depends on V1.R's retention decisions locking first. `club_settings.app_url` still needs the real store listing at go-live |
+| V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample |
 
-**Substantive build work left for V1** (updated 2026-08-28):
-1. **Streamlined Invites & Child Account Access — Task 12's manual test
-   pass** (in progress — item 1 done, item 2 found broken live and now
-   fixed, needs a clean re-test, items 3-6 not started; script:
-   `task12-manual-test-script.md`) — this is the only thing standing
-   between that entire spec and being fully closed.
-2. **"Caregiver DOB Correction Threshold" decision + build** (parked from
-   the Add Player / DOB spec, still open — see that section).
-3. **Privacy policy rewrite for the now-live child-account model**, plus
-   re-examining the Play Console audience declaration (Decision 3b) — see
-   V1.9. This is a **hard gate before store submission**, not a
-   parallel-track item.
-4. V1.M "Send to Admins" messaging bug.
-5. V1.6 invite-page branding.
-6. V1.7 caregiver multi-child RSVP build + reminder pushes.
-7. V1.8 feature flags.
-8. V1.R data-retention build (once `docs/data-retention-scoping.md`'s
-   decisions lock).
+**Substantive build work left for V1, in the agreed order** (updated 2026-08-31):
+1. **Two quick verification loose ends** on already-shipped work: confirm
+   the migration-063 admin-review trigger fires on a fresh caregiver
+   removal, and live-test the Competitions assign-existing-Manager path.
+2. **Two minor untested Remove variants**: multi-team removal (confirms
+   the caregiver link is correctly left alone when it's NOT the child's
+   last team), and a plain Coach (not Manager) removing someone else.
+3. **The combined V1.R piece** — data retention/deletion scoping, the
+   migration-036 RLS fix, and the new Demote-to-Player/Make-Coach roster
+   controls, designed and built together (see V1.R's own section).
+4. **"Caregiver DOB Correction Threshold" decision + build** (parked from
+   the Add Player / DOB spec, still open).
+5. V1.M "Send to Admins" messaging bug — worth doing alongside step 3
+   given the conceptual overlap, even though it's a separate build.
+6. **Privacy policy rewrite** for the now-live child-account model, plus
+   re-examining the Play Console audience declaration — hard gate before
+   store submission, depends on step 3's retention decisions locking.
+7. V1.6 invite-page branding.
+8. V1.7 caregiver multi-child RSVP build + reminder pushes.
+9. V1.8 feature flags.
 
 Everything else (V1.1b iOS, V1.T Friendly Manager import) is blocked on
-hardware or an external data export, not build work. **V1.0, V1.1, V1.1a,
-V1.2, V1.3, V1.4, V1.5, and the Add Player / DOB age model spec are fully
-closed out** (bar the one open Decision-1 item carried forward above); the
-Streamlined Invites spec is 11/12 tasks done.
+hardware or an external data export, not build work.
 
 ### PLAN FOR NEXT SESSION (updated 2026-08-30)
 
@@ -2196,6 +2278,98 @@ bundle fails to load. Already noted in the V1.0 DNS table.
 
 ### V1.R Data Retention & Cleanup — SCOPING (future build, gates the privacy policy)
 
+**Now explicitly a combined piece, per the repo owner's 2026-08-31
+decision** ("i think we need to manage 3,4 and V1.R together as one piece
+fully scoped... our plan is 1, 2 then bigger piece V1.R"): this section
+now absorbs two gaps found live-testing the new Remove action the same
+evening, both of which turned out to be the same underlying question this
+scoping doc was already wrestling with — how team/role associations get
+modeled, scoped, and torn down. **Next session's plan is: knock out the
+two small verification loose ends first (confirm the migration-063
+admin-review trigger fires on a fresh caregiver removal; live-test the
+Competitions page's assign-existing-Manager path) and the two minor
+untested Remove variants (multi-team removal; a plain Coach doing a
+removal) — then treat everything below as one fully-scoped piece of work,
+not three separate small fixes.**
+
+**1. The missing "Demote to Player" / "Make Coach" roster controls.**
+Found testing Remove: the roster only offers "Make Manager" (promote) and
+"Remove" (fully delete the membership) — there's no way to **demote** a
+Manager back to Player without removing them from the team entirely.
+Repro: promoting George Pig to Manager alongside Mike Brooke hit the
+2-Manager cap, with no way to undo the promotion short of Remove — the
+wrong tool, since Remove ends their team membership altogether rather than
+just stepping their role down. Scenario given: a promotion made in error,
+or reconsidered later ("after three weeks he might say no, make Mortimer
+the assistant manager instead"). Likely shape: a "Demote to Player"
+control using the already-existing `rolesApi.updateTeamMemberRole`
+(already used by `UserManagement.tsx` and by promotion itself), same
+mechanism as promotion, reverse direction. Second half of the same gap:
+there's no "Make Coach" at all today — `TeamRole` already includes
+`'coach'` (`resolveCapabilities` already grants Coaches full edit
+authority, same as Manager), but the roster only ever offers promotion to
+Manager. The repo owner's framing: a Manager should be able to appoint a
+Coach the same way they appoint a second Manager, and demote-without-
+removing needs to apply symmetrically to both roles — "Make Coach"
+alongside "Make Manager," and "Demote to Player" available from BOTH.
+Unlike Manager, Coach has no 2-person cap today (`MANAGER_CAP` in
+`permissions-logic.ts` is Manager-specific) — open question whether Coach
+should get an analogous cap or stay uncapped. **Why this belongs with
+V1.R, not as its own fix**: it's new write traffic on the exact same
+`team_members` table, through the exact same `rolesApi` methods, that
+items 2 and 3 below are also about — building it in isolation risks
+testing it against an authorization model (see #2) that's about to
+change, and a promote/demote/remove feature set is itself a "how do roles
+get created and torn down" question, i.e. V1.R's actual subject.
+
+**2. The migration 036 `team_members` RLS gap.** A pre-existing policy
+lets ANY user whose global `users.role` is admin/coach/manager manage
+(insert/update/delete) ANY `team_members` row for ANY team, completely
+unscoped to teams they actually belong to — found while designing the
+Remove Edge Function, which had to route around it via a privileged
+service-role function rather than relying on RLS (Postgres OR's every
+applicable policy together, so a narrower policy can't take back access a
+broader one already grants). **Repo owner confirmed this is a real bug,
+wants it fixed**: "an admin can see any team, a coach and manager can only
+see a team they are associated with." Target end state: Admin stays
+global; Coach/Manager narrowed to only their own team(s). When picked up,
+this needs narrowing the migration 036 policy without breaking plain
+Player/Caregiver roster viewing — migration 036 was the ONLY
+`team_members` policy found by grepping every migration for it, so it's
+not yet confirmed whether some other policy independently covers plain
+viewing; narrowing a policy that turns out to be the only thing letting a
+Player see their own roster would break roster viewing entirely, so this
+needs checking carefully (possibly live via the SQL Editor) before writing
+a fix. Likely shape: keep Admin as an unscoped `OR` branch, replace the
+Coach/Manager branch with a team-scoped check — probably via a `SECURITY
+DEFINER` helper function rather than a raw self-referencing subquery on
+`team_members` from within its own policy, to avoid a known
+Postgres/Supabase "infinite recursion detected in policy" failure mode
+with that pattern. This is also the RLS policy behind `UserManagement
+.tsx`'s own `addTeamMember`/`updateTeamMemberRole`/`removeTeamMember`
+calls (and hence #1's new controls too), so fixing it needs re-verifying
+all of those flows afterward, not just the new ones. **Still separately,
+conceptually linked to V1.M's "Send to Admins" messaging bug** (its own
+section below): both are really the same underlying question of how a
+user's team/role scope is modeled and enforced — migration 036 over-scopes
+a Coach/Manager to every team, while V1.M under-scopes messaging (an
+Admin-targeted message can't exist at all today, since `messages.team_id`
+is mandatory and every messaging RLS rule is team-scoped). Worth reading
+both sections together when the time comes, even though V1.M itself isn't
+being folded into this combined V1.R piece.
+
+**3. How #1 and #2 connect to V1.R's existing scoping questions below**:
+V1.R was already asking "soft-delete vs hard-delete for role/status" and
+"confirm the intent of the caregiver-link `ON DELETE CASCADE`" — the new
+Remove action already made live, shipped decisions on both (a genuine hard
+delete of `team_members` rows, and a specific rule cascading caregiver
+link removal only when it was the child's last team membership). When
+V1.R's scoping doc gets finalised, it should treat tonight's Remove
+feature as precedent to build from, not a separate question to
+re-decide — otherwise there's a real risk V1.R lands on a different answer
+(e.g. favouring a soft/reversible model for privacy reasons) that
+contradicts what's already live and would need reconciling.
+
 Not started as a build; **scoping in progress** in
 `docs/data-retention-scoping.md`. This is the work behind open decision **3c**,
 and the privacy policy's retention section can't be finalised until its key
@@ -2510,6 +2684,18 @@ getting V1 in front of real users.
 
 ### V2.1 Tournament — Needs User Testing
 **Status**: Code complete, not yet tested with real data
+
+**New field research to review (2026-09-01)**: `docs/project/TOURNAMENT-REFERENCE-2026.md`
+— the repo owner's on-site observations from a live secondary schools
+tournament (Rex Dawkins Tournament, Huapai) running on Friendly Manager,
+captured specifically to inform how this app's own tournament feature
+should evolve for V2. Covers how that tool handles a Summary/Draws/Teams/
+Placements split, domain/pitch visibility, live in-line score entry,
+personalized per-team schedules with played-vs-pending colour coding, and
+time-slot grouping for parallel games — plus a list of open questions
+(score-entry workflow, notifications, standings/advancement rules,
+offline/pitch-side considerations, multi-division management). Worth
+reading before doing any further design work on this item.
 **Steps**:
 1. Run migration `040` in Supabase SQL Editor
 2. Create a Club Tournament on Competitions page
