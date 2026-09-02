@@ -1265,6 +1265,25 @@ One-line status per item. Detail is in the sections further down.
 Everything else (V1.1b iOS, V1.T Friendly Manager import) is blocked on
 hardware or an external data export, not build work.
 
+**Being considered — pull V2.7 Gant (AI coaching feedback assistant) forward
+ahead of its planned V2 slot (flagged 2026-09-03).** The repo owner is weighing
+starting Gant earlier than its V2 position. It is not a V1 item and doesn't block
+any V1 work, but it's now on the near-term radar rather than parked. Fully scoped
+in two docs:
+- `docs/project/GANT-AI-REQUIREMENTS.md` — requirements draft (purpose, Claude
+  Sonnet model choice, live/reflective capture, raw→refine→approve data flow,
+  offline/no-coverage handling, privacy constraints, Edge Function architecture,
+  open questions/decisions confirmed).
+- `docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md` — working doc for the
+  coach session that produces Gant's three inputs (phases of play, feedback model,
+  tone/style guide).
+
+No build task exists yet, and the **immediate next step is the coach guardrails
+working session (3-5 coaches), not code** — that output is the hard dependency for
+any build, since Gant is only as good as the steering document behind it. A Kiro
+spec can be opened off the requirements doc once (or in parallel with) that
+session. Fuller summary in the V2.7 section further down.
+
 ### PLAN FOR NEXT SESSION (updated 2026-08-30)
 
 **Do first — deploy item 3's fix and confirm it live, then finish items
@@ -3372,6 +3391,8 @@ reading before doing any further design work on this item.
 
 ### V2.7 Gant — AI Coaching Feedback Assistant (docs only, added 2026-08-25)
 **Status**: Requirements + guardrails-conversation guide written, no build started.
+**Being considered for acceleration ahead of its V2 slot (2026-09-03)** — see the
+"Being considered — pull V2.7 Gant forward" note up in the V1 build-order section.
 
 Gant is a planned AI-assisted layer (Claude Sonnet 5 via a Supabase Edge
 Function) that helps coaches refine dictated feedback into structured,
@@ -3381,14 +3402,14 @@ Coach retains full editorial control throughout; Gant never posts
 unilaterally and is never disclosed to players/caregivers as the source of
 the wording. Two docs capture the design so far, added to `docs/`:
 
-- `docs/gant-ai-requirements.md` — full requirements draft: purpose, model
+- `docs/project/GANT-AI-REQUIREMENTS.md` — full requirements draft: purpose, model
   choice and why, live/reflective capture flows, the raw→refine→approve
   data flow, offline/no-coverage handling (text-level queue preferred over
   audio), privacy constraints (linked only to a User ID, no name/DOB/contact
   passed to the AI layer), technical architecture (Edge Function holds the
   Anthropic API key as a secret, prompt caching for the guardrails system
   prompt), and open questions/decisions confirmed so far.
-- `docs/gant-coach-guardrails-conversation-guide.md` — a working doc for
+- `docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md` — a working doc for
   running an actual conversation with 3-5 experienced coaches to produce
   the three inputs Gant needs: an agreed phases-of-play list, a feedback
   model (what "good feedback" contains structurally), and a tone/style
