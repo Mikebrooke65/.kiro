@@ -58,6 +58,32 @@ class RolesApi extends ApiClient {
   }
 
   /**
+   * Toggle a team membership's additive `is_coach` flag (V1.R Part 1, item C
+   * — migration 064). This is entirely independent of `role`: a member's
+   * `role` (player/coach/manager) is never touched by this call, so setting
+   * `is_coach = true` on a Manager gives them Coach authority ON TOP OF
+   * being Manager, without a second `team_members` row (blocked by the
+   * `UNIQUE(team_id, user_id)` constraint) and without disturbing their
+   * primary `role`.
+   *
+   * Plain client-side update relying on RLS for authorization, same pattern
+   * as `updateTeamMemberRole` — migration 065's `user_can_edit_team` policy
+   * gates this identically (Coach/Manager/is_coach on this specific team, or
+   * global Admin).
+   */
+  async setCoachFlag(membershipId: string, isCoach: boolean): Promise<TeamMember> {
+    const { data, error } = await this.supabase
+      .from('team_members')
+      .update({ is_coach: isCoach, updated_at: new Date().toISOString() })
+      .eq('id', membershipId)
+      .select()
+      .single();
+
+    if (error) throw new ApiError(error.message);
+    return data as TeamMember;
+  }
+
+  /**
    * Remove a team membership directly (no Edge Function). Used today by
    * `UserManagement.tsx`'s Admin team-assignment screen only. Its
    * authorization rests entirely on the `team_members` RLS policy from

@@ -24,6 +24,29 @@ interface Team {
   age_group: string;
 }
 
+/**
+ * V1.R Part 1 — client-side mirror of migration 066's role-sync trigger
+ * precedence (manager > coach/is_coach > player), used ONLY when an Admin
+ * unchecks "Admin access" in the Edit User modal below. The trigger itself
+ * skips any user currently `role = 'admin'` (Admin is manual-only), so
+ * `users.role` for an Admin never reflects their actual team memberships —
+ * this recomputes what it WOULD be, from the same `team_members` rows
+ * already loaded into `editMemberships` for the Team Assignments section, so
+ * unchecking Admin doesn't just strand the value at 'admin'.
+ *
+ * Deliberately skips the trigger's own zero-memberships → caregiver fallback
+ * (would need a separate `player_caregivers` fetch this screen doesn't
+ * otherwise need): an admin with no team memberships at all being un-
+ * admin'd is a rare enough edge case that falling back to 'player' is an
+ * acceptable simplification here — the trigger will correct it for real the
+ * next time this person's `team_members` rows actually change.
+ */
+function deriveNonAdminRole(memberships: Array<{ role: TeamRole; is_coach?: boolean }>): string {
+  if (memberships.some((m) => m.role === 'manager')) return 'manager';
+  if (memberships.some((m) => m.role === 'coach' || m.is_coach)) return 'coach';
+  return 'player';
+}
+
 const roleOptions = [
   { value: 'player', label: 'Player', color: 'bg-blue-100 text-blue-700' },
   { value: 'caregiver', label: 'Caregiver', color: 'bg-green-100 text-green-700' },
@@ -734,17 +757,54 @@ export function UserManagement() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0091f3]"
-                  >
-                    {roleOptions.map((role) => (
-                      <option key={role.value} value={role.value}>
-                        {role.label}
-                      </option>
-                    ))}
-                  </select>
+                  {editingUser ? (
+                    // V1.R Part 1 — read-only for the derived values, per the
+                    // user's own operating model (2026-09-01): "the only
+                    // people changing these roles are admins, or coaches and
+                    // managers [via the roster]". Migration 066's trigger
+                    // keeps `users.role` in sync with this person's
+                    // `team_members` rows automatically, so a free-text
+                    // dropdown here could silently drift out of step with
+                    // reality the moment it next changes. Admin is the one
+                    // value the trigger deliberately never derives (manual-
+                    // only), so it's the one thing still editable here.
+                    <div className="space-y-1">
+                      <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700">
+                        {roleOptions.find((r) => r.value === formData.role)?.label || formData.role}
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                        <input
+                          type="checkbox"
+                          checked={formData.role === 'admin'}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({ ...formData, role: 'admin' });
+                            } else {
+                              setFormData({ ...formData, role: deriveNonAdminRole(editMemberships) });
+                            }
+                          }}
+                        />
+                        Admin access
+                      </label>
+                      <p className="text-xs text-gray-500">
+                        Player/Caregiver/Coach/Manager are set automatically from this
+                        person's roster roles — use the Team Page's roster actions
+                        (Make Manager, Make Coach, Demote, Remove) to change those.
+                      </p>
+                    </div>
+                  ) : (
+                    <select
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0091f3]"
+                    >
+                      {roleOptions.map((role) => (
+                        <option key={role.value} value={role.value}>
+                          {role.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>

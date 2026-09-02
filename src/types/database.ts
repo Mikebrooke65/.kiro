@@ -320,6 +320,13 @@ export interface TeamMember {
   team_id: string;
   user_id: string;
   role: TeamRole;
+  /**
+   * Additive Coach-authority flag (migration 064, V1.R Part 1), independent
+   * of `role`. Lets one person hold e.g. `role: 'manager'` AND Coach
+   * authority on the same team without a second `team_members` row. Does
+   * NOT replace `role: 'coach'`, which keeps its existing meaning.
+   */
+  is_coach: boolean;
   created_at: string;
   updated_at: string;
 }

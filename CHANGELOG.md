@@ -2,6 +2,79 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-09-01] - V1.R Part 1: role model & RLS fix (Make Coach, Demote, team-scoped RLS, role-sync trigger, caregiver floor)
+
+Built following the repo owner's explicit "yes lets buiold the patch!"
+go-ahead, after a full scoping pass (see `NEXT-SESSION-NOTES.md`'s "V1.R —
+SCOPE LOCKED, 2026-09-01" section) resolved via `AskUserQuestion` and
+follow-up discussion — hard delete ratified as the retention pattern,
+global `users.role` stays a stored+synced field, Coach stays uncapped, and
+both of item B/C's open questions (first-Manager parity for Demote;
+`UserManagement.tsx`'s role editor) were explicitly settled.
+
+**Not yet live-tested or deployed** — verified via `npx vitest run` (236
+passing, 2 pre-existing skips) and `npm run build` (clean), matching this
+project's usual pre-delivery bar, but nothing here has touched the actual
+Supabase project yet. No Edge Functions changed, so no `deno check`/`deno
+lint` step was needed this time.
+
+- **`is_coach` (migration 064)** — an additive boolean on `team_members`,
+  independent of `role`. Lets one person hold `role: 'manager'` (or
+  `'player'`) AND Coach authority on the SAME team without a second row
+  (blocked by `team_members`'s existing `UNIQUE(team_id, user_id)`).
+  `role='coach'` keeps its exact current meaning; several live Edge
+  Functions (`bulk-create-users`, `create-user`, `redeem-invite`) and read
+  paths (`reporting-api.ts`, `messaging-api.ts`, `usePermissions.ts`) still
+  use it directly and are untouched by this patch — "effectively a coach"
+  for every NEW check added here is `role IN ('coach','manager') OR
+  is_coach = true`.
+- **Team-scoped `team_members` RLS (migration 065)** — replaces migration
+  036's unscoped policy (any global admin/coach/manager could write to
+  ANY team's roster) with a `SECURITY DEFINER` function,
+  `user_can_edit_team(target_team_id)`, checked per team. Closes a real
+  gap the previous Remove-action patch had already flagged and routed
+  around via a privileged Edge Function rather than fix directly.
+- **Role-sync trigger (migration 066)** — `AFTER INSERT OR UPDATE OR
+  DELETE ON team_members` recomputes the affected user's global
+  `users.role` (manager > coach/is_coach > player, falling back to
+  caregiver/player with zero memberships), skipping Admins (manual-only).
+  Fixes a confirmed real bug found live-testing 2026-09-01: promoting a
+  member to Coach via direct SQL left their header/bottom-nav tabs
+  (`main-layout-logic.ts`'s `tabsForRole`) still reading "player."
+- **Child-must-have-a-caregiver invariant (migration 067)** — a `BEFORE
+  DELETE` trigger on `player_caregivers` blocks removing an under-16
+  player's last remaining caregiver link outright, rather than only
+  flagging it after the fact (migration 056/063's existing
+  `admin_action_items` review row still fires too). Adults (16+) are
+  unaffected — migration 062's self-removal path can never hit this.
+- **"Make Coach" / "Demote to Player" / "Stop being Coach"** (`TeamPage.tsx`,
+  `permissions-logic.ts`'s new `canDemoteFromManager`/`canRemoveCoachFlag`,
+  `roles-api.ts`'s new `setCoachFlag`) — the roster's two other missing
+  role-management controls, alongside the existing Make Manager/Remove.
+  Demote mirrors Remove's exact self-or-edit-authority + first-Manager
+  rule (agreed explicitly, to avoid trivially bypassing Remove's own
+  protection). Make Coach/Stop-being-Coach have no first-Manager concept —
+  `is_coach` isn't the `role` column.
+- **`UserManagement.tsx`'s role editor** — now read-only for the derived
+  values (player/caregiver/coach/manager), with a separate "Admin access"
+  checkbox as the only manually-editable piece, matching the repo owner's
+  description of how role changes actually happen in practice (roster
+  actions, or an Admin "fixing something that went wrong").
+- **Cross-team multi-role explicitly checked, confirmed unaffected** — a
+  person holding different roles on different teams (e.g. Manager on one
+  team, linked caregiver on another, Coach+Manager on a third) was flagged
+  by the repo owner as a must-not-break case; every change above is scoped
+  either per-`team_id` (RLS) or reads across all of a user's memberships
+  without mutating any of them (the sync trigger), so this is unaffected.
+- **New gap found, flagged not fixed**: `UserManagement.tsx`'s "Edit User"
+  save does a plain client-side `users` UPDATE for any user, but the only
+  live `users` UPDATE policy (migrations 004/057) is self-only
+  (`auth.uid() = id`) — meaning an Admin editing anyone OTHER than
+  themselves there (name, phone, active status) is likely silently
+  rejected by RLS today. Pre-existing, unrelated to this patch's actual
+  ask; needs its own fix (most likely a privileged Edge Function,
+  mirroring `remove-team-member`'s pattern).
+
 ## [2026-08-31] - New roster "Remove" action, replacing Deactivate for undoing a mistaken add (built autonomously while the repo owner was away)
 
 Built end-to-end following the repo owner's explicit "yes lets get thios

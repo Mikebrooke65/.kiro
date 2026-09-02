@@ -270,6 +270,72 @@ export function canRemoveTeamMember(input: {
 }
 
 /**
+ * Whether the current viewer may demote a Manager or Coach back to Player
+ * (V1.R Part 1, item B — NEXT-SESSION-NOTES.md "V1.R — SCOPE LOCKED,
+ * 2026-09-01").
+ *
+ * Deliberately mirrors {@link canRemoveTeamMember} rule-for-rule, including
+ * the first-Manager exception — agreed with the user 2026-09-01 specifically
+ * to close the loophole Remove's own first-Manager protection would
+ * otherwise have: without parity here, anyone with edit authority could
+ * demote the first Manager to Player, then Remove them as an ordinary
+ * Player, sidestepping the protection entirely. So:
+ * - External League teams stay fully read-only (no Demote control at all).
+ * - Any user may demote their own Manager/Coach row to Player.
+ * - A Coach/Manager/Admin may demote any OTHER row — no tiering between the
+ *   three, same as Remove.
+ * - EXCEPT the team's first Manager, who can only ever demote themselves.
+ *
+ * This changes only the `role` column (manager|coach → player); it never
+ * touches `is_coach` — see {@link canRemoveCoachFlag} for that.
+ *
+ * Client-side convenience only, same caveat as every other function here:
+ * the real gate is the `team_members` RLS policy (migration 065's
+ * `user_can_edit_team`), which independently scopes write access to the
+ * acting user's own team.
+ */
+export function canDemoteFromManager(input: {
+  isOwnRow: boolean;
+  hasEditAuthority: boolean;
+  isFirstManager: boolean;
+  teamType: TeamType;
+}): boolean {
+  if (input.teamType === 'external_league') {
+    return false;
+  }
+
+  if (input.isFirstManager) {
+    return input.isOwnRow;
+  }
+
+  return input.isOwnRow || input.hasEditAuthority;
+}
+
+/**
+ * Whether the current viewer may turn OFF a member's `is_coach` flag — i.e.
+ * "stop being Coach" for someone who holds Coach authority additively
+ * alongside their real `role` (V1.R Part 1, item C — Make Coach's inverse).
+ *
+ * Same shape as {@link canRemoveTeamMember}/{@link canDemoteFromManager} —
+ * External League read-only, self or any Coach/Manager/Admin otherwise — but
+ * with NO first-Manager exception: `is_coach` is an additive flag, not the
+ * `role` column, so it carries none of the first-Manager-primacy concerns
+ * that gate demoting or removing the `role` itself. There is nothing
+ * equivalent to "the first is_coach holder" to protect.
+ */
+export function canRemoveCoachFlag(input: {
+  isOwnRow: boolean;
+  hasEditAuthority: boolean;
+  teamType: TeamType;
+}): boolean {
+  if (input.teamType === 'external_league') {
+    return false;
+  }
+
+  return input.isOwnRow || input.hasEditAuthority;
+}
+
+/**
  * The minimal shape required to perform an active/inactive transition. Any
  * record carrying an identity and an `active` flag qualifies; the generic
  * parameter ensures all other fields are preserved unchanged.

@@ -35,7 +35,9 @@ import {
 import {
   resolveCapabilities,
   canAddCaregiver,
+  canDemoteFromManager,
   canIssueDeviceAccess,
+  canRemoveCoachFlag,
   canRemoveTeamMember,
   type ActionCapabilities,
   type PermissionRole,
@@ -90,8 +92,15 @@ interface RosterData {
    * whichever role's Remove control was clicked, not just "this user
    * somewhere on this team". See `canRemoveTeamMember` (`permissions-
    * logic.ts`) and `remove-team-member` (Edge Function).
+   *
+   * In practice this array has at most one entry per user for a given team
+   * — `team_members` has `UNIQUE(team_id, user_id)` (migration 021), so one
+   * person can hold only one `role` per team. `is_coach` (migration 064,
+   * V1.R Part 1) is carried on that same row: it's how a person can be
+   * `role: 'manager'` AND have Coach authority on the very same team
+   * without a second row.
    */
-  membershipsByUser: Record<string, Array<{ id: string; role: TeamRole }>>;
+  membershipsByUser: Record<string, Array<{ id: string; role: TeamRole; is_coach: boolean }>>;
   /**
    * The `team_members.id` of this team's first Manager (earliest row with
    * `role = 'manager'`, by `created_at`) — `null` if the team has no
@@ -408,6 +417,61 @@ export function TeamPage() {
   };
 
   /**
+   * V1.R Part 1, item B — Demote a Manager or Coach's `role` back to Player.
+   * Changes only `role`; never touches `is_coach` (see `handleStopBeingCoach`
+   * for that). Gating is `canDemoteFromManager` (`permissions-logic.ts`),
+   * evaluated per membership at the render site — this handler assumes the
+   * caller already confirmed the action is allowed.
+   */
+  const handleDemoteToPlayer = async (entry: RosterEntry, membershipId: string) => {
+    setActionMessage(null);
+    try {
+      await rolesApi.updateTeamMemberRole(membershipId, 'player');
+      setActionMessage(`${entry.displayName} is now a Player.`);
+      refreshRoster();
+    } catch (err) {
+      setActionMessage(err instanceof ApiError ? err.message : 'Could not demote this member.');
+    }
+  };
+
+  /**
+   * V1.R Part 1, item C — "Make Coach": turn on `is_coach` for a member
+   * whose `role` is something other than 'coach' (e.g. a Manager who also
+   * wants Coach authority on this same team — the scenario that prompted
+   * this whole feature, 2026-09-01: "the initial manager set up with a
+   * team... first thing they do is select make coach"). Purely additive —
+   * `role` itself is untouched. Uncapped (confirmed by the user 2026-09-01 —
+   * no equivalent of the two-Manager cap for Coach).
+   */
+  const handleMakeCoach = async (entry: RosterEntry, membershipId: string) => {
+    setActionMessage(null);
+    try {
+      await rolesApi.setCoachFlag(membershipId, true);
+      setActionMessage(`${entry.displayName} is now also a Coach.`);
+      refreshRoster();
+    } catch (err) {
+      setActionMessage(err instanceof ApiError ? err.message : 'Could not make this member a Coach.');
+    }
+  };
+
+  /**
+   * V1.R Part 1, item C's inverse — turn `is_coach` back off. Never touches
+   * `role`, so a Manager who stops coaching stays Manager. Gating is
+   * `canRemoveCoachFlag` (`permissions-logic.ts`) — no first-Manager concept,
+   * since `is_coach` isn't the `role` column.
+   */
+  const handleStopBeingCoach = async (entry: RosterEntry, membershipId: string) => {
+    setActionMessage(null);
+    try {
+      await rolesApi.setCoachFlag(membershipId, false);
+      setActionMessage(`${entry.displayName} is no longer a Coach.`);
+      refreshRoster();
+    } catch (err) {
+      setActionMessage(err instanceof ApiError ? err.message : 'Could not update this member.');
+    }
+  };
+
+  /**
    * Requirement 7.4.1/7.4.2 — a linked caregiver deliberately triggers "give
    * {child} their own access." Generates the code, then shows the shareable
    * link the same way `CompetitionsPage.tsx` shows a generated invite link —
@@ -515,7 +579,18 @@ export function TeamPage() {
         ...prev,
         [childId]: { ...(prev[childId] ?? COLLAPSED_CAREGIVER_MANAGEMENT), removingId: null },
       }));
-      setActionMessage(err instanceof ApiError ? err.message : 'Could not remove this caregiver.');
+      // V1.R item E's data-layer invariant (migration 067) backstops this:
+      // deleting a Junior's last remaining caregiver is rejected at the DB
+      // level. Map its error to a friendly message, same pattern as
+      // handlePromoteToManager's manager_cap_reached handling above.
+      const message = err instanceof ApiError ? err.message : '';
+      if (message.includes('player_requires_a_caregiver')) {
+        setActionMessage(
+          "This is the child's only caregiver. Add a replacement caregiver before removing this one."
+        );
+      } else {
+        setActionMessage(message || 'Could not remove this caregiver.');
+      }
     }
   };
 
@@ -819,6 +894,44 @@ export function TeamPage() {
                     // current viewer specifically, never any other row.
                     const isOwnRow = entry.userId === user?.id;
 
+                    // V1.R Part 1 — shared by Remove/Demote/Make Coach/Stop
+                    // being Coach below: does the current viewer have team-
+                    // wide edit authority (club Admin, or Coach/Manager/
+                    // is_coach on THIS team)? `roster.currentUserRoles`
+                    // already folds `is_coach` in as a synthetic 'coach'
+                    // entry (see `fetchRoster`'s comment on that field).
+                    const hasEditAuthority =
+                      isClubAdmin ||
+                      roster.currentUserRoles.includes('coach') ||
+                      roster.currentUserRoles.includes('manager');
+
+                    // `team_members` is UNIQUE(team_id, user_id) — at most
+                    // one real membership row per user on this team (a
+                    // second 'coach' role in `entry.roles` is only ever the
+                    // synthetic is_coach one from `fetchRoster`).
+                    const membership = (roster.membershipsByUser[entry.userId] ?? [])[0];
+
+                    const canDemoteThisMembership =
+                      !!membership &&
+                      (membership.role === 'manager' || membership.role === 'coach') &&
+                      canDemoteFromManager({
+                        isOwnRow,
+                        hasEditAuthority,
+                        isFirstManager: membership.id === roster.firstManagerMembershipId,
+                        teamType: roster.teamType,
+                      });
+
+                    const canMakeCoachThisMembership =
+                      capabilities.canChangeRole &&
+                      !!membership &&
+                      membership.role !== 'coach' &&
+                      !membership.is_coach;
+
+                    const canStopBeingCoachThisMembership =
+                      !!membership &&
+                      membership.is_coach &&
+                      canRemoveCoachFlag({ isOwnRow, hasEditAuthority, teamType: roster.teamType });
+
                     return (
                       <RosterRow
                         key={entry.userId}
@@ -847,15 +960,13 @@ export function TeamPage() {
                         }
                         onRespond={(decision) => handleRespondToJunior(entry, decision)}
                         removableMemberships={(roster.membershipsByUser[entry.userId] ?? []).map(
-                          (membership) => ({
-                            ...membership,
+                          (row) => ({
+                            id: row.id,
+                            role: row.role,
                             canRemove: canRemoveTeamMember({
                               isOwnRow,
-                              hasEditAuthority:
-                                isClubAdmin ||
-                                roster.currentUserRoles.includes('coach') ||
-                                roster.currentUserRoles.includes('manager'),
-                              isFirstManager: membership.id === roster.firstManagerMembershipId,
+                              hasEditAuthority,
+                              isFirstManager: row.id === roster.firstManagerMembershipId,
                               teamType: roster.teamType,
                             }),
                           })
@@ -869,6 +980,12 @@ export function TeamPage() {
                           entry.roles.includes('player') &&
                           !entry.roles.includes('manager')
                         }
+                        canDemoteThisMember={canDemoteThisMembership}
+                        onDemote={() => membership && handleDemoteToPlayer(entry, membership.id)}
+                        canMakeCoachThisMember={canMakeCoachThisMembership}
+                        onMakeCoach={() => membership && handleMakeCoach(entry, membership.id)}
+                        canStopBeingCoachThisMember={canStopBeingCoachThisMembership}
+                        onStopBeingCoach={() => membership && handleStopBeingCoach(entry, membership.id)}
                         canIssueDeviceAccess={canIssueDeviceAccess({
                           isClubAdmin,
                           teamRoles: roster.currentUserRoles,
@@ -990,6 +1107,19 @@ interface RosterRowProps {
   removableMemberships: Array<{ id: string; role: TeamRole; canRemove: boolean }>;
   onRemove: (membershipId: string, role: TeamRole) => void;
   onPromote: () => void;
+  /** V1.R Part 1, item B — see `canDemoteFromManager` (`permissions-logic.ts`)
+   *  for the full rule; already resolved by the parent before this prop. */
+  canDemoteThisMember: boolean;
+  onDemote: () => void;
+  /** V1.R Part 1, item C — "Make Coach": true only when this member's `role`
+   *  isn't already 'coach' and `is_coach` isn't already set, and the viewer
+   *  has team edit authority (same gate as Make Manager). */
+  canMakeCoachThisMember: boolean;
+  onMakeCoach: () => void;
+  /** V1.R Part 1, item C's inverse — see `canRemoveCoachFlag`
+   *  (`permissions-logic.ts`) for the full rule. */
+  canStopBeingCoachThisMember: boolean;
+  onStopBeingCoach: () => void;
   /** Requirement 7.4.1 — true when the current viewer is a linked caregiver
    *  of this row's child, regardless of any team-level capability. */
   canIssueDeviceAccess: boolean;
@@ -1035,6 +1165,12 @@ function RosterRow({
   removableMemberships,
   onRemove,
   onPromote,
+  canDemoteThisMember,
+  onDemote,
+  canMakeCoachThisMember,
+  onMakeCoach,
+  canStopBeingCoachThisMember,
+  onStopBeingCoach,
   canIssueDeviceAccess,
   issuingDeviceAccess,
   onIssueDeviceAccess,
@@ -1102,6 +1238,41 @@ function RosterRow({
                 className="text-xs px-2.5 py-1 rounded-md bg-[#0091f3] text-white disabled:opacity-40"
               >
                 Make Manager
+              </button>
+            )}
+            {/* V1.R Part 1, item C — additive Coach authority alongside this
+                member's real `role` (e.g. a Manager who also coaches). Never
+                shown for a `role: 'coach'` row, since that already has full
+                Coach authority — nothing for this toggle to add there. */}
+            {canMakeCoachThisMember && (
+              <button
+                onClick={onMakeCoach}
+                className="text-xs px-2.5 py-1 rounded-md bg-[#0091f3] text-white"
+              >
+                Make Coach
+              </button>
+            )}
+            {/* V1.R Part 1, item B — demotes this member's `role` back to
+                Player. Gating (`canDemoteFromManager`) already mirrors
+                Remove's own self-or-edit-authority + first-Manager rule. */}
+            {canDemoteThisMember && (
+              <button
+                onClick={onDemote}
+                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Demote to Player
+              </button>
+            )}
+            {/* V1.R Part 1, item C's inverse — turns off `is_coach` without
+                touching `role`. Only ever shown when `is_coach` is actually
+                set, so a plain `role: 'coach'` member (no `is_coach`) never
+                sees this — there is nothing additive to remove. */}
+            {canStopBeingCoachThisMember && (
+              <button
+                onClick={onStopBeingCoach}
+                className="text-xs px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Stop being Coach
               </button>
             )}
             {/* 2026-08-31 — one Remove control per role this person holds on
@@ -1422,20 +1593,33 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
 
   const caregiverLinksByPlayer = await fetchCaregiverLinks(Array.from(childCandidateIds));
 
-  // Build the pre-merge roster rows from memberships.
-  const members: RosterMember[] = memberRows.map((row) => ({
-    userId: row.user_id,
-    displayName: displayName(row),
-    role: row.role,
-    active: row.user?.active ?? true,
-    contact: contactFor(
-      ageBandFor(row.user?.date_of_birth),
-      row.role,
-      row.user?.cellphone ?? '',
-      caregiverLinksByPlayer[row.user_id]
-    ),
-    pending: false,
-  }));
+  // Build the pre-merge roster rows from memberships. V1.R Part 1 (item C,
+  // migration 064): a row with `is_coach = true` also synthesizes a SECOND
+  // RosterMember with role 'coach' for the SAME user — `mergeRoles`
+  // (roster-logic.ts) already handles a user appearing in more than one row
+  // and unions them into one `RosterEntry.roles` array with no changes
+  // needed there, so a Manager with is_coach=true displays as both
+  // "Manager" and "Coach" badges, sorted Coach-first (Req 3.4's existing
+  // ROLE_RANK).
+  const members: RosterMember[] = memberRows.flatMap((row) => {
+    const base: RosterMember = {
+      userId: row.user_id,
+      displayName: displayName(row),
+      role: row.role,
+      active: row.user?.active ?? true,
+      contact: contactFor(
+        ageBandFor(row.user?.date_of_birth),
+        row.role,
+        row.user?.cellphone ?? '',
+        caregiverLinksByPlayer[row.user_id]
+      ),
+      pending: false,
+    };
+    if (row.is_coach && row.role !== 'coach') {
+      return [base, { ...base, role: 'coach' as TeamRole }];
+    }
+    return [base];
+  });
 
   // Append pending children (players, inactive, non-selectable — Req 5.10).
   for (const child of pendingChildren) {
@@ -1467,10 +1651,21 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
     memberRows.filter((r) => r.role === 'manager').map((r) => r.user_id)
   ).size;
 
-  // Roles the current user holds on this team (capability resolution, Req 4.1).
+  // Roles the current user holds on this team (capability resolution, Req
+  // 4.1). V1.R Part 1, item C: `is_coach = true` folds in a synthetic
+  // 'coach' entry too, so every existing `currentUserRoles.includes('coach')`
+  // check elsewhere on this page (hasEditAuthority for Remove/Demote/Stop-
+  // being-Coach, `canAddCaregiver`, `canIssueDeviceAccess`,
+  // `resolveCapabilities`) automatically recognises an is_coach holder as
+  // having Coach-level edit authority with no changes needed at those call
+  // sites.
   const currentUserRoles = memberRows
     .filter((r) => r.user_id === currentUserId)
-    .map((r) => r.role as PermissionRole);
+    .flatMap((r) =>
+      r.is_coach && r.role !== 'coach'
+        ? [r.role as PermissionRole, 'coach' as PermissionRole]
+        : [r.role as PermissionRole]
+    );
 
   // Map each user's player membership id so promotion targets the right row.
   const playerMembershipIdByUser: Record<string, string> = {};
@@ -1480,10 +1675,16 @@ async function fetchRoster(teamId: string, currentUserId: string): Promise<Roste
 
   // 2026-08-31 — every membership row (id + role) each user holds on this
   // team, for the new "Remove" action (see the RosterData field's own doc
-  // comment for why this needs to be per-role, not just per-user).
-  const membershipsByUser: Record<string, Array<{ id: string; role: TeamRole }>> = {};
+  // comment for why this needs to be per-role, not just per-user). Extended
+  // 2026-09-01 (V1.R Part 1, item C) to also carry `is_coach`, so the roster
+  // row can offer "Make Coach" / "Stop being Coach" alongside Remove.
+  const membershipsByUser: Record<string, Array<{ id: string; role: TeamRole; is_coach: boolean }>> = {};
   for (const row of memberRows) {
-    (membershipsByUser[row.user_id] ??= []).push({ id: row.id, role: row.role });
+    (membershipsByUser[row.user_id] ??= []).push({
+      id: row.id,
+      role: row.role,
+      is_coach: row.is_coach,
+    });
   }
 
   // First Manager (earliest `role = 'manager'` row, by `created_at`) — the

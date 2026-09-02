@@ -12,7 +12,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { canAddCaregiver, canIssueDeviceAccess, canRemoveTeamMember } from './permissions-logic';
+import {
+  canAddCaregiver,
+  canDemoteFromManager,
+  canIssueDeviceAccess,
+  canRemoveCoachFlag,
+  canRemoveTeamMember,
+} from './permissions-logic';
 
 describe('canAddCaregiver — admin-only gate on a second-or-later caregiver (Requirement 7.5)', () => {
   it('lets a club Admin add a caregiver whether the child has none or several already', () => {
@@ -275,6 +281,116 @@ describe('canRemoveTeamMember — the "Remove" roster action (decided 2026-08-31
         isOwnRow: true,
         hasEditAuthority: true,
         isFirstManager: false,
+        teamType: 'external_league',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('canDemoteFromManager — V1.R Part 1 item B, deliberately mirrors canRemoveTeamMember', () => {
+  it('lets anyone demote their own Manager/Coach row to Player, with no other authority required', () => {
+    expect(
+      canDemoteFromManager({
+        isOwnRow: true,
+        hasEditAuthority: false,
+        isFirstManager: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('lets a Coach/Manager/Admin (hasEditAuthority) demote someone else — no tiering between them', () => {
+    expect(
+      canDemoteFromManager({
+        isOwnRow: false,
+        hasEditAuthority: true,
+        isFirstManager: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('blocks a plain Player/Caregiver (no edit authority) from demoting someone else', () => {
+    expect(
+      canDemoteFromManager({
+        isOwnRow: false,
+        hasEditAuthority: false,
+        isFirstManager: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(false);
+  });
+
+  it("protects the team's first Manager from being demoted by anyone else, even another Manager/Admin — closes the Remove-protection loophole", () => {
+    expect(
+      canDemoteFromManager({
+        isOwnRow: false,
+        hasEditAuthority: true,
+        isFirstManager: true,
+        teamType: 'club_tournament',
+      })
+    ).toBe(false);
+  });
+
+  it('still lets the first Manager demote themselves', () => {
+    expect(
+      canDemoteFromManager({
+        isOwnRow: true,
+        hasEditAuthority: true,
+        isFirstManager: true,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('blocks Demote entirely on External League teams', () => {
+    expect(
+      canDemoteFromManager({
+        isOwnRow: true,
+        hasEditAuthority: true,
+        isFirstManager: false,
+        teamType: 'external_league',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('canRemoveCoachFlag — V1.R Part 1 item C\'s inverse ("stop being Coach"), no first-Manager concept', () => {
+  it('lets anyone turn off their own is_coach flag', () => {
+    expect(
+      canRemoveCoachFlag({
+        isOwnRow: true,
+        hasEditAuthority: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('lets a Coach/Manager/Admin (hasEditAuthority) turn off someone else\'s is_coach flag', () => {
+    expect(
+      canRemoveCoachFlag({
+        isOwnRow: false,
+        hasEditAuthority: true,
+        teamType: 'club_tournament',
+      })
+    ).toBe(true);
+  });
+
+  it('blocks a plain Player/Caregiver (no edit authority) from removing someone else\'s Coach flag', () => {
+    expect(
+      canRemoveCoachFlag({
+        isOwnRow: false,
+        hasEditAuthority: false,
+        teamType: 'club_tournament',
+      })
+    ).toBe(false);
+  });
+
+  it('blocks it entirely on External League teams, even self', () => {
+    expect(
+      canRemoveCoachFlag({
+        isOwnRow: true,
+        hasEditAuthority: true,
         teamType: 'external_league',
       })
     ).toBe(false);
