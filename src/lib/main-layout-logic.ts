@@ -37,7 +37,8 @@ export interface TabSpec {
 /**
  * Build the bottom-nav tab set for a given App_Role (`users.role`),
  * independent of `user_type` (a lite manager sees the same tabs as a full
- * manager). Coaching is Coach/Admin only; Games is Manager/Coach/Admin (its
+ * manager). Coaching is Coach/Admin only (see `hasCoachAuthorityOnAnyTeam`
+ * below for the one addition to that); Games is Manager/Coach/Admin (its
  * coach-only sections are gated inside the page). Every other role — Player,
  * Caregiver, and a **child's account** (`streamlined-invites-and-child-
  * access` Requirement 7.2.1-7.2.4) — gets exactly Home, Team, Schedule,
@@ -49,9 +50,31 @@ export interface TabSpec {
  * can be tested without a component-rendering harness) is what Task 8
  * confirms rather than changes: see `main-layout-logic.test.ts` for the
  * regression test that locks this in for a `player` role.
+ *
+ * `hasCoachAuthorityOnAnyTeam` (V1.R Part 1 follow-up, found live-testing
+ * 2026-09-02): `role` is a single global value, and migration 066's
+ * role-sync trigger gives Manager precedence over Coach when computing it —
+ * so a person who is `role: 'manager'` on a team AND has `is_coach = true`
+ * there (the exact "Make Coach on the first Manager" scenario this whole
+ * feature was built for) keeps a global role of `'manager'` and would
+ * otherwise never see the Coaching tab, despite genuinely holding Coach
+ * authority. Confirmed live: George Pig (Manager, then Make Coach) got
+ * Games (already had it as Manager) but not Coaching, while Hewie Duck
+ * (plain Player, then Make Coach) correctly flipped to a global role of
+ * `'coach'` and got both — because Player has no precedence to compete
+ * with. This parameter closes that gap without touching the single-value
+ * global role model or the trigger's precedence: the caller
+ * (`MainLayout.tsx`) derives it straight from the already-fetched
+ * `user.teamMemberships` (`some(tm => tm.role === 'coach' || tm.is_coach)`),
+ * no extra query needed. Defaults to `false` so every existing call site
+ * (and this file's own tests) is unaffected unless it opts in.
  */
-export function tabsForRole(role: UserRole | undefined, approvalsTab: ApprovalsTabState): TabSpec[] {
-  const showCoaching = role === UserRole.ADMIN || role === UserRole.COACH;
+export function tabsForRole(
+  role: UserRole | undefined,
+  approvalsTab: ApprovalsTabState,
+  hasCoachAuthorityOnAnyTeam = false
+): TabSpec[] {
+  const showCoaching = role === UserRole.ADMIN || role === UserRole.COACH || hasCoachAuthorityOnAnyTeam;
   const showGames =
     role === UserRole.ADMIN || role === UserRole.COACH || role === UserRole.MANAGER;
 

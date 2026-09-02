@@ -1212,7 +1212,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP reminder pushes; caregiver multi-child RSVP build (design already agreed) |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
 | V1.M Messaging — send to Admins | 🔴 Bug, root cause confirmed | A message addressed to "Admins" can't even be stored today (`messages.team_id` is mandatory, every messaging RLS rule is team-scoped) — needs a nullable `team_id` + new RLS for teams-less messages. Conceptually linked to V1.R's migration-036 fix below (same "how is scope modeled" question), but its own separate build |
-| **V1.R Part 1 — Role model & RLS fix** | 🟡 **Built, 2026-09-01 — not yet live-verified** | migrations 064-067 (is_coach column, scoped RLS, role-sync trigger, caregiver-floor invariant) plus TeamPage.tsx/permissions-logic.ts/roles-api.ts/UserManagement.tsx changes. See V1.R's own "Built, 2026-09-01" write-up for the exact file list. Still needs: live verification against the real app, CHANGELOG.md entry, and packaging as a tested `.patch` |
+| **V1.R Part 1 — Role model & RLS fix** | 🟡 **Code pushed 2026-09-02 — SQL migrations not yet run, not yet live-verified** | Code patch (`v1r-part1.patch`) applied + pushed to `prototype` (`ac0e6b8..48473ba`). The 4 SQL migrations (064-067: is_coach column, scoped RLS, role-sync trigger, caregiver-floor invariant) still need running in the Supabase SQL Editor, in order, before any of this actually works live. See V1.R's own "Built, 2026-09-01" / "Update, 2026-09-02" write-up |
 | V1.R Part 2 — Automated data retention & deletion | ⬜ Deferred, own future spec | Competition cleanup clocks, the 12-month "no role" user-deletion job, de-identified performance data, pre-deletion notice/export. Nothing blocks on it today — scoping notes live in `docs/data-retention-scoping.md`, untouched |
 | V1.9 Store + privacy policy | 🟠 Rewrite now confirmed required | Gate before store submission — the child-account model is live now, not hypothetical. Depends on V1.R's retention decisions locking first. `club_settings.app_url` still needs the real store listing at go-live |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample |
@@ -1228,16 +1228,16 @@ One-line status per item. Detail is in the sections further down.
    alone when it's NOT the child's last team; also surfaced a data-hygiene
    gap, see the Remove-action write-up) and a plain Coach removing someone
    else (confirmed identical behaviour to a Manager).
-3. **V1.R Part 1 — role model & RLS fix.** ✅ Built 2026-09-01 (migrations
-   064-067 + client changes — see V1.R's own "Built, 2026-09-01" write-up
-   for the full file list). **Not yet live-verified against the real app**
-   — next session should run the 4 new migrations via the SQL Editor, then
-   test: Make Coach on a Manager (dual badge shows, nav tabs pick up Coach
-   authority), Demote (including first-Manager protection), Stop being
-   Coach, a Coach/Manager acting outside their own team now correctly
-   blocked, and the child-caregiver-floor block on the roster's Remove-
-   Caregiver flow. Part 2 (automated data retention/deletion) is deferred
-   to its own spec — nothing blocks on it today.
+3. **V1.R Part 1 — role model & RLS fix.** ✅ Code built, pushed
+   2026-09-02 (`v1r-part1.patch`, `ac0e6b8..48473ba` on `prototype`).
+   **The 4 new migrations (064-067) still need running** via the Supabase
+   SQL Editor, in order — nothing in this patch actually works live until
+   they do. Once run, test: Make Coach on a Manager (dual badge shows, nav
+   tabs pick up Coach authority), Demote (including first-Manager
+   protection), Stop being Coach, a Coach/Manager acting outside their own
+   team now correctly blocked, and the child-caregiver-floor block on the
+   roster's Remove-Caregiver flow. Part 2 (automated data retention/
+   deletion) is deferred to its own spec — nothing blocks on it today.
 4. **"Caregiver DOB Correction Threshold" decision + build** (parked from
    the Add Player / DOB spec, still open).
 5. V1.M "Send to Admins" messaging bug — worth doing alongside step 3
@@ -2865,10 +2865,54 @@ scoped admin-only RLS policy. Worth an empirical check (an Admin editing
 someone else's phone number) next session to confirm this is really as
 broken as the policy read suggests.
 
-**Not yet done**: live verification of all of the above against the
-actual Supabase-backed app (this was written as source, not yet run
-against the live database or exercised through the UI), `CHANGELOG.md`
-entry, and packaging as a tested `.patch`.
+**Update, 2026-09-02: code patch applied and pushed.** `v1r-part1.patch`
+applied cleanly via `git am` and pushed to `prototype`
+(`ac0e6b8..48473ba`) — all 7 code files + the 4 new migration files are
+now on the branch that goes live at clubfootball.app. `CHANGELOG.md` entry
+was included in the same patch.
+
+**Update, 2026-09-02: all 4 migrations run live, Make Coach confirmed
+working — and one real gap found + fixed the same session.**
+
+All four migrations ran clean in the Supabase SQL Editor, in order (065
+needed the usual destructive-operations confirmation for its `DROP
+POLICY`, expected). Live-tested on Open Riverhead Frogs:
+
+- **Make Coach on Hewie Duck (plain Player → also Coach)**: roster shows
+  both `Coach`/`Player` badges immediately. Confirmed via SQL that the
+  role-sync trigger correctly flipped his GLOBAL role from `player` to
+  `coach` (no manager row to compete with). His own header/nav still said
+  "player" until he did a full page refresh — expected, not a bug: the
+  React session caches the profile at login/mount and only re-fetches on
+  a fresh load, same as any SPA. After refreshing, his header correctly
+  read "Coach" and the Coaching tab appeared. **This is the original bug,
+  now confirmed fixed.**
+- **Make Coach on George Pig (Manager → also Coach)**: roster showed both
+  `Coach`/`Manager` badges correctly, and SQL confirmed `is_coach = true`
+  on his row — but his GLOBAL role stayed `manager` (migration 066's
+  trigger deliberately gives Manager precedence over Coach), and his own
+  nav only showed the tabs he already had as Manager (Games) — **no
+  Coaching tab**, despite genuinely holding Coach authority now. Root
+  cause: `main-layout-logic.ts`'s `tabsForRole` decides `showCoaching`
+  from the single global `role` value alone (`role === 'coach'`), so a
+  Manager who also becomes a Coach can never trip that check — the exact
+  "first Manager also makes themselves Coach" scenario this whole feature
+  was built for.
+
+**Fixed same session, not deferred**: `tabsForRole` gained a third,
+defaulted-`false` parameter, `hasCoachAuthorityOnAnyTeam` — `showCoaching`
+is now `role === 'coach' || role === 'admin' || hasCoachAuthorityOnAnyTeam`.
+`MainLayout.tsx` derives it from `user.teamMemberships` (already fetched
+by `AuthContext` — no new query): `some(tm => tm.role === 'coach' ||
+tm.is_coach)`. Every existing call site and test is unaffected (parameter
+defaults to `false`); 3 new tests added in `main-layout-logic.test.ts`.
+Verified via `npx vitest run` (239 passing) and `npm run build` (clean).
+**Not yet re-tested live** — George needs to refresh his own session and
+confirm Coaching now shows, same as Hewie's confirmation above.
+
+Packaged as a second patch, `v1r-part1-followup-coaching-tab.patch`,
+applying on top of `48473ba` (the first V1.R Part 1 patch already
+pushed). No new SQL — this is a client-only fix.
 
 **Deferred to V1.R Part 2 (own future spec, no build now)** — everything
 below stays exactly as scoped in `docs/data-retention-scoping.md`,

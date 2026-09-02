@@ -113,7 +113,16 @@ export function MainLayout() {
   }, [user?.id]);
 
   const approvalsTab = resolveApprovalsTab(pendingApprovalCount);
-  const tabs = tabsForRole(user?.role, approvalsTab);
+  // V1.R Part 1 follow-up, 2026-09-02 — confirmed live with George Pig
+  // (Manager, then Make Coach): his global role stays 'manager' (migration
+  // 066's trigger gives Manager precedence), so `role === 'coach'` alone
+  // would never show him the Coaching tab despite genuinely holding Coach
+  // authority on this team. Derived straight from the already-fetched
+  // `user.teamMemberships` (no extra query) — see `tabsForRole`'s own doc
+  // comment for the full explanation.
+  const hasCoachAuthorityOnAnyTeam =
+    user?.teamMemberships?.some((tm) => tm.role === 'coach' || tm.is_coach) ?? false;
+  const tabs = tabsForRole(user?.role, approvalsTab, hasCoachAuthorityOnAnyTeam);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">

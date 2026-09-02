@@ -130,4 +130,31 @@ describe('tabsForRole — bottom-nav tab set by role (Requirement 7.2.1-7.2.4)',
     const tabs = tabsForRole(UserRole.CAREGIVER, { visible: true, badge: 1 });
     expect(tabs.find((t) => t.key === 'approvals')).toBeUndefined();
   });
+
+  describe('hasCoachAuthorityOnAnyTeam — V1.R Part 1 follow-up, closes the Manager+is_coach gap (found live 2026-09-02)', () => {
+    it('defaults to false, so every call above with only 2 args is unaffected', () => {
+      expect(keysFor(UserRole.MANAGER)).toEqual(['home', 'team', 'games', 'schedule', 'messages']);
+    });
+
+    it('adds Coaching for a Manager who also holds is_coach, without losing Games', () => {
+      const tabs = tabsForRole(UserRole.MANAGER, hidden, true);
+      expect(tabs.map((t) => t.key)).toEqual([
+        'home',
+        'team',
+        'coaching',
+        'games',
+        'schedule',
+        'messages',
+      ]);
+    });
+
+    it('is a pure addition — a Coach or Admin already has Coaching regardless of this flag', () => {
+      expect(tabsForRole(UserRole.COACH, hidden, true).map((t) => t.key)).toEqual(
+        tabsForRole(UserRole.COACH, hidden, false).map((t) => t.key)
+      );
+      expect(tabsForRole(UserRole.ADMIN, hidden, true).map((t) => t.key)).toEqual(
+        tabsForRole(UserRole.ADMIN, hidden, false).map((t) => t.key)
+      );
+    });
+  });
 });

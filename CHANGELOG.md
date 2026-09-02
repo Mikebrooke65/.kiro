@@ -2,6 +2,35 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-09-02] - V1.R Part 1 follow-up: Coaching tab for a Manager who is also a Coach
+
+Found live-testing V1.R Part 1 immediately after the migrations were run:
+Make Coach on George Pig (a Manager) correctly set `is_coach = true` and
+showed both badges on the roster, but his own bottom nav never gained the
+Coaching tab — only Hewie Duck's test (a plain Player made Coach) picked
+it up. Root cause: migration 066's role-sync trigger deliberately gives
+Manager precedence over Coach when computing the single global
+`users.role`, so a Manager+`is_coach` person's global role stays
+`'manager'` and `main-layout-logic.ts`'s `tabsForRole` (`showCoaching =
+role === 'coach' || role === 'admin'`) has nothing to trigger on. This is
+exactly the "first Manager also makes themselves Coach" scenario the
+whole feature was built for, so it needed fixing immediately rather than
+filing it away.
+
+- **`tabsForRole`** (`main-layout-logic.ts`) — new third parameter,
+  `hasCoachAuthorityOnAnyTeam` (defaults to `false`, so every existing
+  call site is unaffected): `showCoaching` is now `role === 'coach' ||
+  role === 'admin' || hasCoachAuthorityOnAnyTeam`. 3 new tests.
+- **`MainLayout.tsx`** — derives that flag from the already-fetched
+  `user.teamMemberships` (`some(tm => tm.role === 'coach' ||
+  tm.is_coach)`) — no new query needed, `AuthContext` already loads every
+  team membership row (including `is_coach`) alongside the profile.
+
+Client-only fix, no new migrations. Verified via `npx vitest run` (239
+passing, 2 pre-existing skips) and `npm run build` (clean). Not yet
+re-tested live — needs George Pig to refresh his session and confirm
+Coaching now appears, mirroring how Hewie Duck's fix was confirmed.
+
 ## [2026-09-01] - V1.R Part 1: role model & RLS fix (Make Coach, Demote, team-scoped RLS, role-sync trigger, caregiver floor)
 
 Built following the repo owner's explicit "yes lets buiold the patch!"
