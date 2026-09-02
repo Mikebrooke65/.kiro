@@ -2,6 +2,54 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-09-02] - V1.R Part 1: fully live-verified, all 4 migrations run in production
+
+Full checklist worked through live against the real Supabase-backed app
+(migrations 064-067 run in the SQL Editor, both patches applied and
+pushed) after the Coaching-tab follow-up below. Everything in scope now
+confirmed working:
+
+- **Make Coach** — confirmed for both a plain Player (Hewie Duck: global
+  role flips `player` → `coach`, gets Coaching+Games) and an existing
+  Manager (George Pig: stays global `manager`, gains Coaching via the
+  `hasCoachAuthorityOnAnyTeam` fix below). Client-side role caching in
+  `AuthContext.tsx` means a logged-in user needs a refresh/re-login to see
+  their own updated header/nav — expected SPA behaviour, not a bug.
+- **Stop being Coach** and **Demote to Player** — both confirmed
+  (Mortimer Mouse demoted to Player, "Make Manager" un-greys correctly for
+  the next candidate).
+- **First-Manager protection** — confirmed in both directions: an Admin
+  (Mike Brooke) could not Demote or Remove George Pig while he was the
+  team's first Manager; George successfully demoted himself.
+- **Team-scoped RLS (migration 065)** — not independently demonstrable
+  through the normal UI (the team selector only ever lists teams you
+  belong to, so there's no "wrong team" screen to click into as a lower
+  read to try). Accepted as covered by code review plus the policy
+  migration running cleanly, consistent with the existing Remove-action
+  Edge Function's already-privileged access being unaffected.
+- **Child-must-have-a-caregiver invariant (migration 067)** — the normal
+  UI path to test this (Manage Caregivers / Remove Caregiver on George
+  Pig, an actual child) turned out to be blocked by a separate,
+  pre-existing bug (see below), so verified directly instead: a manual
+  `DELETE FROM player_caregivers` on George's only caregiver link
+  correctly failed with `ERROR: P0001: player_requires_a_caregiver` /
+  `HINT: This is the child's only caregiver...`, exactly as designed.
+
+**New bug found along the way, NOT fixed this session** — `TeamPage.tsx`'s
+`isChildBandPlayerRow` (gates "Add Caregiver"/"Manage Caregivers"
+visibility) checks the TEAM's `roster.ageBand`, not the person's own —
+`roster-logic.ts`'s per-person `ageBandFor(dateOfBirth)` is already used
+correctly elsewhere on the same page for contact display. Confirmed live:
+George Pig (real DOB 2013-05-07, genuinely 13/child) registered on an
+"Open" (adult-band) team never shows "Manage Caregivers" to anyone,
+Admin included. Pre-existing, unrelated to V1.R's locked scope — captured
+as a new build-order item in `NEXT-SESSION-NOTES.md` rather than fixed
+now.
+
+**V1.R Part 1 is now fully done and live-verified.** No further build
+work planned against it; V1.R Part 2 (deferred items) remains a separate,
+later piece of work.
+
 ## [2026-09-02] - V1.R Part 1 follow-up: Coaching tab for a Manager who is also a Coach
 
 Found live-testing V1.R Part 1 immediately after the migrations were run:

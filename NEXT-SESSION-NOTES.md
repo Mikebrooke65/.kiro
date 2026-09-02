@@ -1212,7 +1212,7 @@ One-line status per item. Detail is in the sections further down.
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP reminder pushes; caregiver multi-child RSVP build (design already agreed) |
 | V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
 | V1.M Messaging — send to Admins | 🔴 Bug, root cause confirmed | A message addressed to "Admins" can't even be stored today (`messages.team_id` is mandatory, every messaging RLS rule is team-scoped) — needs a nullable `team_id` + new RLS for teams-less messages. Conceptually linked to V1.R's migration-036 fix below (same "how is scope modeled" question), but its own separate build |
-| **V1.R Part 1 — Role model & RLS fix** | 🟡 **Code pushed 2026-09-02 — SQL migrations not yet run, not yet live-verified** | Code patch (`v1r-part1.patch`) applied + pushed to `prototype` (`ac0e6b8..48473ba`). The 4 SQL migrations (064-067: is_coach column, scoped RLS, role-sync trigger, caregiver-floor invariant) still need running in the Supabase SQL Editor, in order, before any of this actually works live. See V1.R's own "Built, 2026-09-01" / "Update, 2026-09-02" write-up |
+| **V1.R Part 1 — Role model & RLS fix** | ✅ **Fully done, live-verified, 2026-09-02** | Make Coach, Stop being Coach, Demote (incl. first-Manager protection both directions), the role-sync trigger + its Coaching-tab follow-up fix, and the caregiver-floor invariant all confirmed live. Nothing outstanding. Surfaced one new, separate, not-yet-fixed bug: "Manage Caregivers" visibility uses the team's age band instead of the person's own — see V1.R's write-up |
 | V1.R Part 2 — Automated data retention & deletion | ⬜ Deferred, own future spec | Competition cleanup clocks, the 12-month "no role" user-deletion job, de-identified performance data, pre-deletion notice/export. Nothing blocks on it today — scoping notes live in `docs/data-retention-scoping.md`, untouched |
 | V1.9 Store + privacy policy | 🟠 Rewrite now confirmed required | Gate before store submission — the child-account model is live now, not hypothetical. Depends on V1.R's retention decisions locking first. `club_settings.app_url` still needs the real store listing at go-live |
 | V1.T Friendly Manager import | ⬜ Blocked | Waiting on a CSV export sample |
@@ -1228,27 +1228,36 @@ One-line status per item. Detail is in the sections further down.
    alone when it's NOT the child's last team; also surfaced a data-hygiene
    gap, see the Remove-action write-up) and a plain Coach removing someone
    else (confirmed identical behaviour to a Manager).
-3. **V1.R Part 1 — role model & RLS fix.** ✅ Code built, pushed
-   2026-09-02 (`v1r-part1.patch`, `ac0e6b8..48473ba` on `prototype`).
-   **The 4 new migrations (064-067) still need running** via the Supabase
-   SQL Editor, in order — nothing in this patch actually works live until
-   they do. Once run, test: Make Coach on a Manager (dual badge shows, nav
-   tabs pick up Coach authority), Demote (including first-Manager
-   protection), Stop being Coach, a Coach/Manager acting outside their own
-   team now correctly blocked, and the child-caregiver-floor block on the
-   roster's Remove-Caregiver flow. Part 2 (automated data retention/
-   deletion) is deferred to its own spec — nothing blocks on it today.
-4. **"Caregiver DOB Correction Threshold" decision + build** (parked from
+3. ~~V1.R Part 1 — role model & RLS fix~~ — ✅ **fully done and
+   live-verified, 2026-09-02.** Built, pushed (`v1r-part1.patch` +
+   a same-day follow-up patch for the Coaching-tab gap), all 4 migrations
+   run, and every piece confirmed live: Make Coach (both a plain Player
+   and a Manager gaining Coach authority), Stop being Coach, Demote to
+   Player, first-Manager protection on Demote (checked both directions),
+   and the child-caregiver-floor block. Surfaced one new, separate,
+   not-yet-fixed bug along the way — see the write-up in V1.R's section
+   ("Manage Caregivers" uses the team's age band instead of the person's
+   own). Part 2 (automated data retention/deletion) stays deferred to its
+   own future spec — nothing blocks on it today.
+4. **New, small: fix "Manage Caregivers"/"Add Caregiver" visibility to use
+   the person's own age band, not the team's.** Found live-testing V1.R
+   Part 1's caregiver-floor check, 2026-09-02 — see V1.R's write-up for
+   the full detail. `TeamPage.tsx`'s `isChildBandPlayerRow` checks
+   `roster.ageBand === 'child'` (team-level) instead of the per-row
+   `ageBandFor(...)` the contact display already uses correctly. Currently
+   blocks caregiver management entirely for a real child registered on an
+   Open/adult team. Small, well-understood fix, not yet built.
+5. **"Caregiver DOB Correction Threshold" decision + build** (parked from
    the Add Player / DOB spec, still open).
-5. V1.M "Send to Admins" messaging bug — worth doing alongside step 3
+6. V1.M "Send to Admins" messaging bug — worth doing alongside step 3
    given the conceptual overlap, even though it's a separate build.
-6. **Privacy policy rewrite** for the now-live child-account model, plus
+7. **Privacy policy rewrite** for the now-live child-account model, plus
    re-examining the Play Console audience declaration — hard gate before
    store submission, depends on step 3's retention decisions locking.
-7. V1.6 invite-page branding.
-8. V1.7 caregiver multi-child RSVP build + reminder pushes.
-9. V1.8 feature flags.
-10. Small standalone polish item, not yet scheduled: `AddPlayerModal.tsx`'s
+8. V1.6 invite-page branding.
+9. V1.7 caregiver multi-child RSVP build + reminder pushes.
+10. V1.8 feature flags.
+11. Small standalone polish item, not yet scheduled: `AddPlayerModal.tsx`'s
     `handleContinue` doesn't scroll to or surface a below-the-fold
     validation error — see Task 12 item 6 write-up. Repo owner hasn't yet
     said whether to fix now or queue.
@@ -2913,6 +2922,68 @@ confirm Coaching now shows, same as Hewie's confirmation above.
 Packaged as a second patch, `v1r-part1-followup-coaching-tab.patch`,
 applying on top of `48473ba` (the first V1.R Part 1 patch already
 pushed). No new SQL — this is a client-only fix.
+
+**Confirmed live, 2026-09-02 (`646efcd` pushed + deployed).** George Pig
+refreshed his session after the follow-up patch deployed and now sees
+Coaching alongside Games, same as Hewie Duck's earlier confirmation.
+**Both dual-role scenarios (plain Player → Coach, and Manager → also
+Coach) are now fully confirmed working end to end.** Make Coach, its
+nav-tab consequence, and the role-sync trigger are done.
+
+**Everything else confirmed live, 2026-09-02 — V1.R Part 1 is fully done.**
+
+- **Stop being Coach**: confirmed on George Pig — `is_coach` flipped back
+  to false, role stayed Manager, Coaching tab disappeared. Correctly
+  independent of `role`.
+- **Demote to Player**: confirmed on Mortimer Mouse (not the first
+  Manager) — dropped cleanly to Player, and the Manager cap correctly
+  freed up (Goofys mum's Make Manager button un-greyed immediately after).
+- **First-Manager demote protection**: confirmed both directions. Mike
+  Brooke (Admin) could NOT demote or remove George Pig (the team's first
+  Manager) — no button even showed. Logged in as George himself, Demote
+  to Player on his own row worked and he correctly lost the Coaching tab.
+- **Migration 065's scoped RLS**: not demonstrable through the normal app
+  UI — the team selector already only lists teams a user actually belongs
+  to (separate, pre-existing, correct behaviour unrelated to this fix), so
+  there's no UI path to even attempt writing to a team you're not on. The
+  fix is defense-in-depth against direct API access; confirmed structurally
+  (the migration's `CREATE POLICY` ran clean, and the SQL/logic were
+  reviewed carefully) rather than via a live exploit attempt.
+- **Migration 067's child-caregiver-floor invariant**: confirmed via a
+  direct SQL delete attempt on George Pig's only caregiver link (Daddy
+  Pig) — correctly rejected: `ERROR: P0001: player_requires_a_caregiver`,
+  with the friendly hint text, and the delete rolled back with nothing
+  actually removed. Couldn't reach this through the roster UI's "Manage
+  Caregivers" button — see the new bug captured just below for why — so
+  this was verified at the data layer directly instead, which is a fully
+  valid test of the trigger itself.
+
+**New bug found along the way, NOT fixed, captured for later**: the
+roster's "Manage Caregivers" (and by the same logic, "Add Caregiver")
+visibility checks `roster.ageBand` — the TEAM's own age_group-derived
+band — instead of that specific PERSON's own age band the way the
+contact-display logic elsewhere on the same page already correctly does
+(`ageBandFor(row.user?.date_of_birth)`, per the add-player-and-dob-age-
+model work). Confirmed live: George Pig, genuinely 13 years old
+(`date_of_birth` 2013-05-07) and registered on an "Open" (adult-band)
+team, never gets a "Manage Caregivers" option shown to anyone, Admin
+included, because the team itself is Open. A real child on an Open/adult
+team can have their caregiver link created (via Add Caregiver, if that
+ever becomes reachable) but never removed or managed through the roster
+UI at all — the only way to touch it is direct SQL, which is how tonight's
+test of migration 067 had to be done. Exact fix shape: change
+`isChildBandPlayerRow` in `TeamPage.tsx` from `roster.ageBand === 'child'`
+to the same per-row `ageBandFor(...)` check the contact display already
+uses for that entry. Small, well-understood fix — just not built tonight,
+since it surfaced mid-testing and is unrelated to V1.R's actual scope.
+
+**V1.R Part 1: fully built, deployed, and live-verified, 2026-09-02.**
+Nothing outstanding on this piece. Next up per the build order: the
+"Manage Caregivers" per-person age-band bug just found (quick, worth
+doing soon since it currently blocks legitimate caregiver management for
+any child on an Open/adult team), then the "Caregiver DOB Correction
+Threshold" decision, V1.M's messaging fix, V1.9's privacy policy rewrite,
+then V1.6/V1.7/V1.8.
 
 **Deferred to V1.R Part 2 (own future spec, no build now)** — everything
 below stays exactly as scoped in `docs/data-retention-scoping.md`,
