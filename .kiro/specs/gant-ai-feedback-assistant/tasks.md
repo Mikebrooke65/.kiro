@@ -1,152 +1,198 @@
 # Gant — AI Coaching Feedback Assistant — Tasks
 
-**Status: DRAFT — for review, not yet built.**
-**Date: 2026-09-03.**
+**Status: DRAFT v2 — reflects the 2026-09-03 working session, not yet built.**
+**Supersedes:** the v1 draft of this file (same day).
 **Reads with:** `requirements.md`, `design.md` (this folder).
 
-Tasks are ordered so each slice is independently shippable and testable. Numbers
-in parentheses reference requirements (R) and design sections (D). **Non-code
-gate:** Task 0 (coach guardrails session) governs launch *quality* — the build
-can proceed against placeholder guardrails, but Gant is not launchable until
-Task 0 delivers real ones (R10.4).
+Ordered so each slice is independently shippable and testable, per design.md
+Section 10's rollout sequence. **Non-code gate:** Task 0 governs launch
+*quality*, not the build sequence — engineering can proceed against placeholder
+guardrails, but Gant isn't launchable with real content until Task 0 lands.
 
 ---
 
-## Task 0 — Coach guardrails working session (NON-CODE, gating)
+## Task 0 — Coach guardrails working session (NON-CODE, gating on quality)
 
 - [ ] 0.1 Run the coach session (3–5 coaches) per
   `docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md`; produce first-draft
-  (a) phases-of-play list, (b) feedback model, (c) tone guide with before/after
-  examples. (R10.1)
+  phases-of-play list, feedback model, tone guide with before/after examples.
 - [ ] 0.2 Decide whether phase tags map into the existing Technical/Tactical/
-  Physical/Mental report-card categories (Gant docs §13.1) — affects how phases
-  are defined now. (R10.1, non-goal note)
-- [ ] 0.3 Capture the output as the seed content for `gant_guardrails` (Task 3).
+  Physical/Mental report-card categories (affects how phases are defined now).
+- [ ] 0.3 Capture the output as seed content for `gant_guardrails` (Task 1.3).
 
-## Task 1 — Confirm open decisions (blocks specific tasks)
+## Task 1 — Data model (D2)
 
-- [ ] 1.1 **Confirm Req 8.4** — the exact contents of the player/caregiver team-
-  view feedback surface (the user's cut-off "...including ___"). **Blocks Task
-  7.** 
-- [ ] 1.2 Confirm remaining open decisions in requirements §14 (clarification
-  ceiling, review-list UX, progression window, session-suggestion scope,
-  child-sees-own-feedback, naming/trademark).
-
-## Task 2 — Data model: extend the feedback table (R5.2, R6.1–6.2, D2.1)
-
-- [ ] 2.1 Migration `0XX_gant_feedback_columns.sql`: add `event_type`
-  (`game|training|video_review`, nullable), `phase_tags text[] default '{}'`,
-  `gant_assisted boolean default false` (and/or `source`) to `game_feedback`.
-  Idempotent; run manually in Supabase SQL Editor; commit to git. (D2.1)
-- [ ] 2.2 Update `src/types/database.ts` `GameFeedbackRecord` for the new columns.
-- [ ] 2.3 **Latent-bug fix (separate, shippable alone):** repoint or remove
+- [ ] 1.1 Migration: `gant_pending_entries` (team_id, player_id?, event_type?,
+  event_id?, raw_text jsonb array of rounds, last_gant_response jsonb,
+  round_count, captured_by, captured_at, updated_at). RLS: captured_by = auth.uid()
+  OR admin, all operations. (D2.1)
+- [ ] 1.2 Migration: additive columns on `game_feedback` — `event_type`,
+  `phase_tags text[]`, `gant_assisted boolean`, `round_count`. (D2.2)
+- [ ] 1.3 Migration: `gant_guardrails` single-row table (`phases_of_play jsonb`,
+  `feedback_model text`, `tone_guide text`, `system_prompt_override text`,
+  `updated_at`). RLS: authenticated coach/admin read, admin write. Seed from
+  Task 0.3 (or placeholder). (D8)
+- [ ] 1.4 Migration: `gant_outcomes` append-only log (team_id, player_id?,
+  outcome, round_count, resolved_by, resolved_at). RLS: admin-only SELECT,
+  insert via server-side call only. (D2.4)
+- [ ] 1.5 Update `src/types/database.ts` for all of the above.
+- [ ] 1.6 **Latent-bug fix (separate, shippable alone):** repoint or remove
   `reporting-api.getGameFeedback()` + desktop `GameFeedbackReport.tsx`, which
-  select dead 4-Moments columns dropped in migration 022. (D2.1 note)
+  select dead 4-Moments columns dropped in migration 022.
 
-## Task 3 — Guardrails store (R10.2, D2.3)
+## Task 2 — Edge Function `gant-refine` (D4.3)
 
-- [ ] 3.1 Migration `0XX_gant_guardrails.sql`: single-row `gant_guardrails`
-  (`phases_of_play jsonb`, `feedback_model text`, `tone_guide text`,
-  `system_prompt_override text`, `updated_at`). RLS: authenticated coach/admin
-  read, admin write (mirror `club_settings`, migration 046).
-- [ ] 3.2 Seed the row from Task 0.3's output (or a placeholder if 0 not yet done).
-- [ ] 3.3 (Later / admin UX) a desktop admin editor for the guardrails row — can
-  be deferred; editing via SQL is acceptable for first launch.
+- [ ] 2.1 Scaffold from `send-email`'s skeleton: `Deno.serve`, CORS + OPTIONS,
+  require `Authorization` header.
+- [ ] 2.2 Read `ANTHROPIC_API_KEY` + `gant_guardrails` at request time; assemble
+  cached system prompt.
+- [ ] 2.3 Implement `mode: 'review'` — accepts `{ scope, subjectUserId?,
+  eventType?, rounds: string[] }`, calls Claude Sonnet, returns
+  `{ kind: 'refined'|'question', text, phaseTags? }`.
+- [ ] 2.4 Implement `mode: 'summarize'` — accepts a player's last-10 notes
+  (text/tags/dates, User-ID keyed), returns a short synthesis. (D7)
+- [ ] 2.5 **Privacy boundary test:** assert no name/email/DOB can leave in
+  either mode — only `subjectUserId` + text/tags/dates.
+- [ ] 2.6 Error/timeout handling — never lose the coach's accumulated raw input;
+  client keeps the pending entry as-is on failure.
+- [ ] 2.7 Deploy (`supabase functions deploy gant-refine`; secrets via
+  `supabase secrets set`, handed over via a file outside the repo). Verify with
+  scripted calls: clean refine, a question, an all-positive input, a multi-round
+  sequence.
 
-## Task 4 — Edge Function `gant-refine` (R3, R4.1, R7, R11, D3, D7)
+## Task 3 — Review loop (D4) — buildable/testable before capture UI exists
 
-- [ ] 4.1 Scaffold `supabase/functions/gant-refine/index.ts` from `send-email`'s
-  skeleton: `Deno.serve`, CORS + OPTIONS, require `Authorization` header (401
-  otherwise). (D3)
-- [ ] 4.2 Read `ANTHROPIC_API_KEY` (required) + optional `CLUB_*` from secrets;
-  read `gant_guardrails` at request time; assemble the cached system prompt. (R10.3, D7)
-- [ ] 4.3 Implement `GantRefineRequest`/`GantRefineResponse`; call Claude Sonnet
-  with prompt caching; parse refined text + phase tags + optional clarifying
-  question + progression note. (R3.2, R4.1, R11)
-- [ ] 4.4 **Privacy boundary:** enforce that only `subjectUserId` + text/tags/
-  dates leave; strip/reject identifying fields. Unit-test this. (R7.1–7.2)
-- [ ] 4.5 Error/timeout handling that preserves the coach's raw text and signals
-  retry. (R3.4)
-- [ ] 4.6 Deploy: `supabase functions deploy gant-refine`; set `ANTHROPIC_API_KEY`
-  via `supabase secrets set` (key handed over via a file outside the repo). Verify
-  with a scripted authenticated call (all-positive input + a clarify round-trip).
-  (D3, D9)
+- [ ] 3.1 `src/lib/gant-api.ts`: `review(entryId)`, `approve(entryId)` (atomic:
+  insert `game_feedback` row + log `gant_outcomes('ticked')` + delete pending
+  row), `discard(entryId)` (log `gant_outcomes('crossed')` + delete pending row).
+- [ ] 3.2 Pure logic (`src/lib/gant-review-logic.ts`): round accumulation,
+  Tick/Cross/Work-on state transitions, response-kind → available-actions
+  mapping. Unit-tested.
+- [ ] 3.3 Review screen component: header (team/player/event/date), original-
+  input block (full round history), Gant response block (two visual states per
+  D4.1), action buttons conditional on response kind.
+- [ ] 3.4 "Work on" input reuses the same dictate-or-type control as capture
+  (Task 5) — factor out a shared input component.
+- [ ] 3.5 No round cap — verify the loop truly has no artificial limit.
+- [ ] 3.6 **Live verification (before building capture UI):** manually insert a
+  `gant_pending_entries` row via SQL, confirm the full review loop works
+  end-to-end (refine → question → Work on → refine → tick), confirms Task 2's
+  Edge Function and Task 3's screen independently of capture.
 
-## Task 5 — Client API `src/lib/gant-api.ts` (D4)
+## Task 4 — Pending queue (D5)
 
-- [ ] 5.1 `GantApi extends ApiClient`; `refine()` wrapping
-  `functions.invoke('gant-refine')` with readable error unwrap (copy
-  `email-api.ts`). 
-- [ ] 5.2 `saveFeedback(...)` reusing/extending `gamesApi.createGameFeedback` to
-  write the new columns; sets `gant_assisted=true`, `created_by`=coach. (R6.1, R6.4)
-- [ ] 5.3 Read methods: `getFeedbackForPlayer`, `getTeamFeedback` (RLS-scoped),
-  plus a helper that assembles userId-keyed `history` for progression. (R11, D4)
+- [ ] 4.1 "My pending notes" list — flat chronological (default per open
+  decision), reachable from the Coaching tab; reuse the `resolveApprovalsTab`
+  badge pattern (`main-layout-logic.ts`) for a pending-count badge.
+- [ ] 4.2 Tapping an entry opens Review (Task 3).
 
-## Task 6 — Coach capture/refine UI (replaces AICoach stub) (R1–R4, D5)
+## Task 5 — Capture v1 (D3.1)
 
-- [ ] 6.1 Pure logic in `src/lib/gant-capture-logic.ts`: pending-entry model,
-  review-list ordering, "discard raw on approve" transition, offline enqueue/flush
-  ordering. Unit-tested. (R2.4, R4.4, R4.5, R9.2)
-- [ ] 6.2 Replace `src/pages/AICoach.tsx` with the Gant screen: context bar (team/
-  scope/player/event pickers reusing Coaching/Games patterns), capture control,
-  refined-draft card (editable text, phase tags, clarify box, progression note),
-  actions (Approve / Refine again / Next), pending review list. (D5)
-- [ ] 6.3 Gate the screen on coach-authority — same rule as `tabsForRole`
-  `showCoaching` and the write RLS; resolve the `/ai-coach` vs `/coaching` role
-  mismatch. (R1.2, R6.3)
-- [ ] 6.4 Desktop equivalent under `src/pages/desktop/` following existing layout
-  conventions. (D5)
+- [ ] 5.1 `gantApi.createPendingEntry({ teamId, playerId?, rawText, eventType?,
+  eventId? })`.
+- [ ] 5.2 Capture sheet component (dictate-or-type input, player/team already
+  fixed by caller) — **no Gant call at capture time** (design's recommended
+  default; revisit after live testing if coaches expect immediate feedback).
+- [ ] 5.3 Wire capture entry points: from the person-detail screen (Task 6) and
+  from the roster directly (decide which is primary; both can coexist).
+- [ ] 5.4 Gate capture to coach/admin/coach-authority-manager — same rule as
+  `tabsForRole`'s `showCoaching`.
 
-## Task 7 — Player / caregiver feedback view (R8, D6) — **blocked on Task 1.1**
+## Task 6 — Person-detail screen (D6) — v1 scope is notes-only
 
-- [ ] 7.1 Migration `0XX_feedback_player_caregiver_read.sql`: additive SELECT
-  policies — player reads own individual + own team feedback; caregiver reads
-  linked child's individual + child's team feedback (reuse migration 060/061
-  caregiver-team resolver pattern). Run manually; commit. (R8.5, D6.1)
-- [ ] 7.2 Team-view UI surface in `TeamPage.tsx` per the **confirmed** Req 8.4
-  contents: individual feedback (me/my child), team feedback, candidate
-  progression view. Never expose `gant_assisted`/source. (R8.2–8.4, D6.2)
-- [ ] 7.3 Live RLS verification: player sees only own+team; caregiver sees linked
-  child's; a player cannot read another player's individual feedback;
-  coach/manager/admin unaffected. (D9)
+- [ ] 6.1 Migration: additive RLS on `game_feedback` for player-self,
+  device-logged-in-child-self, and caregiver-of-linked-child read (D6.1),
+  reusing the migration 060/061 caregiver-team-access resolver pattern. A
+  logged-in child and their caregiver both get read access — not either/or
+  (Req 6.3, resolved).
+- [ ] 6.2 New route/screen (`/team/person/:userId` or a modal over `/team` —
+  decide at build time). Wire from `TeamPage.tsx` roster row tap, gated per
+  Req 1.2 (self/caregiver/logged-in-child = view-only; coach/admin = view +
+  add-note + this-person's pending list). **No editable-fields panel — removed
+  from scope (Req 2.2/12.5).**
+- [ ] 6.3 Notes feed: summary card (Task 7) + list, newest first, text/author/
+  date (Req 2.1.1). Never render `gant_assisted`/`round_count` (Req 6.4).
+- [ ] 6.4 Add-note entry point (coach/admin only) opening Task 5's capture sheet
+  pre-filled with this player + team, plus this coach's pending entries for this
+  person inline (Req 2.1.4 / D4.4).
+- [ ] 6.5 Live RLS verification: player sees only their own notes + team notes;
+  a device-logged-in child sees their own directly; caregiver sees linked
+  child's; a player cannot read another's; coach/admin unaffected.
 
-## Task 8 — Event-type extension: training & video review (R5) 
+## Task 6b — Team-notes on the Team roster page (Req 6.5, D6.3) — small, independent
 
-- [ ] 8.1 Wire capture + save for `training` and `video_review` event types
-  (games already work). Decide video-review event handling (existing event / ad-
-  hoc / none) per R5.3. Can follow slice 1 once the game path is proven.
+- [ ] 6b.1 Add a "Notes" link/section below the team name on `TeamPage.tsx`,
+  reusing Task 6's summary-card + feed pattern, scoped to
+  `feedback_type='team'` + `team_id`. Readable by any member of that team.
+- [ ] 6b.2 Note: **do not** attempt a broader Team page layout redesign as part
+  of this task — that's explicitly out of scope (Req 12.6). Add this link
+  cleanly; a full layout pass is separate future work.
 
-## Task 9 — Speech-to-text + offline queue (R9, D8)
+## Task 7 — Auto-summary (D7)
 
-- [ ] 9.1 Add a Capacitor speech-recognition plugin (or Web Speech path);
-  **confirm offline support** → choose text queue (R9.2) vs audio queue (R9.3). (R9.4)
-- [ ] 9.2 On-device transcription; audio never leaves device, deleted post-
-  transcription if the audio-queue fallback is used. (R7.4, R9.3)
-- [ ] 9.3 Local offline queue for raw entries; flush + refine on reconnect;
-  reuse Task 6.1's ordering logic. (R9.2)
-- [ ] 9.4 If audio-queue path taken, add the privacy-policy clause. (R9.3, R7.5)
+- [ ] 7.1 Decide caching approach (live-on-open vs cached-on-approval + a
+  `gant_player_summaries` table) — default to live-on-open for simplicity
+  unless load testing says otherwise.
+- [ ] 7.2 Wire `mode: 'summarize'` into the person-detail screen, pinned above
+  the notes feed.
 
-## Task 10 — Progression review (R11, D4)
+## Task 8 — Guardrails admin screen + usage-signal panel (D8)
 
-- [ ] 10.1 Assemble userId-keyed history (bounded by the confirmed window, R11.3)
-  and pass to `gant-refine`; surface the same/new-issue prompt to the coach. (R11)
+- [ ] 8.1 `src/pages/desktop/DesktopGantSettings.tsx` (admin-only): phases-of-
+  play editor, feedback-model text area, tone-guide text area.
+- [ ] 8.2 Usage-signal panel: sortable list from `gant_outcomes` (round count,
+  outcome, team/player, date) — simple list first, aggregation later (Req 10.4).
+- [ ] 8.3 Wire Task 0's coach-session output in as the real seed content once
+  available (replacing any placeholder from Task 1.3).
 
-## Task 11 — Session suggestions (R12) — lower priority / Gant phase 2
+## Task 9 — Games page quick link (Req 1.3)
 
-- [ ] 11.1 Coaching-page suggestions from a team/player's feedback history;
-  fixed-library vs free-form per the confirmed R12.2 decision.
+- [ ] 9.1 Confirm `Games.tsx`'s existing `selectedPlayerId` state can be carried
+  through a link/navigation to the person-detail screen (or capture sheet
+  directly).
+- [ ] 9.2 Replace/augment the existing "Ask AI Coach" entry point on the Games
+  page with this quick link — team (and player, if selected) pre-filled, no
+  re-selection needed.
 
-## Task 12 — Privacy policy + docs (R7.5, R13)
+## Task 10 — Deferred / phase 2 (not built in this pass, tracked here)
 
-- [ ] 12.1 Add a Gant section to `docs/privacy-policy-draft.md` (User-ID-only to
-  AI, no audio transmission, retention aligned with V1.R). Gate before any store
-  release.
-- [ ] 12.2 Update `CHANGELOG.md` and `NEXT-SESSION-NOTES.md` (move Gant from
-  "considered" to in-progress) per project standards as slices land.
+Resolved and removed from this list (2026-09-03 follow-up): team-notes location
+(now Task 6b), video-review handling (now just a capture-flow label, Task 5),
+logged-in child's own-notes visibility (now Task 6.1/6.5), editable personal
+fields (removed from Gant's scope entirely, see requirements Section 12.5).
 
-## Task 13 — Verification checkpoint
+- [ ] 10.1 **Continuous multi-player dictation** (D3.2) — segmentation + roster
+  fuzzy-name-matching, feeding into the same Task 3 review loop unchanged.
+- [ ] 10.2 **Progression review** (Req 12.4) — Gant noting recurring issues while
+  a coach is *writing* a new note (distinct from the read-side auto-summary).
+- [ ] 10.3 **Session suggestions** (Req 12.7).
+- [ ] 10.4 **Naming decision** (Req 12.8) — **the biggest open item per the repo
+  owner.** Two names needed: "Gant" itself (backstage, undisclosed to
+  players/caregivers; open whether coaches see this name at all) and the
+  user-facing feature name (candidates: Coaching Notes, The Notebook, Progress
+  Notes). Consider bringing candidates to the Task 0 coach session. **Blocks
+  final UI copy across Tasks 4–6b** — build can proceed with a placeholder
+  label, but should not ship without this decided.
+- [ ] 10.5 **Team page / roster layout redesign** (Req 12.6) — out of scope for
+  this build; scope as its own follow-up once Gant's additions (person-detail
+  link, team-notes link) are in place and real crowding is visible.
+- [ ] 10.6 **Editable personal fields + the player-can't-see-own-phone-number
+  gap** (Req 12.5) — separate future conversation, not a Gant task. Track the
+  phone-number visibility gap in `NEXT-SESSION-NOTES.md`.
 
-- [ ] 13.1 `npm test` + `npm run build` clean on the pushed head.
-- [ ] 13.2 Full manual live pass (capture → refine → clarify → approve →
-  player/caregiver sees it; offline capture → reconnect). Nothing "done" until
-  proven live.
+## Task 11 — Privacy policy + docs
+
+- [ ] 11.1 Add a Gant section to `docs/privacy-policy-draft.md` — User-ID-only to
+  AI, no audio transmission (except the on-device fallback, deleted
+  immediately), the new `gant_pending_entries` retention surface (short-lived
+  but real), retention aligned with V1.R. Gate before any store release.
+- [ ] 11.2 Update `CHANGELOG.md` and `NEXT-SESSION-NOTES.md` as slices land.
+
+## Task 12 — Verification checkpoint
+
+- [ ] 12.1 `npm test` + `npm run build` clean on the pushed head.
+- [ ] 12.2 Full manual live pass end to end: capture (typed + dictated, leave
+  pending) → reopen later from the queue → review loop (refine → question →
+  Work on → refine → tick) → confirm visible on the person-detail screen to the
+  right viewers only → confirm the auto-summary reads sensibly → confirm a
+  crossed entry saves nothing and logs the outcome.

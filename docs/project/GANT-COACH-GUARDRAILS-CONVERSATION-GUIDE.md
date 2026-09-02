@@ -43,6 +43,51 @@ This is a *different* lens from "phases of play" (which describes moments in a g
 
 ---
 
+## Prior art — a research-backed starting point, not a blank page
+
+Added 2026-09-03. Before running this session, it's worth knowing this isn't
+unmapped territory — there's a well-established feedback framework worth
+bringing to coaches as a starting point, rather than inventing a structure from
+scratch.
+
+**Hattie & Timperley's feedback model ("feed up, feed back, feed forward").**
+John Hattie's research (with Helen Timperley, 2007) is among the most-cited
+work on what makes feedback effective, across education and coaching
+contexts. Their model says effective feedback answers three questions:
+
+1. **Feed up — "Where am I going?"** (what's the goal/standard being aimed at)
+2. **Feed back — "How am I doing?"** (a clear read on current performance
+   against that goal)
+3. **Feed forward — "Where to next?"** (a concrete next step)
+
+Research applying this model has found **"feed forward" is the piece most
+often missing in practice** — people are relatively good at describing what
+happened, less good at saying what to actually do about it. That's directly
+relevant to Part 2 below: Gant's feedback model should make the "next step"
+element close to non-negotiable, not optional, precisely because it's the part
+real feedback (human or AI-assisted) tends to drop.
+
+**Bring this framing to the session** as a check against whatever structure
+coaches land on — if the club's model doesn't map onto feed up/back/forward,
+that's fine, but it's worth knowing which of the three the model is strong or
+weak on.
+
+**One thing to actively steer away from: the "compliment sandwich."**
+Praise-criticism-praise is a popular format, but it isn't well supported by
+evidence — reviews of the research describe only partial, condition-specific
+support for it, and youth-sport-specific commentary notes it's often
+ineffective with young athletes particularly (kids tend to remember the
+criticism and discount the surrounding praise). This matters for the
+**all-positive-feedback decision already made** (Part 2, below): the point
+isn't "always sandwich a work-on between two positives," it's that all-positive
+feedback should be allowed to just *be* all-positive, and a work-on, when there
+is one, doesn't need artificial praise bookending it to be well-received.
+
+*(Sources summarised for compliance with licensing restrictions on verbatim
+reproduction — not direct quotes.)*
+
+---
+
 ## Part 2: The feedback model
 
 **What we need:** What does a *good* piece of feedback actually contain, structurally, at our club? This is the template Gant checks a coach's draft against.

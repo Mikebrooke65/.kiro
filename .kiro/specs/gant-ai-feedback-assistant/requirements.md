@@ -1,378 +1,469 @@
 # Gant — AI Coaching Feedback Assistant — Requirements
 
-**Status: DRAFT — for review, not yet built.**
-**Date: 2026-09-03.**
+**Status: DRAFT v3 — talked through with the repo owner 2026-09-03, not yet built.**
+**Supersedes:** the v1 and v2 drafts of this file (2026-09-03, same day). v1
+guessed at a dedicated `/ai-coach` picker screen and a Gant-initiated
+clarification model — wrong. v2 fixed that but left several items open (team
+notes location, video-review handling, child visibility, editable fields,
+naming) — this version closes most of them. Kept in git history if needed;
+this file is now the source of truth.
+
 **Origin:** Gant was scoped as future V2 work in two planning docs
 (`docs/project/GANT-AI-REQUIREMENTS.md` and
 `docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md`). The repo owner is
-now considering pulling it forward ahead of its V2 slot (flagged in
-`NEXT-SESSION-NOTES.md`). This spec turns those planning docs into a buildable
-requirements set, grounded in how the app's feedback/coaching code actually
-works today.
+considering pulling it forward ahead of its V2 slot. This spec turns those
+planning docs — plus a detailed walkthrough of the actual desired screens and
+flow — into a buildable requirements set.
 
-**Source of truth for intent:** the two Gant docs above. Where this spec and
-those docs disagree, the docs win and this spec should be corrected. This
-document only adds the engineering detail (data model, RLS, integration points,
-build sequence) they deliberately left out.
+**Source of truth for intent:** the two original Gant docs for the *purpose and
+constraints* (privacy, model choice, tone philosophy); this spec for the
+*screens, data model, and mechanics*, which are now considerably more concrete
+than those docs described.
 
 ---
 
 ## 0. Scope and non-goals
 
 **In scope (V1 of Gant):**
-- A **coach-facing** capture-and-refine flow, reached from the Coaching tab,
-  that turns a coach's raw dictated/typed observation into structured,
-  club-standard feedback about a **team** or an **individual player**, tied to a
-  specific event (game / training / video review).
-- A **player/caregiver-facing** view of approved feedback, surfaced in the team
-  view, so a player (or a child's caregiver) can see feedback written about
-  them — see Section 8. **⚠️ OPEN — the user's description of this view was cut
-  off mid-sentence ("...where they can see more things about them, including
-  ___"). Section 8.4 lists the candidate contents; the exact list must be
-  confirmed before build.**
-- The Gant guardrails as an editable **system prompt** (phases of play, feedback
-  model, tone guide) — not hardcoded, not fine-tuned.
+- A **person-detail screen**, reached from the Team page roster, that is the
+  single home for an individual's coaching notes and (separately) their
+  editable personal fields — see Section 2.
+- A **capture** mechanism for a coach/admin to record a raw observation about a
+  player or team (Section 3) — v1 build is **one player/team at a time**
+  (Section 3.1). Continuous, multi-player dictation with auto-segmentation
+  (Section 3.2) is explicitly **phase 2**, scoped now so v1 doesn't block it,
+  but not built now.
+- A **review** mechanism — entirely separate from capture — where a pending raw
+  entry is turned into approved, saved feedback via Gant refinement and a
+  coach-driven tick/cross/"Work on" loop (Section 4).
+- A **pending queue** so capture and review don't have to happen at the same
+  moment (Section 5).
+- The Gant guardrails (phases of play, feedback model, tone guide) as **admin-
+  editable data via a real desktop screen**, not a SQL-editor workaround
+  (Section 9).
+- A **guardrails feedback-loop signal** — tracking which entries needed many
+  "Work on" rounds or got crossed a lot, surfaced to admins so they can tune the
+  guardrails document (Section 10). Human-mediated; the model itself does not
+  learn or retrain (Section 8.2).
 
-**Explicitly NOT in scope for this spec (deferred, per the Gant docs):**
-- **Player-facing self-reflection** where Gant converses directly with a child
-  (Gant docs §13.2 / guardrails guide Part 5). This is a separate safety/design
-  problem and must get its own spec. Gant here only ever talks to coaches.
-- **Auto-populating the biannual report card** from accumulated feedback (Gant
-  docs §13.1). Design the data model so this stays *possible* later, but do not
-  build it now.
+**Explicitly NOT in scope for this spec (deferred):**
+- **Phase 2 — continuous multi-player dictation** with automatic segmentation
+  and roster name-matching (Section 3.2). Scoped here so it plugs into the same
+  review mechanism later, but not built in this pass.
+- **Player-facing self-reflection**, where Gant converses directly with a child.
+  Separate safety/design problem, own future spec. Gant only ever talks to
+  coaches/admins here.
+- **Auto-populating the biannual report card** from accumulated notes. Design
+  should keep this *possible* (phase tags, dated entries) but not build it.
 - Any change to the existing lesson/session **rating** feedback
-  (`session_feedback`, `lesson_feedback`) — those are a different, coach-only
-  reporting concern and Gant does not touch them.
+  (`session_feedback`, `lesson_feedback`) — untouched, different concern.
+- **Editable personal fields** (contact details, etc.) — explicitly **removed
+  from this spec's scope** (confirmed 2026-09-03). Whether/how fields like phone
+  number become editable in-app, and by whom, is its own decision (risk of
+  conflicting with registration/invite-time data — e.g. DOB-driven adult/child
+  routing) and needs its own conversation, unrelated to Gant. See Section 12.5.
+- **Team page / roster layout redesign** — the roster row already carries Make
+  Manager, Make Coach, Give App Access, Add Player, and Remove; this spec adds
+  a route into the person-detail screen and a team-notes link on top of that.
+  The **visual layout** of the Team page is its own body of work, related to
+  but not solved by this spec — see Section 12.6.
 
 ---
 
-## 1. Coach entry point (Coaching tab)
+## 1. Entry point — the Team page roster
 
-**Current state (verified):** `src/pages/AICoach.tsx` is a stub rendering "AI
-coaching features (future release)". It is routed at `/ai-coach`
-(`ProtectedRoute` allowing ADMIN, MANAGER, COACH). The Coaching page
-(`src/pages/Coaching.tsx`) already has a black **"Ask AI Coach"**
-`<Link to="/ai-coach">`, and its subtitle already advertises an "AI coaching
-assistant". The Coaching bottom tab is shown only to ADMIN / COACH / anyone with
-coach authority on a team (`tabsForRole` in `src/lib/main-layout-logic.ts`).
+**Current state (verified):** `TeamPage.tsx` already shows a roster grouped
+Coach → Manager → Player, with age-band-aware contact display and role-gated
+actions. There is currently no per-person detail screen — tapping a row does
+nothing beyond the inline actions already there (Accept/Deny, Remove, etc.).
 
-- **1.1** — Gant's coach experience replaces the `AICoach` stub at `/ai-coach`
-  (or a clearly-named successor route). The "Ask AI Coach" button remains the
-  entry point.
-- **1.2** — Access is restricted to users who can legitimately give feedback:
-  **Coach and Admin**, plus a Manager only if they hold coach authority on a
-  team (`is_coach`). Resolve the existing route mismatch: `/coaching` is
-  ADMIN+COACH only while `/ai-coach` currently also allows plain MANAGER. Gant
-  capture must gate on the **same** rule as the ability to write `game_feedback`
-  (see Section 6 RLS), so a user who cannot save feedback is never offered the
-  capture flow.
-- **1.3** — The coach first selects the **team** the feedback is about (reuse
-  the Coaching/Games team selector pattern — `teamsApi.getMyTeams`, auto-select
-  when there is only one team), then whether this is **team** feedback or
-  **individual player** feedback (and which player, from the team roster).
-- **1.4** — The coach selects the **event context**: which event this feedback
-  is about (a game / training / video-review event), consistent with the
-  events model (Section 5).
-
----
-
-## 2. Capture — live and reflective
-
-Per Gant docs §3. Two usage patterns, one underlying capture primitive.
-
-- **2.1** — The coach captures a **raw observation** as free input. Input may be
-  **dictated** (speech-to-text) or **typed**. Typed input must always work; the
-  dictation path is additive (see Section 9 for the speech dependency).
-- **2.2** — **Live capture:** at a game/training, the coach can capture raw
-  observations in quick succession for different players/moments without being
-  forced to review or approve each one before starting the next. Each capture
-  produces its own pending entry.
-- **2.3** — **Reflective capture:** at home / reviewing video, the same capture
-  primitive is used with no time pressure. The only difference is event type
-  (video review) and pace — not a separate code path.
-- **2.4** — A raw entry is held in an **unrefined, in-progress state visible only
-  to its author coach (and admins)** until the coach approves its refined output
-  (Section 4). Raw input is never visible to players, caregivers, or other
-  coaches.
+- **1.1** — Tapping/selecting a **person's row** on the roster opens a new
+  **person-detail screen** for that person (Section 2). This is the single
+  entry point for coaching notes — there is no separate dedicated Gant page
+  with its own team/player pickers.
+- **1.2** — Who can open whose person-detail screen, and what they can do there,
+  is role-gated (ties to Section 6):
+  - **A player** (or their **caregiver**, acting on their behalf) can open
+    **their own** (or their child's) person-detail screen: view notes, view/edit
+    their allowed personal fields. They **cannot** add a coaching note.
+  - **A coach** can open **any player's** person-detail screen on a team they
+    coach: view that player's notes **and add a new note** from that screen.
+  - **An admin** can open **anyone's** person-detail screen, same capability as
+    a coach, across all teams.
+  - A **caregiver sees exactly what their linked child sees** — same screen,
+    entered via "my child" rather than themselves (consistent with existing
+    caregiver-contact visibility on the roster today).
+- **1.3** — **Games page quick link.** The Games page (`src/pages/Games.tsx`)
+  already has a per-team context and a player selector for its existing
+  free-text feedback form. Instead of a separate capture UI, the "Ask AI Coach"
+  /  equivalent entry point on the Games page becomes a **quick link that jumps
+  straight into the Team roster/person-detail screen for the team already in
+  context** — and, if a player is already highlighted/selected on the Games
+  page, straight into *that player's* person-detail screen. This saves the coach
+  re-selecting a team they may have several of. **Confirm at build time** that
+  `Games.tsx`'s existing `selectedPlayerId` state is available to carry through
+  the link.
 
 ---
 
-## 3. Automatic refinement (Gant)
+## 2. The person-detail screen
 
-Per Gant docs §4.2.
+**v1 scope: notes-only** (editable personal fields removed — see 2.2/12.5).
+Permission-gated per 1.2:
 
-- **3.1** — Immediately after a raw entry is captured, Gant **automatically**
-  produces a refined draft — no coach action required to trigger it. Refinement
-  runs a server-side call to the Anthropic API (Claude Sonnet) via a Supabase
-  Edge Function (Section 7 / design).
-- **3.2** — Refinement checks the raw observation against the club's
-  **guardrails** (phases-of-play list, feedback model, tone guide — Section 10)
-  supplied as the system prompt, and returns:
-  - cleaned-up, structured feedback text in the club's tone,
-  - a **phase-of-play tag** (or tags) where identifiable,
-  - optionally, a **clarifying question** for the coach (Section 4).
-- **3.3** — **All-positive feedback is allowed** (Gant docs §12, decided). Gant
-  must not manufacture a "work-on" when the genuine observation is entirely
-  positive.
-- **3.4** — If refinement fails or times out (API error, no connectivity), the
-  raw entry is preserved and clearly marked "not yet refined"; the coach can
-  retry. Failure must never lose the coach's raw observation. See Section 9 for
-  the offline queue.
+### 2.1 Coaching notes feed
 
----
+- **2.1.1** — A list of that person's approved coaching notes (working name —
+  Section 13 naming TBD), **newest first**. Each entry shows: **the comment
+  text, who said it (the coach's name), and the date**.
+- **2.1.2** — **At the top of the list, an automatically generated summary of
+  roughly the last 10 notes.** This is a genuine Gant task (a synthesis call,
+  not a replay of stored text) — see Section 7 for how/when it's generated.
+- **2.1.3** — Same non-disclosure rule as individual notes (Section 6.4): the
+  summary and every note read as if written by the coach/club. Nothing in this
+  UI ever indicates Gant was involved.
+- **2.1.4** — A coach/admin viewing someone else's screen sees the same notes
+  feed, **plus** the ability to add a new note (Section 3) right there, in
+  context — i.e. this screen is one of the entry points into capture, not just
+  a read view.
 
-## 4. Clarification loop and approval
+### 2.2 Editable personal fields — REMOVED FROM SCOPE (confirmed 2026-09-03)
 
-Per Gant docs §4.3–§4.6.
+Not part of this spec. See Section 12.5 for why and where this belongs instead.
+The person-detail screen in v1 of this build is **notes-only** — no fields
+panel.
 
-- **4.1** — When Gant returns a clarifying question, the coach can answer it, and
-  Gant re-refines with that added context. **~3 rounds is the expected typical
-  resolution** (≈90% of entries). **OPEN:** whether a hard ceiling exists (e.g.
-  fall back to manual editing after N rounds) — carry the Gant-doc open question
-  (§11), decide before build.
-- **4.2** — At any point after a refined draft appears, the coach can:
-  - **Approve/save it** — it becomes stored, approved feedback subject to the
-    visibility rules (Section 8), OR
-  - **Send it back for further refinement** (the clarification loop), OR
-  - **Move straight on to capturing the next observation**, leaving this draft
-    pending.
-- **4.3** — The coach can always **edit the refined text directly** before
-  approving. Gant assists; the coach retains full editorial control (Gant docs
-  §1). The saved feedback is whatever the coach approved, not necessarily
-  verbatim Gant output.
-- **4.4** — A **pending review list** shows the coach all their unapproved
-  refined drafts for a session, workable in any order; each is either
-  approved/saved or sent back. Both instant-approve and deferred-approve are
-  first-class paths (Gant docs §4.6). **OPEN (Gant docs §11):** review-list UX
-  (flat chronological / grouped by player / sorted by "needs attention") — a
-  quick coach input item, decide in design.
-- **4.5** — **Raw input is discarded once its refined output is approved/saved**
-  (Gant docs §4.7 / §8). Unrefined raw text is not retained after approval.
+### 2.3 Found while discussing this — existing visibility gap, not a Gant item
+
+**A player currently cannot see their own phone number on the roster** — it is
+visible today only to coaches/managers/admin. Flagged as a real gap (a player
+can't tell if their number is missing or wrong) but **out of scope for this
+spec** — track separately in `NEXT-SESSION-NOTES.md`, not as a Gant task.
 
 ---
 
-## 5. Event context and metadata
+## 3. Capture — recording a raw observation
 
-**Current state (verified):** games are events (`events.event_type='game'`);
-live `game_feedback.game_id` references `events.id` (migration 025). Event types
-are `game` / `training` / `general` (migration 023). Today **only game events
-have a feedback table wired to them** — training and "video review" do not exist
-as feedback-bearing contexts yet.
+**Capture and review are two separate, independently built surfaces** (repo
+owner's explicit instruction). Capture's only job is to produce a **pending
+entry** (Section 5) tied to a player or a team. It does not refine, does not
+show Gant's response, and does not resolve anything.
 
-- **5.1** — Every approved feedback entry is captured against: **date**, **event
-  type** (game / training / video review), **team**, and **player** (when
-  individual). (Gant docs §4.4.)
-- **5.2** — Because feedback must attach to training and video-review as well as
-  games, this spec **generalises the feedback-to-event link**. Two options for
-  design to choose between:
-  - (a) keep the `game_feedback` table but relax its meaning to "event feedback"
-    (its `game_id` already points at `events.id`, which can be any event type),
-    or
-  - (b) introduce a clearly-named `event_feedback` table and migrate/deprecate
-    `game_feedback`.
-  **Decision belongs in design.md.** Requirement: individual and team feedback
-  can be tied to a game, a training event, or a video-review event.
-- **5.3** — "Video review" is a capture context, not necessarily a scheduled
-  event. Design must decide whether a video-review entry references an existing
-  event, a lightweight ad-hoc event, or no event (team/player + date only).
+### 3.1 V1 — single player/team at a time
 
----
+- **3.1.1** — The coach/admin selects **one player, or the team**, then
+  **dictates or types** one raw observation. Both input modes work identically
+  everywhere this screen appears (person-detail screen, Games-page quick link).
+- **3.1.2** — Submitting creates one pending entry: `{ team_id, player_id?
+  (null = team feedback), raw_text, event_type?, event_id?, captured_at,
+  captured_by }`. No Gant call happens at capture time (refinement is a review-
+  time step, Section 4) — **OPEN: confirm whether refinement should actually
+  fire immediately on capture (as the original Gant docs assumed) or only when
+  the coach opens the entry for review.** This matters for the "quick-fire,
+  review later" behaviour in 3.1.3 — see the note there.
+- **3.1.3** — **Quick-fire capture:** a coach can capture several entries in a
+  row (moving from player to player) with **no obligation to review each one
+  immediately**. Every capture lands in the same pending queue regardless —
+  there is no separate "quick-fire mode" toggle; it's simply the coach's choice
+  in the moment whether to open an entry for review right away or keep
+  capturing and come back later.
 
-## 6. Feedback storage, roles, and write access
+### 3.2 Phase 2 (future, not built now) — continuous multi-player dictation
 
-**Current state (verified):** `game_feedback` RLS allows SELECT/INSERT for
-admins, coaches (via `team_members.role='coach'`), and managers (member of the
-team); UPDATE/DELETE only by the `created_by` coach/manager. There is **no
-player or caregiver read policy**.
+Scoped now so v1's data model and review mechanism don't need rework later.
 
-- **6.1** — Approved Gant feedback is stored in the live feedback table
-  (per Section 5.2's decision), reusing existing columns where possible:
-  `feedback_type ('team'|'player')`, `player_id`, `feedback_text`, `team_id`,
-  the event link, and audit fields (`created_by`/`updated_by`).
-- **6.2** — New columns Gant needs (design to finalise): the **phase-of-play
-  tag(s)**, the **event type** (if not derivable from the linked event), and a
-  flag/marker that the entry was Gant-assisted **for internal/audit use only**
-  (never shown to players/caregivers — see 8.3).
-- **6.3** — Write access (who can create/refine/approve) matches the existing
-  coach/admin (+coach-authority manager) rule. A user who cannot write
-  `game_feedback` cannot use Gant capture (ties to 1.2).
-- **6.4** — Gant is **not disclosed** as the author. Stored feedback is attributed
-  to the coach (`created_by`). No "generated by AI" flag is ever surfaced to
-  players or caregivers (Gant docs §12, decided).
-
----
-
-## 7. Privacy and AI-layer constraints
-
-Per Gant docs §8–§9. These are hard constraints.
-
-- **7.1** — Only a **User ID** (and the feedback text/observation) is sent to the
-  Anthropic API. **No** player/coach name, email, phone, or date of birth is
-  passed to the AI layer.
-- **7.2** — Past-feedback history sent for progression review (Section 11) is
-  likewise keyed by User ID only, carrying feedback text/tags/dates — never
-  identifying fields.
-- **7.3** — The Anthropic API key lives **only** as a Supabase secret, read
-  server-side in the Edge Function, never shipped in the app bundle (mirror the
-  `send-email` `RESEND_API_KEY` pattern).
-- **7.4** — Raw audio (if the dictation fallback records audio at all) **never
-  leaves the device** and is deleted immediately after on-device transcription
-  (Gant docs §6). Only text transits to the backend.
-- **7.5** — Approved feedback is personal information under the NZ Privacy Act
-  2020 and is retained under the same rules as other personal data (ties to the
-  V1.R retention work and the privacy policy). Raw/unrefined input is not
-  retained (4.5). **The privacy policy must gain a Gant section before any
-  public/store release** — cross-reference `docs/privacy-policy-draft.md`.
+- **3.2.1** — A coach on a team screen can dictate **continuously** across
+  multiple players in one recording, e.g.: *"Mike — [pause] — that dribbling in
+  midfield was perfect... John Smith, your quick passes are..."* — naturally
+  naming who each part is about, the way a coach actually talks.
+- **3.2.2** — This requires a **segmentation step** (not part of v1): splitting
+  the continuous transcript into chunks (by pause and/or name-spotting), then
+  **matching each spoken name against that team's roster** (tolerant of messy
+  speech-to-text) to resolve a `player_id` per chunk.
+- **3.2.3** — **Privacy boundary for phase 2 (confirmed acceptable by the repo
+  owner):** the coach necessarily says names out loud — that's inherent to
+  natural dictation and can't be designed away. The boundary is drawn
+  **immediately after name-matching**: once a chunk is resolved to a
+  `player_id`, the **name itself is dropped** and every downstream step
+  (refinement, clarification, storage) only ever carries the `player_id`, same
+  as the rest of this spec's privacy rule (Section 8.1). Matching happens once,
+  locally to the matching step; it does not need to be sent to or logged
+  by the Anthropic call.
+- **3.2.4** — **OPEN:** whether name-matching/segmentation needs its own AI call
+  or can be simple fuzzy string matching against the team roster (likely
+  sufficient, and cheaper/faster/more private — decide at build time).
+- **3.2.5** — Once segmented and matched, each chunk becomes an ordinary pending
+  entry (3.1.2's shape) and flows into the **same** review mechanism as v1 —
+  phase 2 only replaces how entries get into the queue, not what happens next.
 
 ---
 
-## 8. Player / caregiver-facing feedback view
+## 4. Review — the tick / cross / Work-on loop
 
-**This is the second half of the user's request** — feedback made available to
-the team and/or player via their team view. **Current state (verified):** there
-is **no** player-facing feedback surface anywhere, and `game_feedback` RLS does
-**not** let a player or caregiver read feedback about themselves. Both a new UI
-surface and a new RLS policy are required — this is greenfield.
+This is the actual screen mechanic, confirmed in detail. It operates on **one
+pending entry at a time**, reached either right after capture or later from the
+pending queue (Section 5).
 
-- **8.1** — A player can see **individual** feedback approved about **them**. A
-  child never logs in as themselves for this in the current model — their
-  **caregiver** sees the child's individual feedback, routed through the
-  `player_caregivers` link. (Note: the "Streamlined Invites & Child Access" spec
-  introduced child device-login; design must confirm whether a logged-in child
-  also sees their own feedback, or only the caregiver does.)
-- **8.2** — **Team** feedback is visible to the whole team (all members of that
-  `team_id`). Individual feedback is visible **only** to that player and their
-  caregiver(s) — never to other players/caregivers.
-- **8.3** — Feedback is presented **as from the coach**. No indication that Gant
-  was involved is ever shown to players/caregivers (ties to 6.4 / Gant docs §12).
-- **8.4** — **⚠️ OPEN — content of the player's team view.** The user's request
-  ("...where they can see more things about them, including ___") was cut off.
-  Candidate contents to confirm:
-  - the player's own approved individual feedback, newest first, by event/date;
-  - the team feedback for their team;
-  - a per-player **history / progression** view (ties to Section 11) — e.g.
-    feedback grouped by phase of play over time;
-  - possibly their attendance/RSVP history, position, or other profile facts
-    already in the app.
-  **Do not build 8.4 until the intended list is confirmed with the user.**
-- **8.5** — New RLS policies implement 8.1–8.2 on the feedback table:
-  - a player SELECT policy: `feedback_type='team'` for a team they belong to, OR
-    (`feedback_type='player'` AND `player_id = auth.uid()`);
-  - a caregiver SELECT policy: `feedback_type='player'` AND `player_id` is a
-    child linked to `auth.uid()` via `player_caregivers`, plus team feedback for
-    that child's team.
-  These are additive to the existing coach/manager/admin policies.
-
----
-
-## 9. Offline / dictation handling
-
-Per Gant docs §6, §9. **Current state (verified):** no speech/mic Capacitor
-plugin is installed; no dictation code exists.
-
-- **9.1** — Speech-to-text runs **on-device** (native iOS/Android recognition
-  via a Capacitor plugin, or a Web Speech path). Adding that plugin is part of
-  this build. Audio is not sent to Supabase or Anthropic — only text (Gant docs
-  §9).
-- **9.2** — **Preferred: text-level offline queue.** When connectivity is
-  patchy pitch-side, the raw *text* is captured and queued locally; only the
-  Gant refinement call waits for connectivity. When it returns, queued items are
-  sent to the Edge Function and refined as normal (Gant docs §6 flow).
-- **9.3** — **Fallback: audio-level offline queue**, used only if on-device
-  speech-to-text turns out to need connectivity. Audio is held locally,
-  transcribed on-device once back online, then deleted (7.4). **This path
-  requires a privacy-policy addition** — flag it if taken.
-- **9.4** — **To confirm during design/build:** whether the chosen Capacitor
-  speech plugin supports fully offline recognition (determines 9.2 vs 9.3). This
-  is the Gant-doc §11 open question for Kiro.
+- **4.1** — Opening a pending entry shows a **header**: team, player name (or
+  "Team"), event type (game/training/video-review), date. Below it, the
+  **coach's original raw input** (as captured, unedited) is always visible.
+- **4.2** — Gant is called to process the accumulated input so far (the original
+  raw text, plus any "Work on" rounds already added — Section 4.5). It returns
+  **one of two things**, rendered in the response box below the original input:
+  - **A refined comment** — normal styling. This is Gant's attempt at a clean,
+    club-standard piece of feedback from what the coach has given it so far.
+  - **A clarifying question** — visually distinct styling (different colour/
+    font from a refined comment), used when Gant cannot confidently produce a
+    refined comment from what it has (e.g. an ambiguous phase of play, missing
+    context).
+- **4.3** — Available actions depend on which of the two the response box is
+  showing:
+  - **If it's a refined comment:** **✓ Tick** (approve — save it, done),
+    **✗ Cross** (discard everything for this entry, stop, nothing saved), or
+    **Work on** (add more input — see 4.5).
+  - **If it's a clarifying question:** **no tick available.** Only **✗ Cross**
+    (discard, stop) or **Work on** (answer the question — see 4.5).
+- **4.4** — **✓ Tick is the only way a note gets saved.** **✗ Cross ends the
+  process from any state with nothing saved** — the raw input and any
+  in-progress refinement are discarded.
+- **4.5** — **"Work on" accepts anything** — the coach can dictate or type
+  *any* further input (a correction, additional detail, an answer to a
+  question, or a completely different angle — coach's choice, no constraint on
+  what "Work on" input has to be). Gant reprocesses the **accumulated** context
+  (original input + every prior "Work on" round) and returns, again, either a
+  new refined comment or another clarifying question. The loop repeats for as
+  many rounds as needed.
+- **4.6** — **No cap on the number of "Work on" rounds.** Open-ended by design —
+  a hard limit protects against a cost/frustration problem that doesn't
+  meaningfully exist here (the ✗ cross already lets a coach bail out any time),
+  and round count is expected to fall naturally as coaches get better at
+  giving Gant enough up front. (See Section 10 for using round-count as a
+  guardrails-quality signal instead of a hard limit.)
+- **4.7** — Both **typed and dictated** input work identically at every step of
+  this loop — original capture, every "Work on" round, answering a question.
+- **4.8** — On **✓ Tick**, the approved feedback is saved (Section 6) and the
+  raw/unrefined input for that entry is discarded — it is not retained
+  separately once approved.
 
 ---
 
-## 10. Guardrails (system prompt)
+## 5. The pending queue
 
-Per Gant docs §9 and the guardrails conversation guide. **This is the true
-dependency for quality — engineering is straightforward; the guardrails are
-what make Gant useful.**
-
-- **10.1** — The guardrails are three plain-language inputs produced by a
-  **coach working session** (3–5 experienced coaches): (a) a phases-of-play
-  list, (b) a feedback model (what good feedback contains structurally), (c) a
-  tone/style guide with real before/after examples.
-- **10.2** — Guardrails are stored as an **editable system prompt** — a config
-  constant in the Edge Function or, preferably, a row/table read at request time
-  — so they can be updated **without** an app rebuild or store review (Gant docs
-  §9). Design decides constant vs table; a table is preferred for editability.
-- **10.3** — The guardrails system prompt is large and reused on every request,
-  so **Anthropic prompt caching** is used to control latency/cost (Gant docs §2,
-  §9).
-- **10.4** — **Blocking dependency:** the coach working session must happen (or
-  at least produce a first-draft guardrails document) before the refinement
-  quality can be validated. The *engineering* can be built and tested against a
-  placeholder guardrails prompt, but Gant is not "done" or launchable until real
-  guardrails exist. Track the coach session as a non-code task.
+- **5.1** — Every captured entry (Section 3) lands in a **pending queue**,
+  scoped to its capturing coach (and visible to admins). There is no forced
+  immediate review.
+- **5.2** — A coach can see their outstanding pending entries and open any one
+  of them, in any order, to run it through the review loop (Section 4).
+  **OPEN:** exact list UX (flat/grouped/sorted) — not walked through yet; a
+  simple chronological list is a safe default to build first.
+- **5.3** — An entry leaves the queue only when it is **ticked** (saved) or
+  **crossed** (discarded). There is no third "leave forever unresolved" outcome
+  — an entry can sit in the queue indefinitely, but it always eventually
+  resolves one of those two ways when opened.
 
 ---
 
-## 11. Historical review / progression
+## 6. Storage, roles, and disclosure
 
-Per Gant docs §5.
+**Current state (verified):** `game_feedback` RLS today allows SELECT/INSERT
+for admins, coaches, and managers (of their team); no player/caregiver read
+policy exists yet.
 
-- **11.1** — When a coach writes feedback about a player, Gant may review that
-  player's **past approved feedback** (User-ID-keyed, per 7.2) to note whether
-  the current observation is the **same** recurring issue or a **new** one, and
-  may prompt the coach to reflect on progression (improved / same / new).
-- **11.2** — This is a coaching-quality aid: Gant surfaces the comparison and
-  asks; it does not assert its own conclusion about a player's development
-  without coach input.
-- **11.3** — **OPEN (Gant docs §11):** how far back "past feedback" looks — full
-  history or a rolling window (e.g. current + prior season). Decide before build.
-
----
-
-## 12. Session suggestions (coaching page)
-
-Per Gant docs §7.
-
-- **12.1** — Separately from feedback refinement, Gant can suggest coaching
-  session / practice ideas based on the areas of need identified across a team's
-  or player's feedback history, surfaced on the coaching page for planning.
-- **12.2** — **OPEN (Gant docs §11):** whether suggestions are limited to a
-  defined drill/practice library or can be generated freely. Decide before build.
-  This is a lower-priority slice and may be deferred to a Gant phase 2.
-
----
-
-## 13. Club-agnostic constraint
-
-Per project standards (club-agnostic rule) — Gant is new build, so it must obey it.
-
-- **13.1** — Any club name/colour/logo shown in Gant UI comes from
-  `useClubBranding()` / `club_settings`, never hardcoded.
-- **13.2** — Any club context passed to the Anthropic call from the Edge Function
-  comes from `CLUB_*` env vars with generic defaults (the accepted small
-  duplication), mirroring `send-email`. Gant carries **no** WCR-specific literals.
-- **13.3** — The guardrails prompt content is club-specific *data* (a club's own
-  feedback philosophy), stored in config/table per 10.2 — not baked into code —
-  so another club supplies their own without a code change.
+- **6.1** — Approved (ticked) feedback is stored per person or per team, tied to
+  an event where applicable, with **who wrote it and when** (Section 2.1.1).
+- **6.2** — Write access (capture + review + tick) is Coach and Admin, plus a
+  Manager who holds coach authority on that team (`is_coach`) — the same rule
+  already governing the Coaching tab (`tabsForRole` in `main-layout-logic.ts`).
+  A plain Player/Manager/Caregiver cannot write notes, only read their own
+  (Section 1.2).
+- **6.3** — Read access for the **notes feed** on the person-detail screen:
+  that person themselves, **AND** (not "or") their caregiver — **confirmed
+  2026-09-03: both see it.** A logged-in child (device-login model) sees their
+  own status/notes directly, exactly as their caregiver does; this is not an
+  either/or. Plus any coach/admin. Never any other player/caregiver.
+- **6.4** — Gant's involvement is **never disclosed to players/caregivers**.
+  Every note and the auto-summary read as being from the coach. No
+  "AI-assisted" flag is ever shown to them (internal `gant_assisted` marker
+  stays admin/reporting-only). **OPEN:** whether the **coach** sees the name
+  "Gant" anywhere in their own capture/review screens, or whether that name is
+  purely internal (admin/build conversation only) even to coaches — ties into
+  the naming decision, Section 12.6.
+- **6.5** — **Team-scoped notes location (confirmed 2026-09-03):** team notes are
+  **not** a separate screen. They live on the **Team roster page itself**, via
+  a "Notes" link/section below the team name — same list-plus-summary pattern
+  as the person-detail screen (Section 2.1), just scoped to
+  `feedback_type='team'` for that `team_id` instead of a player. Read access:
+  every member of that team (any role), same disclosure rule as 6.4.
 
 ---
 
-## 14. Open decisions to close before/at build (consolidated)
+## 7. The auto-summary (top of the notes feed)
 
-Carried from the Gant docs and this analysis:
+- **7.1** — The summary at the top of a person's notes feed (2.1.2) synthesizes
+  roughly their **last 10** approved notes into a short overview. Exact N could
+  become admin-configurable later; 10 is the agreed default.
+- **7.2** — **OPEN — generation timing:** computed fresh every time the screen
+  is opened (simplest, one extra API call per view), or generated/cached
+  whenever a new note is ticked and just re-displayed on open (cheaper, needs
+  an invalidation trigger on new-note-approval). Decide at build time; caching
+  on approval is the likely better default given this is read often and
+  written rarely.
+- **7.3** — Same privacy rule as everywhere else (Section 8.1): the summary call
+  only ever receives the player's User ID plus their note texts/dates/phase
+  tags — never their name or other identifying fields.
 
-1. **[Section 8.4]** Exact contents of the player's team-view feedback surface
-   (user's sentence was cut off). **Blocks the player-facing UI.**
-2. **[Section 5.2]** Reuse `game_feedback` (relaxed to event feedback) vs a new
-   `event_feedback` table.
-3. **[Section 4.1]** Hard ceiling on clarification rounds, or open-ended.
-4. **[Section 4.4]** Review-list UX (needs a quick coach input).
-5. **[Section 9.4]** Does the chosen speech plugin work offline (text vs audio
-   queue) — decides a privacy-policy impact.
-6. **[Section 11.3]** How far back progression review reads.
-7. **[Section 12.2]** Fixed drill library vs free-form session suggestions.
-8. **[Section 8.1]** Does a logged-in child see their own feedback, or only the
-   caregiver?
-9. **[Section 10]** Coach working session scheduled to produce real guardrails
-   (non-code, but gates launch quality).
-10. **Naming/trademark** — confirm "Gant" is clear for public use (Gant docs §11).
+---
+
+## 8. Privacy and AI-layer constraints (unchanged from the original Gant docs)
+
+- **8.1** — Only a **User ID** and note text/tags/dates are sent to the
+  Anthropic API for refinement, clarification, and summarisation. No player/
+  coach name, email, phone, or DOB — **except** the necessary, deliberately
+  scoped exception in Section 3.2.3 (phase 2 name-matching, resolved locally,
+  never forwarded).
+- **8.2** — Gant does **not** learn or improve automatically — Anthropic does
+  not train on API request content. Any improvement in Gant's output over time
+  comes from a **person editing the guardrails document** (Section 9), informed
+  by the usage-signal feedback loop (Section 10) — not from the model adapting
+  itself. This is deliberate: an edited guardrails document is transparent and
+  reversible; silent model drift would not be.
+- **8.3** — The Anthropic API key lives only as a Supabase secret, read
+  server-side, never shipped client-side (mirrors `send-email`'s
+  `RESEND_API_KEY` pattern).
+- **8.4** — Raw audio, if ever recorded (only relevant to the offline fallback,
+  Section 11), never leaves the device and is deleted immediately after
+  on-device transcription.
+- **8.5** — Approved notes are personal information under the NZ Privacy Act
+  2020, retained per the same rules as other personal data (ties to V1.R
+  retention work and the privacy policy — Gant needs its own privacy-policy
+  section before any public/store release).
+
+---
+
+## 9. Guardrails — admin-editable, from the desktop
+
+**Prior art (added 2026-09-03, from web research — this is a well-mapped
+problem, not a blank page):** the guardrails conversation guide now includes a
+"Prior art" section citing **Hattie & Timperley's feedback model**
+("feed up / feed back / feed forward" — where am I going, how am I doing,
+where to next) as a starting structure to bring to the coach session, and
+flags that the **"compliment sandwich" format lacks strong evidence support**,
+particularly with young athletes — directly relevant context for the
+already-agreed all-positive-feedback decision (this doc's Req 3.3). See
+`docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md` for detail and
+sourcing. **Also worth knowing:** Gant is not a speculative product category —
+live competitors doing adjacent things include **Feedz** (voice-to-report AI
+coaching feedback, sport-agnostic) and **Coach Sidekick** (full-session
+transcript feedback, attributed per-player, coach-approved before release).
+Neither uses this spec's tick/cross/Work-on iterative-refinement loop, which
+remains a genuine differentiator worth being aware of, not something to
+replicate.
+
+- **9.1** — The guardrails (phases-of-play list, feedback model, tone guide —
+  produced by the coach working session, Section 0 in tasks.md) are stored as
+  **data**, not code, and are editable **only by admins**, from a **real
+  desktop admin screen** — not a SQL Editor workaround. This is an upgrade from
+  the original draft, which had deferred a UI; the repo owner confirmed this
+  should be a proper screen for v1.
+- **9.2** — Editing the guardrails takes effect immediately on the next Gant
+  call — no app rebuild, no redeploy, no store review cycle.
+- **9.3** — The guardrails prompt is reused on every request and should use
+  Anthropic prompt caching to control latency/cost.
+
+---
+
+## 10. Guardrails feedback loop (usage signal → admin review)
+
+Confirmed as a genuine v1 design element, not deferred.
+
+- **10.1** — The system tracks, per resolved entry: **how many "Work on" rounds
+  it took**, and **whether it ended in tick or cross**.
+- **10.2** — These signals are aggregated and surfaced to **admins** (likely on
+  the same desktop guardrails screen, Section 9) — e.g. "entries needing 4+
+  rounds this month," "entries that were crossed" — so an admin can spot a
+  pattern (a phase that's consistently hard to tag, a tone rule coaches keep
+  fighting) and **manually update the guardrails document** in response.
+- **10.3** — This is explicitly **human-mediated**, not automatic. The model
+  does not retrain; a person reads the signal and edits text (ties to 8.2).
+- **10.4** — **OPEN:** the exact reporting view (raw list vs aggregated
+  pattern-detection) is not designed yet — reasonable to build simple first
+  (a sortable list of high-round-count / crossed entries) and refine later.
+
+---
+
+## 11. Offline / dictation handling (unchanged from the original Gant docs)
+
+- **11.1** — Speech-to-text runs on-device (a Capacitor plugin, or Web Speech).
+  No speech plugin is installed yet — adding one is part of this build.
+- **11.2** — **Preferred: text-level offline queue.** If on-device recognition
+  works without connectivity, raw text is captured and queued locally; only the
+  Gant call (refinement/clarification/summary) waits for connectivity.
+- **11.3** — **Fallback: audio-level offline queue**, only if on-device
+  recognition itself needs connectivity — audio held locally, transcribed
+  on-device once online, deleted immediately after (8.4). Needs a privacy-
+  policy addition if this path is taken.
+- **11.4** — **OPEN:** confirm at build time whether the chosen speech plugin
+  supports offline recognition (decides 11.2 vs 11.3).
+
+---
+
+## 12. Deferred / not covered, and resolutions from the 2026-09-03 follow-up
+
+**Resolved this session:**
+
+- **Team-level notes location** — see Section 6.5. Lives on the Team roster
+  page, not a separate screen.
+- **Video-review event handling (confirmed 2026-09-03) — no new mechanism.** A
+  coach reviewing footage uses the **exact same capture flow already defined**
+  (Section 3.1) — quick-firing through several observations in a row, or one at
+  a time, identical to pitch-side capture. `event_type='video_review'` is
+  purely a label on the entry, not a different UI or code path.
+- **Logged-in child's own-notes visibility** — see Section 6.3. Resolved: yes,
+  directly, same as their caregiver.
+
+**Still genuinely open:**
+
+- **12.4** — **Progression review** (Gant noting "same issue as last time" while
+  a coach is writing a *new* note) was in the original Gant docs (§5) but not
+  walked through this session. It's related to, but distinct from, the
+  auto-summary (Section 7) — the summary is read-side (shown to the
+  player/caregiver); progression review would be write-side (shown to the
+  coach while capturing). Worth a dedicated short conversation — not designed
+  yet.
+- **12.5** — **Editable personal fields — removed from this spec's scope**
+  (confirmed 2026-09-03; see Section 2.2). This belongs to a separate future
+  conversation about `TeamPage.tsx`/registration-integrity: which fields are
+  safe to edit post-registration without conflicting with invite/confirmation
+  records or DOB-driven adult/child routing, and who should be able to edit
+  them. Not a Gant requirement. **Related, found-but-unrelated gap:** a player
+  currently cannot see their own phone number on the roster at all (visible
+  today only to coaches/managers/admin) — track in `NEXT-SESSION-NOTES.md`,
+  not here.
+- **12.6** — **Team page / roster layout.** The roster row already carries Make
+  Manager, Make Coach, Give App Access, Add Player, and Remove; this spec adds
+  a route into the person-detail screen (Section 1) and a team-notes link
+  (Section 6.5) on top of that. The repo owner flagged the page as "already
+  quite messy" — a **visual redesign of the Team page/roster is its own body of
+  work**, related to but not solved by this spec. Recommend scoping it
+  separately once Gant's screens exist and the actual crowding is visible, or
+  in parallel if the button count is already a known problem today.
+- **12.7** — **Session suggestions** (Gant docs §7 — practice ideas based on
+  identified needs) — untouched, still a phase-2/-3 idea.
+- **12.8** — **Naming — the biggest open item per the repo owner (2026-09-03).**
+  Two separate names are actually in play:
+  1. **"Gant"** itself — the backstage AI layer, never disclosed to players/
+     caregivers (6.4). Open sub-question: is "Gant" known even to the *coach*
+     using the capture/review screens, or is that name purely internal
+     (admin/build-time only), with the coach seeing a different, undisclosed-
+     as-AI label too?
+  2. **The user-facing feature name** — whatever a player/caregiver/coach sees
+     in the UI for the roster's notes link, the person-detail notes feed, and
+     the capture/review screens. Candidates discussed: "Coaching Notes" (plain,
+     clear), "The Notebook" (more distinctive as a named feature, extends
+     naturally to "Team Notebook"), "Progress Notes" (growth-oriented framing,
+     matches the tone-guide spirit), "Player Journal/Diary" (personal but
+     doesn't extend well to the team-level case).
+  **Not decided.** Candidate options could be brought to the Task 0 coach
+  guardrails session (Section 9/10 dependency) since that session is already
+  about the club's voice — reasonable place to get input, but the repo owner's
+  call either way.
