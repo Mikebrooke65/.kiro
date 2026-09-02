@@ -121,12 +121,24 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
 
 ## Task 6b — Team-notes on the Team roster page (Req 6.5, D6.3) — small, independent
 
-- [ ] 6b.1 Add a "Notes" link/section below the team name on `TeamPage.tsx`,
-  reusing Task 6's summary-card + feed pattern, scoped to
+- [ ] 6b.1 Add a "Progress Notes" link/section below the team name on
+  `TeamPage.tsx`, reusing Task 6's summary-card + feed pattern, scoped to
   `feedback_type='team'` + `team_id`. Readable by any member of that team.
 - [ ] 6b.2 Note: **do not** attempt a broader Team page layout redesign as part
   of this task — that's explicitly out of scope (Req 12.6). Add this link
   cleanly; a full layout pass is separate future work.
+
+## Task 6c — Progress Notes branding pass (Req 13, D6.3b)
+
+- [ ] 6c.1 Confirm the exact accent hex at design time (recommended default:
+  Tailwind `amber-600` / `#d97706`) — distinct from the six reserved page
+  colours and from Games' orange.
+- [ ] 6c.2 Apply it consistently across every Progress-Notes surface: roster
+  links (individual + team, Task 6b), the person-detail notes panel (Task 6),
+  the capture sheet (Task 5), the review screen (Task 3), the pending-queue
+  badge (Task 4), and the Games-page quick link (Task 9). One colour, used
+  everywhere the feature appears — a single sweep/checklist across those
+  tasks rather than a separate component to build.
 
 ## Task 7 — Auto-summary (D7)
 
@@ -166,13 +178,9 @@ fields (removed from Gant's scope entirely, see requirements Section 12.5).
 - [ ] 10.2 **Progression review** (Req 12.4) — Gant noting recurring issues while
   a coach is *writing* a new note (distinct from the read-side auto-summary).
 - [ ] 10.3 **Session suggestions** (Req 12.7).
-- [ ] 10.4 **Naming decision** (Req 12.8) — **the biggest open item per the repo
-  owner.** Two names needed: "Gant" itself (backstage, undisclosed to
-  players/caregivers; open whether coaches see this name at all) and the
-  user-facing feature name (candidates: Coaching Notes, The Notebook, Progress
-  Notes). Consider bringing candidates to the Task 0 coach session. **Blocks
-  final UI copy across Tasks 4–6b** — build can proceed with a placeholder
-  label, but should not ship without this decided.
+- [x] 10.4 **Naming — DECIDED 2026-09-03: "Progress Notes."** (Req 12.8). "Gant"
+  stays internal/backstage only, never shown to players/caregivers. Use
+  "Progress Notes" as the UI label everywhere across Tasks 4–6b.
 - [ ] 10.5 **Team page / roster layout redesign** (Req 12.6) — out of scope for
   this build; scope as its own follow-up once Gant's additions (person-detail
   link, team-notes link) are in place and real crowding is visible.

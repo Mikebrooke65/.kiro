@@ -109,13 +109,14 @@ nothing beyond the inline actions already there (Accept/Deny, Remove, etc.).
 ## 2. The person-detail screen
 
 **v1 scope: notes-only** (editable personal fields removed — see 2.2/12.5).
-Permission-gated per 1.2:
+Permission-gated per 1.2. **UI label: "Progress Notes"** (Section 12.8), used
+throughout in the distinct accent colour defined in Section 13.
 
-### 2.1 Coaching notes feed
+### 2.1 Progress Notes feed
 
-- **2.1.1** — A list of that person's approved coaching notes (working name —
-  Section 13 naming TBD), **newest first**. Each entry shows: **the comment
-  text, who said it (the coach's name), and the date**.
+- **2.1.1** — A list of that person's approved **Progress Notes**, **newest
+  first**. Each entry shows: **the comment text, who said it (the coach's
+  name), and the date**.
 - **2.1.2** — **At the top of the list, an automatically generated summary of
   roughly the last 10 notes.** This is a genuine Gant task (a synthesis call,
   not a replay of stored text) — see Section 7 for how/when it's generated.
@@ -449,21 +450,55 @@ Confirmed as a genuine v1 design element, not deferred.
   in parallel if the button count is already a known problem today.
 - **12.7** — **Session suggestions** (Gant docs §7 — practice ideas based on
   identified needs) — untouched, still a phase-2/-3 idea.
-- **12.8** — **Naming — the biggest open item per the repo owner (2026-09-03).**
-  Two separate names are actually in play:
-  1. **"Gant"** itself — the backstage AI layer, never disclosed to players/
-     caregivers (6.4). Open sub-question: is "Gant" known even to the *coach*
-     using the capture/review screens, or is that name purely internal
-     (admin/build-time only), with the coach seeing a different, undisclosed-
-     as-AI label too?
-  2. **The user-facing feature name** — whatever a player/caregiver/coach sees
-     in the UI for the roster's notes link, the person-detail notes feed, and
-     the capture/review screens. Candidates discussed: "Coaching Notes" (plain,
-     clear), "The Notebook" (more distinctive as a named feature, extends
-     naturally to "Team Notebook"), "Progress Notes" (growth-oriented framing,
-     matches the tone-guide spirit), "Player Journal/Diary" (personal but
-     doesn't extend well to the team-level case).
-  **Not decided.** Candidate options could be brought to the Task 0 coach
-  guardrails session (Section 9/10 dependency) since that session is already
-  about the club's voice — reasonable place to get input, but the repo owner's
-  call either way.
+- **12.8** — **Naming — DECIDED 2026-09-03: "Progress Notes."** Two separate
+  names were in play; both now resolved:
+  1. **"Gant"** stays as the backstage AI layer's name only — never disclosed
+     to players/caregivers (6.4), and not a user-facing brand name at all. It
+     is effectively an internal/build-time name (Kiro specs, admin
+     conversations), not something designed to appear in the product UI.
+  2. **The user-facing feature name is "Progress Notes."** This is what a
+     player/caregiver/coach sees everywhere the feature appears: the roster's
+     notes link (individual and team, 6.5), the person-detail screen's notes
+     feed, and the capture/review screens. Chosen over "Coaching Notes" (plain
+     but flat), "The Notebook" (distinctive but a bit precious), and "Player
+     Journal/Diary" (doesn't extend to the team case) because it's plain
+     enough for a parent to understand with no explanation, carries the
+     forward-looking/developmental spirit of the Hattie feed-forward research
+     (Section 9) without using jargon, and extends naturally to both scopes
+     ("[Player]'s Progress Notes" / "Team Progress Notes").
+  Every reference to "coaching notes" elsewhere in this document is the
+  working name for what is now branded **Progress Notes** in the UI — kept
+  as prose shorthand in places below, but the actual UI label is "Progress
+  Notes."
+
+---
+
+## 13. Progress Notes branding — a distinct accent colour, used consistently
+
+**Decided 2026-09-03.** The app's six page colours (Blue/Green/Orange/Purple/
+Cyan/Grey — see project standards) are reserved, semantic, per-page, and
+explicitly **not** available for a cross-cutting feature like this one (Progress
+Notes appears on the Team page, the Games page, and the Coaching tab — it isn't
+"owned" by any single page's colour).
+
+- **13.1** — Progress Notes gets **its own distinct accent colour**, not
+  reused from the six page colours, so it's instantly recognisable as "this is
+  Progress Notes" regardless of which page it's surfaced on.
+- **13.2** — **Recommended: a warm amber/gold** (e.g. `#d97706` — Tailwind's
+  `amber-600`), distinct from Games' orange (`#ea7800`) and not overlapping any
+  existing success/fail or brand semantics elsewhere in the app. Reads well for
+  a "notes/journal" feature. **Confirm the exact hex at build/design time** —
+  the principle (a single, reserved, consistent colour) is the locked decision;
+  the precise shade is a small follow-up.
+- **13.3** — This colour is used **consistently everywhere** Progress Notes
+  shows up: the roster's "Progress Notes" link/section (individual row and
+  team-level, 6.5), the person-detail screen's notes panel and its border/
+  accent, the capture sheet and review screen (Section 3/4), the "My pending
+  notes" queue and its badge (Section 5), and the Games-page quick-link button
+  (Req 1.3). The goal is that a user learns the colour once and recognises
+  Progress Notes anywhere in the app without reading the label — good UX
+  through consistency, not novelty.
+- **13.4** — This is a **product-design colour, not club branding** — same
+  category as the existing six page colours (fixed for every club, not
+  configurable via `club_settings`/`useClubBranding()`), since Progress Notes
+  is core product functionality, not a club-specific choice.

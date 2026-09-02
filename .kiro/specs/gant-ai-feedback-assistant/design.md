@@ -323,6 +323,20 @@ scoped to `feedback_type='team'` + `team_id` instead of `player_id`. Read
 access: any member of that team. This is a small, mostly independent addition
 to `TeamPage.tsx` — sequence it alongside Task 6, not blocked by it.
 
+### 6.3b Branding — "Progress Notes," one consistent accent colour (Req 12.8/13)
+
+The feature is called **Progress Notes** everywhere in the UI (never "Gant" —
+that name stays internal/backstage). It gets **one distinct accent colour**,
+not reused from the app's six reserved page colours — recommended a warm
+amber/gold (e.g. Tailwind `amber-600`, `#d97706`; confirm exact hex at design
+time). Apply it consistently to every Progress-Notes-related element: the
+roster links (6.5's team-notes link and this screen's entry point), the
+notes-feed panel border/accent on this screen, the capture sheet and review
+screen (Section 3/4), the pending-queue badge (Section 5), and the Games-page
+quick-link button (Req 1.3). Treat it like the existing page-colour system —
+one colour, used everywhere the feature appears, so it's recognisable without
+reading the label.
+
 ### 6.4 Note on Team page layout (Req 12.6 — deferred, not solved here)
 
 `TeamPage.tsx`'s roster row already renders Make Manager / Make Coach / Give
