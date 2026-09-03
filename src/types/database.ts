@@ -212,27 +212,6 @@ export interface FourMoments {
   transitionDefendAttack: MomentFeedback;
 }
 
-// Game feedback
-export interface GameFeedback {
-  id: string;
-  coach_id: string;
-  coach_name: string;
-  team_id: string;
-  team_name: string;
-  game_date: string;
-  attacking_www: string;
-  attacking_ebi: string;
-  transition_attack_defend_www: string;
-  transition_attack_defend_ebi: string;
-  defending_www: string;
-  defending_ebi: string;
-  transition_defend_attack_www: string;
-  transition_defend_attack_ebi: string;
-  key_areas: string[];
-  created_by: string;
-  created_at: string;
-}
-
 // Announcement enums
 export enum AnnouncementPriority {
   HIGH = 'high',
@@ -538,7 +517,7 @@ export interface Game {
 // Game feedback model
 export interface GameFeedbackRecord {
   id: string;
-  game_id: string;
+  game_id: string; // references events.id (any event_type, not just games)
   team_id: string;
   feedback_type: 'team' | 'player';
   player_id?: string;
@@ -547,6 +526,88 @@ export interface GameFeedbackRecord {
   updated_at: string;
   created_by: string;
   updated_by?: string;
+  /** Migration 069 — Gant/Progress Notes capture context. Null for feedback predating this feature. */
+  event_type?: 'game' | 'training' | 'video_review' | null;
+  /** Migration 069 — phase-of-play tag(s) from Gant's refinement. */
+  phase_tags?: string[];
+  /**
+   * Migration 069 — internal/admin-reporting marker only. NEVER surfaced to
+   * players/caregivers — see gant-ai-feedback-assistant Requirement 6.4.
+   */
+  gant_assisted?: boolean;
+  /** Migration 069 — how many "Work on" rounds this entry took before resolving. Null for non-Gant rows. */
+  round_count?: number | null;
+}
+
+// --- Gant / Progress Notes (see .kiro/specs/gant-ai-feedback-assistant/) ---
+
+/** One round of raw input in a gant_pending_entries.raw_text array. */
+export interface GantRawRound {
+  text: string;
+  at: string; // ISO timestamp
+}
+
+/** Cached Edge Function response, stored on the pending entry (refine-on-open, not refine-on-capture). */
+export interface GantResponse {
+  kind: 'refined' | 'question';
+  text: string;
+  phaseTags?: string[];
+}
+
+// Migration 068 — the Progress Notes capture queue.
+export interface GantPendingEntry {
+  id: string;
+  team_id: string;
+  player_id?: string | null; // null = team-scoped entry
+  event_type?: 'game' | 'training' | 'video_review' | null;
+  event_id?: string | null;
+  raw_text: GantRawRound[];
+  last_gant_response?: GantResponse | null;
+  round_count: number;
+  captured_by: string;
+  captured_at: string;
+  updated_at: string;
+}
+
+/** A phase-of-play entry within an age band, per gant_guardrails.phases_of_play. */
+export interface GantPhaseOfPlay {
+  name: string;
+  definition: string;
+}
+
+/** One age band's phase-of-play list, per gant_guardrails.phases_of_play. */
+export interface GantPhaseBand {
+  band: string;
+  phases: GantPhaseOfPlay[];
+}
+
+// Migration 071 — the single-row, admin-editable guardrails document.
+export interface GantGuardrails {
+  id: true;
+  phases_of_play: GantPhaseBand[];
+  feedback_model: string;
+  tone_guide: string;
+  continuity_language: string;
+  system_prompt_override?: string | null;
+  updated_at: string;
+}
+
+// Migration 072 — append-only usage signal log, admin-exportable only (no in-app analytics UI).
+export interface GantOutcome {
+  id: string;
+  team_id: string;
+  player_id?: string | null;
+  outcome: 'ticked' | 'crossed';
+  round_count: number;
+  resolved_by: string;
+  resolved_at: string;
+}
+
+// Migration 073 — cached auto-summary, refreshed only when a new note is ticked (not on every view).
+export interface GantPlayerSummary {
+  player_id: string;
+  summary_text: string;
+  generated_at: string;
 }
 
 // Event model

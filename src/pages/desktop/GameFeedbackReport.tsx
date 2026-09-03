@@ -45,16 +45,10 @@ export function GameFeedbackReport() {
     { key: 'gameDate', label: 'Date' },
     { key: 'opponent', label: 'Opponent' },
     { key: 'coachName', label: 'Coach' },
-    { key: 'attackingWww', label: 'Attacking WWW' },
-    { key: 'attackingEbi', label: 'Attacking EBI' },
-    { key: 'transitionAdWww', label: 'Transition A→D WWW' },
-    { key: 'transitionAdEbi', label: 'Transition A→D EBI' },
-    { key: 'defendingWww', label: 'Defending WWW' },
-    { key: 'defendingEbi', label: 'Defending EBI' },
-    { key: 'transitionDaWww', label: 'Transition D→A WWW' },
-    { key: 'transitionDaEbi', label: 'Transition D→A EBI' },
-    { key: 'keyAreas', label: 'Key Areas' },
-    { key: 'comments', label: 'Comments' },
+    { key: 'feedbackType', label: 'Type' },
+    { key: 'playerName', label: 'Player' },
+    { key: 'feedbackText', label: 'Feedback' },
+    { key: 'phaseTags', label: 'Phase Tags' },
   ];
 
   return (
@@ -76,7 +70,7 @@ export function GameFeedbackReport() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Game Feedback</h1>
         <p className="text-gray-600 mt-2">
-          View post-match analysis using the 4 Moments framework
+          View team and individual feedback recorded against games
         </p>
       </div>
 
@@ -182,57 +176,28 @@ export function GameFeedbackReport() {
                 </div>
               </div>
 
-              {/* 4 Moments Grid */}
+              {/* Feedback body */}
               <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Attacking */}
-                  <MomentCard
-                    title="Attacking"
-                    www={feedback.attackingWww}
-                    ebi={feedback.attackingEbi}
-                    color="green"
-                  />
-
-                  {/* Transition: Attack to Defend */}
-                  <MomentCard
-                    title="Transition: Attack → Defend"
-                    www={feedback.transitionAdWww}
-                    ebi={feedback.transitionAdEbi}
-                    color="yellow"
-                  />
-
-                  {/* Defending */}
-                  <MomentCard
-                    title="Defending"
-                    www={feedback.defendingWww}
-                    ebi={feedback.defendingEbi}
-                    color="red"
-                  />
-
-                  {/* Transition: Defend to Attack */}
-                  <MomentCard
-                    title="Transition: Defend → Attack"
-                    www={feedback.transitionDaWww}
-                    ebi={feedback.transitionDaEbi}
-                    color="blue"
-                  />
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs font-medium uppercase tracking-wide px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                    {feedback.feedbackType === 'player' ? 'Individual' : 'Team'}
+                  </span>
+                  {feedback.feedbackType === 'player' && feedback.playerName && (
+                    <span className="text-sm font-medium text-gray-900">{feedback.playerName}</span>
+                  )}
                 </div>
-
-                {/* Key Areas & Comments */}
-                {(feedback.keyAreas || feedback.comments) && (
-                  <div className="mt-4 pt-4 border-t">
-                    {feedback.keyAreas && (
-                      <div className="mb-3">
-                        <p className="text-sm font-medium text-gray-700">Key Areas for Improvement</p>
-                        <p className="text-sm text-gray-600 mt-1">{feedback.keyAreas}</p>
-                      </div>
-                    )}
-                    {feedback.comments && (
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">Additional Comments</p>
-                        <p className="text-sm text-gray-600 mt-1">{feedback.comments}</p>
-                      </div>
-                    )}
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{feedback.feedbackText}</p>
+                {feedback.phaseTags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {feedback.phaseTags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: 'rgba(217, 119, 6, 0.15)', color: '#92400e' }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
@@ -240,47 +205,6 @@ export function GameFeedbackReport() {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// Helper component for 4 Moments display
-function MomentCard({ 
-  title, 
-  www, 
-  ebi, 
-  color 
-}: { 
-  title: string; 
-  www: string | null; 
-  ebi: string | null; 
-  color: 'green' | 'yellow' | 'red' | 'blue';
-}) {
-  const colorStyles = {
-    green: { bg: 'rgba(34, 197, 94, 0.1)', border: 'border-green-200', text: 'text-green-800' },
-    yellow: { bg: 'rgba(234, 179, 8, 0.1)', border: 'border-yellow-200', text: 'text-yellow-800' },
-    red: { bg: 'rgba(239, 68, 68, 0.1)', border: 'border-red-200', text: 'text-red-800' },
-    blue: { bg: 'rgba(59, 130, 246, 0.1)', border: 'border-blue-200', text: 'text-blue-800' },
-  };
-
-  const styles = colorStyles[color];
-
-  return (
-    <div 
-      className={`rounded-lg border ${styles.border} p-4`}
-      style={{ backgroundColor: styles.bg }}
-    >
-      <h4 className={`text-sm font-semibold ${styles.text} mb-3`}>{title}</h4>
-      <div className="space-y-2">
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase">What Went Well</p>
-          <p className="text-sm text-gray-700">{www || '-'}</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase">Even Better If</p>
-          <p className="text-sm text-gray-700">{ebi || '-'}</p>
-        </div>
-      </div>
     </div>
   );
 }

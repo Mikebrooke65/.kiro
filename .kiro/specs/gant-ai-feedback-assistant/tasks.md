@@ -43,25 +43,48 @@ to ask directly than to wait for a coach to hit it by accident).
   Physical/Mental report-card categories (affects how phases are defined) —
   can be settled during the live trial rather than as a separate step.
 
-## Task 1 — Data model (D2)
+## Task 1 — Data model (D2) — ✅ DONE 2026-09-03 (migrations not yet run live)
 
-- [ ] 1.1 Migration: `gant_pending_entries` (team_id, player_id?, event_type?,
-  event_id?, raw_text jsonb array of rounds, last_gant_response jsonb,
-  round_count, captured_by, captured_at, updated_at). RLS: captured_by = auth.uid()
-  OR admin, all operations. (D2.1)
-- [ ] 1.2 Migration: additive columns on `game_feedback` — `event_type`,
-  `phase_tags text[]`, `gant_assisted boolean`, `round_count`. (D2.2)
-- [ ] 1.3 Migration: `gant_guardrails` single-row table (`phases_of_play jsonb`,
-  `feedback_model text`, `tone_guide text`, `system_prompt_override text`,
-  `updated_at`). RLS: authenticated coach/admin read, admin write. Seed from
-  Task 0.3 (or placeholder). (D8)
-- [ ] 1.4 Migration: `gant_outcomes` append-only log (team_id, player_id?,
-  outcome, round_count, resolved_by, resolved_at). RLS: admin-only SELECT,
-  insert via server-side call only. (D2.4)
-- [ ] 1.5 Update `src/types/database.ts` for all of the above.
-- [ ] 1.6 **Latent-bug fix (separate, shippable alone):** repoint or remove
-  `reporting-api.getGameFeedback()` + desktop `GameFeedbackReport.tsx`, which
-  select dead 4-Moments columns dropped in migration 022.
+- [x] 1.1 Migration `068_gant_pending_entries.sql`: `gant_pending_entries`
+  (team_id, player_id?, event_type?, event_id?, raw_text jsonb array of
+  rounds, last_gant_response jsonb, round_count, captured_by, captured_at,
+  updated_at). RLS: captured_by = auth.uid() OR admin, all operations. (D2.1)
+- [x] 1.2 Migration `069_gant_feedback_columns.sql`: additive columns on
+  `game_feedback` — `event_type`, `phase_tags text[]`, `gant_assisted
+  boolean`, `round_count`. (D2.2)
+- [x] 1.3 Migration `071_gant_guardrails.sql`: `gant_guardrails` single-row
+  table (`phases_of_play jsonb`, `feedback_model text`, `tone_guide text`,
+  `continuity_language text`, `system_prompt_override text`, `updated_at`).
+  RLS: authenticated coach/coach-authority-manager/admin read, admin write.
+  **Seeded with the placeholder draft**
+  (`docs/project/GANT-PLACEHOLDER-GUARDRAILS.md`) directly in the migration.
+  (D8)
+- [x] 1.3b Migration `070_game_feedback_player_caregiver_read.sql`: the
+  player/caregiver read RLS from Task 6.1, built alongside the other
+  `game_feedback` changes since it touches the same table (moved earlier from
+  Task 6 — no reason to defer it).
+- [x] 1.4 Migration `072_gant_outcomes.sql`: `gant_outcomes` append-only log
+  (team_id, player_id?, outcome, round_count, resolved_by, resolved_at). RLS:
+  admin-only SELECT, resolver-scoped INSERT. (D2.4)
+- [x] 1.4b Migration `073_gant_player_summaries.sql`: the auto-summary cache
+  table from Task 7.1, built alongside since it's a small, related table —
+  moved earlier from Task 7.
+- [x] 1.5 Updated `src/types/database.ts`: extended `GameFeedbackRecord`,
+  added `GantPendingEntry`, `GantRawRound`, `GantResponse`, `GantGuardrails`,
+  `GantPhaseBand`/`GantPhaseOfPlay`, `GantOutcome`, `GantPlayerSummary`.
+- [x] 1.6 **Latent-bug fix, done:** `reporting-api.getGameFeedback()` and
+  `GameFeedbackReport.tsx` rewritten to query the live schema (join `events`
+  for date/opponent instead of selecting dropped 4-Moments columns); removed
+  the dead `GameFeedback` type and the report's now-unused `MomentCard`
+  helper. `npm run build` clean; `npx vitest --run` unaffected (239 passing,
+  the 2 pre-existing failures are live-network `redeem-invite` integration
+  tests, confirmed failing identically on a clean stash — unrelated to this
+  change).
+
+**⚠️ Not yet applied to the live Supabase project** — these 6 migrations must
+be run manually in the Supabase SQL Editor (project standard: migrations
+never auto-apply) before Task 2 (the Edge Function) can be tested against
+real data.
 
 ## Task 2 — Edge Function `gant-refine` (D4.3)
 

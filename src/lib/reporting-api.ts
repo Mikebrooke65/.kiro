@@ -72,6 +72,17 @@ export interface SessionRatingsRow {
   averageRating: number | null;
 }
 
+/**
+ * Shape of a game_feedback row for reporting, matching the LIVE schema
+ * (migrations 022 + 025 + 069) — free-text feedback per team or per player,
+ * tied to an event. This replaces a previous shape (attackingWww,
+ * transitionAdWww, etc.) that queried "4 Moments of Football" columns
+ * dropped by migration 022 in 2026-08 — that query threw a Postgrest error
+ * on every load, since those columns never existed in the live table this
+ * report reads from. Fixed alongside the Gant/Progress Notes build (same
+ * table, additive columns) — see
+ * .kiro/specs/gant-ai-feedback-assistant/tasks.md Task 1.6.
+ */
 export interface GameFeedbackRow {
   id: string;
   teamName: string;
@@ -79,16 +90,10 @@ export interface GameFeedbackRow {
   gameDate: string;
   opponent: string | null;
   coachName: string;
-  attackingWww: string | null;
-  attackingEbi: string | null;
-  transitionAdWww: string | null;
-  transitionAdEbi: string | null;
-  defendingWww: string | null;
-  defendingEbi: string | null;
-  transitionDaWww: string | null;
-  transitionDaEbi: string | null;
-  keyAreas: string | null;
-  comments: string | null;
+  feedbackType: 'team' | 'player';
+  playerName: string | null;
+  feedbackText: string;
+  phaseTags: string[];
 }
 
 export interface FeedbackDetail {
@@ -526,7 +531,14 @@ export class ReportingApi extends ApiClient {
   }
 
   /**
-   * Fetch game feedback data
+   * Fetch game feedback data.
+   *
+   * Reads the LIVE game_feedback schema (migrations 022/025/069): free-text
+   * feedback per team or per player, with `game_id` referencing `events.id`
+   * (games are events, per project standards) rather than its own date/
+   * opponent columns. Joins `events` for those fields instead of selecting
+   * columns (attacking_www, etc.) that were dropped in 2026-08 — see the
+   * GameFeedbackRow doc comment for the bug this replaces.
    */
   async getGameFeedback(filters: ReportFilters): Promise<GameFeedbackRow[]> {
     try {
@@ -534,29 +546,22 @@ export class ReportingApi extends ApiClient {
         .from('game_feedback')
         .select(`
           id,
-          game_date,
-          opponent,
-          attacking_www,
-          attacking_ebi,
-          transition_ad_www,
-          transition_ad_ebi,
-          defending_www,
-          defending_ebi,
-          transition_da_www,
-          transition_da_ebi,
-          key_areas,
-          comments,
+          feedback_type,
+          feedback_text,
+          phase_tags,
+          events!inner(event_date, opponent),
           teams!inner(name, age_group),
-          users!inner(first_name, last_name)
+          users!created_by(first_name, last_name),
+          player:users!player_id(first_name, last_name)
         `)
-        .order('game_date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(100);
 
       if (filters.dateFrom) {
-        query = query.gte('game_date', filters.dateFrom);
+        query = query.gte('events.event_date', filters.dateFrom);
       }
       if (filters.dateTo) {
-        query = query.lte('game_date', filters.dateTo);
+        query = query.lte('events.event_date', filters.dateTo);
       }
       if (filters.teamId) {
         query = query.eq('team_id', filters.teamId);
@@ -575,19 +580,13 @@ export class ReportingApi extends ApiClient {
         id: row.id,
         teamName: `${row.teams.age_group} ${row.teams.name}`,
         ageGroup: row.teams.age_group,
-        gameDate: row.game_date,
-        opponent: row.opponent,
+        gameDate: row.events.event_date,
+        opponent: row.events.opponent,
         coachName: `${row.users.first_name} ${row.users.last_name}`,
-        attackingWww: row.attacking_www,
-        attackingEbi: row.attacking_ebi,
-        transitionAdWww: row.transition_ad_www,
-        transitionAdEbi: row.transition_ad_ebi,
-        defendingWww: row.defending_www,
-        defendingEbi: row.defending_ebi,
-        transitionDaWww: row.transition_da_www,
-        transitionDaEbi: row.transition_da_ebi,
-        keyAreas: row.key_areas,
-        comments: row.comments,
+        feedbackType: row.feedback_type,
+        playerName: row.player ? `${row.player.first_name} ${row.player.last_name}` : null,
+        feedbackText: row.feedback_text,
+        phaseTags: row.phase_tags || [],
       }));
     } catch (error) {
       console.error('Error fetching game feedback:', error);
