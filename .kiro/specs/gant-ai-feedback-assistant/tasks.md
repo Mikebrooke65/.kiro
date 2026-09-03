@@ -43,7 +43,7 @@ to ask directly than to wait for a coach to hit it by accident).
   Physical/Mental report-card categories (affects how phases are defined) —
   can be settled during the live trial rather than as a separate step.
 
-## Task 1 — Data model (D2) — ✅ DONE 2026-09-03 (migrations not yet run live)
+## Task 1 — Data model (D2) — ✅ DONE + LIVE-VERIFIED 2026-09-03
 
 - [x] 1.1 Migration `068_gant_pending_entries.sql`: `gant_pending_entries`
   (team_id, player_id?, event_type?, event_id?, raw_text jsonb array of
@@ -81,10 +81,11 @@ to ask directly than to wait for a coach to hit it by accident).
   tests, confirmed failing identically on a clean stash — unrelated to this
   change).
 
-**⚠️ Not yet applied to the live Supabase project** — these 6 migrations must
-be run manually in the Supabase SQL Editor (project standard: migrations
-never auto-apply) before Task 2 (the Edge Function) can be tested against
-real data.
+**✅ All 6 run live in the Supabase SQL Editor and verified, 2026-09-03** — the
+repo owner ran 068 through 073 in order; all succeeded. Confirmed via
+`SELECT feedback_model, tone_guide FROM gant_guardrails;` that the placeholder
+seed row landed with its full real content (not empty/no-opped). Data model is
+genuinely live — Task 2 can now build and test against it.
 
 ## Task 2 — Edge Function `gant-refine` (D4.3)
 
