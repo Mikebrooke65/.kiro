@@ -510,3 +510,60 @@ itself a reason the fix shouldn't rely on the model getting lucky.
 
 **Edge Function redeployed** (`supabase functions deploy gant-refine`) —
 this change does not ship with `git push`.
+## Second live-test batch — UX polish + one more latent save bug (2026-09-03)
+
+A second run of live testing (same session, after the four fixes above)
+produced a batch of UX refinements plus one further real save bug. All
+client-side — **no Edge Function redeploy needed** for this batch; ships
+with `git push`.
+
+**5. Latent Save bug that would have defeated fix (1) in the real UI path.**
+`GantReviewModal.handleTick` passed `eventId: entry.event_id ?? entry.id`.
+Capture-queue entries always have `event_id = null`, so this fell back to
+`entry.id` — a `gant_pending_entries` UUID, **not** an `events` id. That
+truthy fallback made `approve()` believe it already had an event and skip
+the ad-hoc placeholder creation from fix (1), then insert `game_feedback`
+with a bogus `game_id`. On a writable team that violates the FK; on a team
+the coach can't write to it failed RLS first (which is exactly the "new row
+violates row-level security policy for game_feedback" error the repo owner
+hit). Fix: pass `entry.event_id ?? undefined` so `approve()` correctly
+detects "no event" and creates the placeholder. Fix (1)'s ad-hoc-event path
+was never actually exercised by the UI until this was corrected.
+
+**6. Progress Notes team picker offered caregiver-only teams (RLS save
+error).** The pending-queue picker used `getMyTeams`, which unions in teams
+the user is only linked to as a caregiver. Selecting such a team ("Open
+Riverhead Frogs", where the owner is only a caregiver) let a note be
+started, then the save was correctly refused by the DB (migration 022
+requires own coach/manager membership). Fix: new `getMyCoachingTeams(userId)`
+in `teams-api.ts` returns write-authority teams only (`role in (coach,
+manager)` OR `is_coach = true`), and `GantPendingQueue` uses it. Progress
+Notes is a write surface, so the picker must only offer teams the coach can
+actually write to.
+
+**7. Capture sheet UX ("Done" was confusing; captures looked like nothing
+happened).** `GantCaptureSheet` rewritten: "Done" → "Close" (it never
+finished anything — Capture does); the 1.5s fade confirmation replaced with
+a persistent captured-count banner so rapid captures never look like a
+no-op; up-front helper copy explains the Capture-then-Close model; and
+Close now shows an inline discard-confirm bar ("Keep editing" / "Discard &
+close") when there's genuinely-unsaved typed text (inline, not
+`window.confirm`, for consistency with the rest of the app).
+
+**8. Review screen hid the wrong path when the coach kept typing.** With
+unsaved text in "Add more", the Save button is now HIDDEN entirely (not
+greyed) and "Work on" becomes the emphasised filled button — because saving
+in that state would tick the current refined note and silently discard the
+coach's addition. Once the addition is processed and the box is empty again,
+Save returns. A one-line hint appears while text is pending.
+
+**9. Duplicate teams in Coaching and Games dropdowns.** Both pages mapped
+`getMyTeams` results straight to options with no dedup, so a user who is
+both a coach on a team and a caregiver of a child on that same team saw it
+listed multiple times. The Team page already dedupes via
+`buildTeamSelection`; Coaching and Games now dedupe by team id (keep first
+appearance) to match.
+
+Verified: `npm run build` clean; `npx vitest --run` = 254 passing (the 2
+pre-existing `invites-api.preservation.test.ts` live-network failures are
+unrelated and independently confirmed).

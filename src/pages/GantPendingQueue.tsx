@@ -60,7 +60,12 @@ export function GantPendingQueue() {
   async function loadTeams() {
     if (!user) return;
     try {
-      const memberships = await teamsApi.getMyTeams(user.id);
+      // Write-authority teams only — NOT getMyTeams (which unions in
+      // caregiver-linked teams for read-only browsing). Progress Notes is a
+      // write surface: offering a caregiver-only team here let a note be
+      // captured and refined but fail at save-time on game_feedback RLS.
+      // Found live 2026-09-03. See teamsApi.getMyCoachingTeams' doc comment.
+      const memberships = await teamsApi.getMyCoachingTeams(user.id);
       const userTeams: Team[] = memberships
         .map((tm) => tm.team)
         .filter((t): t is DbTeam => Boolean(t))

@@ -16,6 +16,13 @@ import { gantApi } from '../lib/gant-api';
  * person-detail screen, the Games-page quick link, or the roster) — this
  * component never shows its own team/player picker (Requirement 1.1: "there
  * is no separate dedicated Gant page with its own team/player pickers").
+ *
+ * UX refinements from the repo owner's first live test (2026-09-03):
+ *  - "Done" renamed to "Close" (it never finished anything — Capture does).
+ *  - A persistent captured-count confirmation, instead of a 1.5s fade that
+ *    looked like nothing had happened.
+ *  - Clearer helper copy up front explaining the Capture-then-Close model.
+ *  - A confirm step before Close discards genuinely-unsaved typed text.
  */
 
 const GANT_ACCENT = '#d97706';
@@ -47,8 +54,9 @@ export function GantCaptureSheet({
 }: GantCaptureSheetProps) {
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [justCaptured, setJustCaptured] = useState(false);
+  const [capturedCount, setCapturedCount] = useState(0);
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const [confirmingClose, setConfirmingClose] = useState(false);
 
   async function handleCapture() {
     const trimmed = text.trim();
@@ -65,17 +73,28 @@ export function GantCaptureSheet({
         rawText: trimmed,
       });
       setText('');
-      setJustCaptured(true);
+      setCapturedCount((n) => n + 1);
       onCaptured();
-      // Brief confirmation, then stay open — quick-fire capture (Requirement
-      // 3.1.3): the coach can keep capturing without navigating away.
-      setTimeout(() => setJustCaptured(false), 1500);
+      // Stay open — quick-fire capture (Requirement 3.1.3): the coach can
+      // keep capturing without navigating away. The captured-count line
+      // below is persistent (no fade), so it never looks like nothing
+      // happened.
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not capture this note.';
       setInlineError(message);
       onError?.(message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function handleCloseRequest() {
+    // Warn only when there's genuinely-unsaved typed text (Req: confirm
+    // discard, 2026-09-03). An empty box just closes.
+    if (text.trim()) {
+      setConfirmingClose(true);
+    } else {
+      onClose();
     }
   }
 
@@ -93,9 +112,17 @@ export function GantCaptureSheet({
 
         {/* Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-3">
-          <label className="block text-xs font-medium text-gray-500 uppercase">
-            Capture a note (type or dictate)
-          </label>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase">
+              Capture a note (type or dictate)
+            </label>
+            <p className="text-xs text-gray-500 mt-1">
+              Tap <span className="font-medium" style={{ color: GANT_ACCENT }}>Capture</span> to
+              save each note and clear the box for the next one — you can add several in a row.
+              Tap <span className="font-medium">Close</span> when you're done; you'll refine and
+              save them from the queue afterwards.
+            </p>
+          </div>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -106,10 +133,17 @@ export function GantCaptureSheet({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 disabled:bg-gray-50"
             style={{ '--tw-ring-color': GANT_ACCENT } as React.CSSProperties}
           />
-          {justCaptured && (
-            <p className="text-sm font-medium" style={{ color: GANT_ACCENT }}>
-              ✓ Captured — you can add another, or close this and review later.
-            </p>
+          {capturedCount > 0 && (
+            <div
+              className="rounded-lg p-3 border flex items-center gap-2"
+              style={{ borderColor: GANT_ACCENT, backgroundColor: 'rgba(217, 119, 6, 0.08)' }}
+            >
+              <span className="text-lg" style={{ color: GANT_ACCENT }}>✓</span>
+              <p className="text-sm font-medium text-gray-800">
+                {capturedCount} note{capturedCount === 1 ? '' : 's'} captured and waiting in your
+                review queue. Add another above, or Close when you're done.
+              </p>
+            </div>
           )}
           {inlineError && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -118,24 +152,46 @@ export function GantCaptureSheet({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 flex gap-2">
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            Done
-          </button>
-          <button
-            onClick={handleCapture}
-            disabled={submitting || !text.trim()}
-            className="flex-1 px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50"
-            style={{ backgroundColor: GANT_ACCENT }}
-          >
-            {submitting ? 'Capturing…' : 'Capture'}
-          </button>
-        </div>
+        {/* Footer — either the normal actions, or the discard-confirm bar */}
+        {confirmingClose ? (
+          <div className="p-4 border-t border-gray-200 space-y-2">
+            <p className="text-sm text-gray-700">
+              You've typed a note but haven't captured it yet. Close and discard it?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmingClose(false)}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+              >
+                Keep editing
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2 rounded-lg border border-red-300 text-red-700 font-medium hover:bg-red-50"
+              >
+                Discard &amp; close
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 border-t border-gray-200 flex gap-2">
+            <button
+              onClick={handleCloseRequest}
+              disabled={submitting}
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
+            >
+              Close
+            </button>
+            <button
+              onClick={handleCapture}
+              disabled={submitting || !text.trim()}
+              className="flex-1 px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50"
+              style={{ backgroundColor: GANT_ACCENT }}
+            >
+              {submitting ? 'Capturing…' : 'Capture'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

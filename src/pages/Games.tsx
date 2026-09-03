@@ -74,9 +74,21 @@ export function Games() {
       // reduced to zero by the `teams` SELECT policy for players (Req 7.4).
       const memberships = await teamsApi.getMyTeams(user.id);
 
+      // Dedupe by team id: getMyTeams returns one row PER relationship, so a
+      // user who is (say) a coach on a team AND a caregiver of a child on the
+      // same team gets that team back more than once. The Team page already
+      // dedupes via buildTeamSelection; this page and Coaching didn't, which
+      // showed the same team several times in the dropdown (found live
+      // 2026-09-03). Keep first appearance.
+      const seenTeamIds = new Set<string>();
       const userTeams = memberships
         .map((tm) => tm.team)
-        .filter((team): team is Team => Boolean(team));
+        .filter((team): team is Team => Boolean(team))
+        .filter((team) => {
+          if (seenTeamIds.has(team.id)) return false;
+          seenTeamIds.add(team.id);
+          return true;
+        });
       console.log('Games: User teams:', userTeams);
       setTeams(userTeams);
 

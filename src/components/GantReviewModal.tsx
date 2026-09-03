@@ -67,6 +67,10 @@ export function GantReviewModal({
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   const actions = resolveReviewActions(response);
+  // There's typed-but-not-yet-processed text in "Add more" — Save must be
+  // hidden while this is true (decided 2026-09-03), since saving would tick
+  // the current refined note and silently discard the coach's addition.
+  const hasUnsavedWorkOn = workOnText.trim().length > 0;
 
   function reportError(message: string) {
     setInlineError(message);
@@ -165,7 +169,13 @@ export function GantReviewModal({
         playerId: entry.player_id ?? null,
         feedbackType: playerName ? 'player' : 'team',
         feedbackText: response.text,
-        eventId: entry.event_id ?? entry.id, // fallback should not occur in practice — event_id is required by capture UI (Task 5)
+        // Capture-queue entries have no event_id (no event picker in capture
+        // yet). Pass undefined — NOT entry.id — so approve() creates the
+        // ad-hoc placeholder event. entry.id is a gant_pending_entries id,
+        // not an events id; passing it as game_id would violate the FK (and
+        // silently skip ad-hoc creation). Found tracing the live save bug,
+        // 2026-09-03.
+        eventId: entry.event_id ?? undefined,
         eventType: entry.event_type,
         phaseTags: response.phaseTags,
         roundCount: rounds.length,
@@ -303,35 +313,57 @@ export function GantReviewModal({
           )}
         </div>
 
-        {/* Footer actions (Requirement 4.3) */}
-        <div className="p-4 border-t border-gray-200 flex gap-2">
-          <button
-            onClick={handleCross}
-            disabled={isBusy}
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            ✗ Discard
-          </button>
-          {actions.canWorkOn && (
-            <button
-              onClick={handleWorkOnSubmit}
-              disabled={isBusy || !workOnText.trim()}
-              className="flex-1 px-4 py-2 rounded-lg border font-medium disabled:opacity-50"
-              style={{ borderColor: GANT_ACCENT, color: GANT_ACCENT }}
-            >
-              Work on
-            </button>
+        {/* Footer actions (Requirement 4.3).
+            When there's unsaved text in "Add more", Save is HIDDEN entirely
+            (decided 2026-09-03) — saving would tick the CURRENT refined note
+            and silently throw away what the coach just typed. "Work on" is
+            the only forward path in that state, so it becomes the emphasised
+            (filled) button; once the text is processed and the box is empty
+            again, Save comes back. */}
+        <div className="p-4 border-t border-gray-200 space-y-2">
+          {hasUnsavedWorkOn && (
+            <p className="text-xs text-gray-500 text-center">
+              Tap <span className="font-medium" style={{ color: GANT_ACCENT }}>Work on</span> to
+              fold your addition in — then you can save.
+            </p>
           )}
-          {actions.canTick && (
+          <div className="flex gap-2">
             <button
-              onClick={handleTick}
+              onClick={handleCross}
               disabled={isBusy}
-              className="flex-1 px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50"
-              style={{ backgroundColor: GANT_ACCENT }}
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
             >
-              ✓ Save
+              ✗ Discard
             </button>
-          )}
+            {actions.canWorkOn && (
+              <button
+                onClick={handleWorkOnSubmit}
+                disabled={isBusy || !workOnText.trim()}
+                className={
+                  hasUnsavedWorkOn
+                    ? 'flex-1 px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50'
+                    : 'flex-1 px-4 py-2 rounded-lg border font-medium disabled:opacity-50'
+                }
+                style={
+                  hasUnsavedWorkOn
+                    ? { backgroundColor: GANT_ACCENT }
+                    : { borderColor: GANT_ACCENT, color: GANT_ACCENT }
+                }
+              >
+                Work on
+              </button>
+            )}
+            {actions.canTick && !hasUnsavedWorkOn && (
+              <button
+                onClick={handleTick}
+                disabled={isBusy}
+                className="flex-1 px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50"
+                style={{ backgroundColor: GANT_ACCENT }}
+              >
+                ✓ Save
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Cancel / close without resolving — leaves the entry pending (Requirement 5.1) */}

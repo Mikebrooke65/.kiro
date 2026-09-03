@@ -56,6 +56,45 @@ export class TeamsApi extends ApiClient {
   // `team_members` alone. Additive only — a non-caregiver's result is
   // unchanged, since `player_caregivers` never has a row for them as a
   // caregiver in the first place.
+  /**
+   * The teams the user can WRITE Progress Notes / coaching feedback for —
+   * i.e. teams where they hold genuine coaching authority via their OWN
+   * `team_members` row (role coach/manager, or `is_coach = true`).
+   *
+   * Deliberately NARROWER than `getMyTeams` below, and deliberately does NOT
+   * union in caregiver-linked teams: `getMyTeams` mixes in the teams a
+   * user's linked child plays on so a caregiver can BROWSE that roster
+   * read-only (the Team page), but that is not write authority. Found live
+   * 2026-09-03: the Progress Notes queue's team picker reused `getMyTeams`
+   * and so offered a caregiver a team they could capture + refine a note
+   * against, right up until the `game_feedback` INSERT — which correctly
+   * failed RLS (migration 022 requires the writer's own coach/manager
+   * membership on that team, which a caregiver-only relationship never
+   * gives). The database was right to refuse; the picker was wrong to offer
+   * it. This method is that picker's correct source.
+   *
+   * A player-only membership (role = 'player', no is_coach) is also excluded
+   * — being on a team as a player is not authority to write feedback about
+   * others on it.
+   *
+   * Note on admins: a club admin CAN write `game_feedback` for any team
+   * (migration 022's admin-all policy), but this method still only returns
+   * teams they have a real coaching/manager membership on — showing every
+   * team in the club here would be impractical and isn't the common case.
+   * A pure-admin-with-no-memberships wanting to add notes for an arbitrary
+   * team is an accepted edge case, noted rather than solved here.
+   */
+  async getMyCoachingTeams(userId: string): Promise<TeamMemberWithTeam[]> {
+    const { data, error } = await this.supabase
+      .from('team_members')
+      .select('*, team:teams(*)')
+      .eq('user_id', userId)
+      .or('role.in.(coach,manager),is_coach.eq.true');
+
+    if (error) throw new ApiError(error.message);
+    return (data ?? []) as unknown as TeamMemberWithTeam[];
+  }
+
   async getMyTeams(userId: string): Promise<TeamMemberWithTeam[]> {
     const { data, error } = await this.supabase
       .from('team_members')

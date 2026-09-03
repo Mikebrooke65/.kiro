@@ -62,9 +62,20 @@ export function Coaching() {
       // reduced to zero by the `teams` SELECT policy for players (Req 7.4).
       const memberships = await teamsApi.getMyTeams(user.id);
 
+      // Dedupe by team id: getMyTeams returns one row PER relationship, so a
+      // user who is a coach on a team AND a caregiver of a child on the same
+      // team gets it back more than once — which showed the team duplicated
+      // in this dropdown (found live 2026-09-03; the Team page already
+      // dedupes via buildTeamSelection, this page didn't).
+      const seenTeamIds = new Set<string>();
       const userTeams: Team[] = memberships
         .map((tm) => tm.team)
         .filter((team): team is DbTeam => Boolean(team))
+        .filter((team) => {
+          if (seenTeamIds.has(team.id)) return false;
+          seenTeamIds.add(team.id);
+          return true;
+        })
         .map((team) => ({
           id: team.id,
           name: team.name,

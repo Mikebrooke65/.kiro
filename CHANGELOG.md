@@ -2,6 +2,35 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-09-03] - Gant / Progress Notes: live-test polish batch
+
+### Fixed
+- **Progress Notes could fail to save on some teams.** The team picker in the
+  pending queue offered teams you're only linked to as a caregiver; saving a
+  note there was correctly refused by the database. The picker now lists only
+  teams you coach or manage.
+- **A note could silently fail to save even on your own team.** A latent bug
+  made the Save action reference the wrong record; the underlying event is now
+  created correctly so Save works from the review screen.
+- **Duplicate teams in the Coaching and Games dropdowns.** If you both coach a
+  team and are a caregiver of a child on it, the team now appears once instead
+  of several times.
+
+### Changed
+- **Capture sheet is clearer.** "Done" is now "Close"; a persistent banner
+  confirms how many notes you've captured (rather than a quick flash that
+  looked like nothing happened); short helper text explains that you capture
+  each note then close and refine from the queue. Closing with un-captured
+  text now asks before discarding it.
+- **Review screen guides the right next step.** When you've typed more into
+  "Add more", Save is hidden and "Work on" is highlighted, so your addition
+  is folded in by Gant rather than being lost.
+
+### Technical Notes
+- All client-side — no Edge Function redeploy required for this batch.
+- Full detail in `.kiro/specs/gant-ai-feedback-assistant/tasks.md`
+  ("Second live-test batch") and `NEXT-SESSION-NOTES.md`.
+
 ## [2026-09-02] - V1.R Part 1: fully live-verified, all 4 migrations run in production
 
 Full checklist worked through live against the real Supabase-backed app
