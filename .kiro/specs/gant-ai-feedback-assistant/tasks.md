@@ -11,16 +11,37 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
 
 ---
 
-## Task 0 — Coach guardrails working session (NON-CODE, gating on quality)
+## Task 0 — Coach guardrails refinement (NON-CODE, gating on quality)
 
-- [ ] 0.1 Run the coach session (3–5 coaches) per
-  `docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md`; produce first-draft
-  phases-of-play list, feedback model, tone guide with before/after examples,
-  **and continuity-language examples** (Part 3b — improved/same/regressed
-  variants for referencing a player's past notes naturally).
-- [ ] 0.2 Decide whether phase tags map into the existing Technical/Tactical/
-  Physical/Mental report-card categories (affects how phases are defined now).
-- [ ] 0.3 Capture the output as seed content for `gant_guardrails` (Task 1.3).
+**Approach decided 2026-09-03: show, don't just tell.** Rather than (or before)
+a workshop-style conversation, the repo owner will **demo Gant working live to
+coaches, let them actually use it** (running on the placeholder guardrails,
+`docs/project/GANT-PLACEHOLDER-GUARDRAILS.md`), and gather refinement from real
+usage. Coaches react to and correct something concrete and working, rather
+than designing a feedback philosophy from a blank page in a meeting. The
+conversation guide's structured questions (`docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md`)
+remain useful as a fallback/complement wherever a live demo doesn't naturally
+surface an answer (e.g. Part 4's "what should Gant never comment on" is easier
+to ask directly than to wait for a coach to hit it by accident).
+
+- [ ] 0.1 Build/deploy enough of the stack (Tasks 1–5 minimum: data model,
+  Edge Function, review loop, capture) seeded with the placeholder guardrails,
+  so there's something real to demo and let coaches try.
+- [ ] 0.2 Demo + hands-on trial with 3–5 experienced coaches; capture their
+  reactions, corrections, and preferred phrasing directly against real output
+  — this **is** the guardrails-definition process, not a precursor to it.
+- [ ] 0.3 Use the `gant_outcomes` export (Task 8.2) once real trial usage
+  exists — round counts and tick/cross patterns from actual coach use are a
+  genuine refinement signal, sooner than originally expected, since real usage
+  starts as early as this trial rather than waiting for full launch.
+- [ ] 0.4 Fold coach input into an updated `gant_guardrails` row (via the
+  admin screen, Task 8.1, once built — or a direct SQL update before then).
+  Treat this as iterative, not a single one-off session — refine again after
+  more real usage, same "living document" spirit already noted in the
+  conversation guide.
+- [ ] 0.5 Decide whether phase tags map into the existing Technical/Tactical/
+  Physical/Mental report-card categories (affects how phases are defined) —
+  can be settled during the live trial rather than as a separate step.
 
 ## Task 1 — Data model (D2)
 

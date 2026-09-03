@@ -176,9 +176,42 @@ No action needed from coaches on this yet beyond awareness — it'll come back a
 
 ---
 
-## Suggested format for the session
+## A placeholder draft already exists — use it as a starting point
 
-- Run this as a working session with 3-5 experienced coaches (not just one voice) so the model reflects genuine club consensus, not one person's individual style
-- Bring real, anonymised examples of feedback already written manually — these are more useful starting material than starting from a blank page
-- Aim to leave the session with: a draft phase-of-play list, a one-paragraph feedback model, and a handful of before/after tone examples
-- Treat this as a living document — it can be refined once coaches start seeing Gant's output in practice
+**Added 2026-09-03.** `docs/project/GANT-PLACEHOLDER-GUARDRAILS.md` is a full
+first-pass draft of all four things this session needs to produce (phases of
+play, feedback model, tone guide, continuity language), built from the prior
+art above plus the club's existing report-card categories. It exists so
+engineering has real content to build against before this session happens, and
+so coaches have something concrete to react to and correct rather than a blank
+page. **It is explicitly a placeholder, not a proposal to rubber-stamp** —
+bring it to the session, expect to change most of it, and treat coaches'
+actual instincts as the real authority.
+
+---
+
+## Suggested format — decided 2026-09-03: demo first, refine from real use
+
+The plan is no longer a standalone workshop-style meeting first. Instead:
+
+1. **Show coaches Gant actually working**, live, running on the placeholder
+   draft (`docs/project/GANT-PLACEHOLDER-GUARDRAILS.md`) rather than a blank
+   slate.
+2. **Let 3-5 experienced coaches use it for real** — capture a few genuine
+   observations, run them through the refine/clarify/tick loop, and see what
+   Gant actually produces against real feedback they'd give anyway.
+3. **Gather their reactions and corrections directly against that output** —
+   "that phrasing feels off," "we'd never say it that way," "this phase list is
+   missing X" — which is faster and more concrete than describing a feedback
+   philosophy in the abstract.
+4. **Fall back to this guide's structured questions** for anything a live
+   demo doesn't naturally surface (e.g. Part 4's "what should Gant never
+   comment on" — better asked directly than waited for).
+5. **Treat this as genuinely iterative**, not a one-off session — refine the
+   guardrails again as real trial usage accumulates (the `gant_outcomes` data
+   — round counts, tick/cross patterns — becomes a real signal once coaches
+   are actually using it, not just at initial rollout).
+
+The original questions throughout Parts 1-4 above remain exactly as useful —
+they're just now a **prompt list for reacting to real output**, rather than
+questions to answer cold in a room.
