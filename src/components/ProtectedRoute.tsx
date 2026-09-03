@@ -45,8 +45,25 @@ export function ProtectedRoute({
     );
   }
 
-  // Check if user role is allowed
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  // Check if user role is allowed.
+  //
+  // Found live 2026-09-03: this check only ever looked at the synchronous
+  // global `user.role`, so a Manager (or Admin) holding per-team `is_coach`
+  // authority — who correctly sees the Coaching tab in the bottom nav via
+  // `tabsForRole`'s `hasCoachAuthorityOnAnyTeam` (main-layout-logic.ts) —
+  // was bounced back to Home the moment they actually tapped it. Fix:
+  // mirror that exact same check here, so the route guard and the nav that
+  // links to it agree. `hasCoachAuthorityOnAnyTeam` is only ever consulted
+  // when COACH is one of the route's allowedRoles, so this has no effect on
+  // any other route.
+  const hasCoachAuthorityOnAnyTeam =
+    user.teamMemberships?.some((tm) => tm.role === 'coach' || tm.is_coach) ?? false;
+  const roleAllowed =
+    !allowedRoles ||
+    allowedRoles.includes(user.role) ||
+    (allowedRoles.includes(UserRole.COACH) && hasCoachAuthorityOnAnyTeam);
+
+  if (!roleAllowed) {
     return <Navigate to="/" replace />;
   }
 
