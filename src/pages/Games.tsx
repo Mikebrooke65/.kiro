@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Calendar, MapPin, Trophy, Clock, ChevronLeft, ChevronRight, Save, ArrowRightCircle } from 'lucide-react';
+import { Calendar, MapPin, Trophy, Clock, ChevronLeft, ChevronRight, Save, ArrowRightCircle, ClipboardList } from 'lucide-react';
 import { gamesApi } from '../lib/games-api';
 import { eventsApi } from '../lib/events-api';
 import { teamsApi } from '../lib/teams-api';
-import type { Game, GameFeedbackRecord, Team, User } from '../types/database';
+import type { Game, Team } from '../types/database';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Games() {
@@ -14,8 +14,6 @@ export function Games() {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [currentGameIndex, setCurrentGameIndex] = useState(0);
-  const [teamPlayers, setTeamPlayers] = useState<User[]>([]);
-  const [gameFeedback, setGameFeedback] = useState<GameFeedbackRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,13 +21,6 @@ export function Games() {
   const [teamScore, setTeamScore] = useState<string>('');
   const [opponentScore, setOpponentScore] = useState<string>('');
   const [scoreSaving, setScoreSaving] = useState(false);
-
-  // Feedback state
-  const [feedbackType, setFeedbackType] = useState<'team' | 'player'>('team');
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
-  const [feedbackText, setFeedbackText] = useState('');
-  const [feedbackSaving, setFeedbackSaving] = useState(false);
-  const [currentFeedbackId, setCurrentFeedbackId] = useState<string | null>(null);
 
   // Load user's teams
   useEffect(() => {
@@ -154,32 +145,12 @@ export function Games() {
     }
   };
 
-  const loadGameDetails = async (game: Game) => {
-    if (!game || !selectedTeam) return;
-
-    try {
-      // Load team players
-      const players = await gamesApi.getTeamPlayers(selectedTeam.id);
-      setTeamPlayers(players);
-
-      // Load existing feedback
-      const feedback = await gamesApi.getGameFeedback(game.id);
-      setGameFeedback(feedback);
-
-      // Pre-fill score if already recorded
-      if (game.team_score !== null && game.team_score !== undefined) {
-        setTeamScore(game.team_score.toString());
-      } else {
-        setTeamScore('');
-      }
-      if (game.opponent_score !== null && game.opponent_score !== undefined) {
-        setOpponentScore(game.opponent_score.toString());
-      } else {
-        setOpponentScore('');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load game details');
-    }
+  const loadGameDetails = (game: Game) => {
+    if (!game) return;
+    // Pre-fill score if already recorded. (Player rosters and written feedback
+    // are no longer loaded here — game feedback now lives in Progress Notes.)
+    setTeamScore(game.team_score != null ? game.team_score.toString() : '');
+    setOpponentScore(game.opponent_score != null ? game.opponent_score.toString() : '');
   };
 
   const handleSaveScore = async () => {
@@ -219,104 +190,11 @@ export function Games() {
     }
   };
 
-  const handleSaveFeedback = async () => {
-    const currentGame = games[currentGameIndex];
-    if (!currentGame || !selectedTeam || !feedbackText.trim()) {
-      setError('Please enter feedback');
-      return;
-    }
-
-    if (feedbackType === 'player' && !selectedPlayerId) {
-      setError('Please select a player');
-      return;
-    }
-
-    try {
-      setFeedbackSaving(true);
-      setError(null);
-
-      let savedFeedback: GameFeedbackRecord;
-
-      if (currentFeedbackId) {
-        // Update existing feedback
-        savedFeedback = await gamesApi.updateGameFeedback(currentFeedbackId, feedbackText);
-        // Update in list
-        setGameFeedback(gameFeedback.map(f => f.id === currentFeedbackId ? savedFeedback : f));
-      } else {
-        // Create new feedback
-        savedFeedback = await gamesApi.createGameFeedback({
-          game_id: currentGame.id,
-          team_id: selectedTeam.id,
-          feedback_type: feedbackType,
-          player_id: feedbackType === 'player' ? selectedPlayerId : undefined,
-          feedback_text: feedbackText,
-        });
-        // Add to list
-        setGameFeedback([savedFeedback, ...gameFeedback]);
-      }
-
-      // Reset form
-      setFeedbackText('');
-      setSelectedPlayerId('');
-      setCurrentFeedbackId(null);
-      setFeedbackType('team');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save feedback');
-    } finally {
-      setFeedbackSaving(false);
-    }
-  };
-
   const navigateGame = (direction: 'prev' | 'next') => {
     if (direction === 'prev' && currentGameIndex > 0) {
       setCurrentGameIndex(currentGameIndex - 1);
     } else if (direction === 'next' && currentGameIndex < games.length - 1) {
       setCurrentGameIndex(currentGameIndex + 1);
-    }
-  };
-
-  const handlePlayerChange = (playerId: string) => {
-    setSelectedPlayerId(playerId);
-    
-    if (!playerId) {
-      setFeedbackText('');
-      setCurrentFeedbackId(null);
-      return;
-    }
-
-    // Find existing feedback for this player in this game
-    const existingFeedback = gameFeedback.find(
-      f => f.feedback_type === 'player' && f.player_id === playerId
-    );
-
-    if (existingFeedback) {
-      setFeedbackText(existingFeedback.feedback_text);
-      setCurrentFeedbackId(existingFeedback.id);
-    } else {
-      setFeedbackText('');
-      setCurrentFeedbackId(null);
-    }
-  };
-
-  const handleFeedbackTypeChange = (type: 'team' | 'player') => {
-    setFeedbackType(type);
-    setSelectedPlayerId('');
-    setCurrentFeedbackId(null);
-    
-    if (type === 'team') {
-      // Load existing team feedback if any
-      const existingTeamFeedback = gameFeedback.find(
-        f => f.feedback_type === 'team'
-      );
-      
-      if (existingTeamFeedback) {
-        setFeedbackText(existingTeamFeedback.feedback_text);
-        setCurrentFeedbackId(existingTeamFeedback.id);
-      } else {
-        setFeedbackText('');
-      }
-    } else {
-      setFeedbackText('');
     }
   };
 
@@ -379,7 +257,6 @@ export function Games() {
             onChange={(e) => {
               const team = teams.find(t => t.id === e.target.value);
               setSelectedTeam(team || null);
-              setSelectedGame(null);
             }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0091f3]"
           >
@@ -396,6 +273,21 @@ export function Games() {
             <span className="font-medium">Team:</span> {teams[0].age_group} {teams[0].name}
           </p>
         </div>
+      )}
+
+      {/* Progress Notes entry point (internal name "Gant"). Game feedback now
+          lives in Progress Notes rather than an inline form here — this button
+          carries the selected team through so the queue opens pre-filtered to
+          it. Requirement 1.3 / 9.2. */}
+      {selectedTeam && (
+        <button
+          onClick={() => navigate('/ai-coach', { state: { teamId: selectedTeam.id } })}
+          className="w-full mb-4 flex items-center justify-center gap-2 text-white rounded-lg shadow hover:shadow-md transition-shadow px-4 py-3"
+          style={{ backgroundColor: '#d97706' }}
+        >
+          <ClipboardList className="w-5 h-5" />
+          <span className="font-semibold">Progress Notes</span>
+        </button>
       )}
 
       {/* Game Card with Navigation */}
@@ -493,106 +385,6 @@ export function Games() {
             </div>
           </div>
 
-          {/* Feedback Section */}
-          <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-            <h4 className="font-semibold text-gray-900 mb-3">Analysis</h4>
-
-            {/* Feedback Type Selection */}
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => handleFeedbackTypeChange('team')}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  feedbackType === 'team'
-                    ? 'bg-[#0091f3] text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Team
-              </button>
-              <button
-                onClick={() => handleFeedbackTypeChange('player')}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  feedbackType === 'player'
-                    ? 'bg-[#0091f3] text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Player
-              </button>
-            </div>
-
-            {/* Player Selection */}
-            {feedbackType === 'player' && (
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Player
-                </label>
-                <select
-                  value={selectedPlayerId}
-                  onChange={(e) => handlePlayerChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0091f3]"
-                >
-                  <option value="">Choose a player...</option>
-                  {teamPlayers.map(player => (
-                    <option key={player.id} value={player.id}>
-                      {player.first_name} {player.last_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Feedback Text */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Feedback
-              </label>
-              <textarea
-                value={feedbackText}
-                onChange={(e) => setFeedbackText(e.target.value)}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0091f3]"
-                placeholder={`Enter ${feedbackType} feedback...`}
-              />
-            </div>
-
-            <button
-              onClick={handleSaveFeedback}
-              disabled={feedbackSaving}
-              className="w-full px-4 py-2 bg-[#0091f3] text-white rounded-lg hover:bg-[#0077cc] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <Save className="w-4 h-4" />
-              {feedbackSaving ? 'Saving...' : currentFeedbackId ? 'Update Feedback' : 'Save Feedback'}
-            </button>
-          </div>
-
-          {/* Existing Feedback */}
-          {gameFeedback.length > 0 && (
-            <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-              <h4 className="font-semibold text-gray-900 mb-3">Previous Feedback</h4>
-              <div className="space-y-3">
-                {gameFeedback.map(feedback => {
-                  const player = feedback.player_id 
-                    ? teamPlayers.find(p => p.id === feedback.player_id)
-                    : null;
-                  
-                  return (
-                    <div key={feedback.id} className="p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-start justify-between mb-2">
-                        <span className="text-xs font-medium text-gray-600">
-                          {feedback.feedback_type === 'team' ? 'TEAM' : `PLAYER: ${player?.first_name} ${player?.last_name}`}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(feedback.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-700">{feedback.feedback_text}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       )}
 

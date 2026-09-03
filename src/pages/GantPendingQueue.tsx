@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { teamsApi } from '../lib/teams-api';
 import { gamesApi } from '../lib/games-api';
@@ -28,6 +29,11 @@ interface Team {
 
 export function GantPendingQueue() {
   const { user } = useAuth();
+  const location = useLocation();
+  // A team pre-selection carried in via navigation (e.g. from the Games page's
+  // "Progress Notes" button). Applied once teams load, and only if it's one of
+  // the coach's write-authority teams (otherwise ignored — see loadTeams).
+  const incomingTeamId = (location.state as { teamId?: string } | null)?.teamId ?? null;
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamFilter, setTeamFilter] = useState<string>(''); // '' = all teams
@@ -76,6 +82,14 @@ export function GantPendingQueue() {
         Object.fromEntries(userTeams.map((t) => [t.id, `${t.age_group} ${t.name}`]))
       );
       setTeamAgeGroupsById(Object.fromEntries(userTeams.map((t) => [t.id, t.age_group])));
+
+      // Pre-select an incoming team (from the Games page's Progress Notes
+      // button), but only if it's genuinely one this coach can write to —
+      // a caregiver-only team wouldn't be in this list, so it's silently
+      // ignored and the queue just defaults to "All teams".
+      if (incomingTeamId && userTeams.some((t) => t.id === incomingTeamId)) {
+        setTeamFilter(incomingTeamId);
+      }
     } catch (err) {
       console.error('Failed to load teams for the pending queue:', err);
     }

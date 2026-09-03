@@ -40,6 +40,7 @@ import { LessonBuilder } from '../pages/desktop/LessonBuilder';
 import { SessionBuilder } from '../pages/desktop/SessionBuilder';
 import { CompetitionsPage } from '../pages/desktop/CompetitionsPage';
 import { DesktopTournamentPage } from '../pages/desktop/DesktopTournamentPage';
+import { ProgressNotesSettings } from '../pages/desktop/ProgressNotesSettings';
 
 // Reporting pages
 import { DesktopReporting } from '../pages/desktop/DesktopReporting';
@@ -272,6 +273,10 @@ export const router = createBrowserRouter([
       {
         path: 'announcements',
         element: <Announcements />,
+      },
+      {
+        path: 'progress-notes',
+        element: <ProgressNotesSettings />,
       },
       {
         path: 'lesson-builder',

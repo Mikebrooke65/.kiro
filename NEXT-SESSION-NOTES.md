@@ -1268,24 +1268,56 @@ One-line status per item. Detail is in the sections further down.
 Everything else (V1.1b iOS, V1.T Friendly Manager import) is blocked on
 hardware or an external data export, not build work.
 
-**Being considered — pull V2.7 Gant (AI coaching feedback assistant) forward
-ahead of its planned V2 slot (flagged 2026-09-03).** The repo owner is weighing
-starting Gant earlier than its V2 position. It is not a V1 item and doesn't block
-any V1 work, but it's now on the near-term radar rather than parked. Fully scoped
-in two docs:
-- `docs/project/GANT-AI-REQUIREMENTS.md` — requirements draft (purpose, Claude
-  Sonnet model choice, live/reflective capture, raw→refine→approve data flow,
-  offline/no-coverage handling, privacy constraints, Edge Function architecture,
-  open questions/decisions confirmed).
-- `docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md` — working doc for the
-  coach session that produces Gant's three inputs (phases of play, feedback model,
-  tone/style guide).
+### Privacy + retention — the final combined V1 workstream (recorded 2026-09-04)
 
-No build task exists yet, and the **immediate next step is the coach guardrails
-working session (3-5 coaches), not code** — that output is the hard dependency for
-any build, since Gant is only as good as the steering document behind it. A Kiro
-spec can be opened off the requirements doc once (or in parallel with) that
-session. Fuller summary in the V2.7 section further down.
+**Repo owner's explicit sequencing decision (2026-09-04):** privacy and data
+retention are to be handled as ONE workstream, done *last*, only once all other
+V1 functionality is complete. This deliberately supersedes treating them as
+scattered items (Gant's Task 11, V1.9 store privacy rewrite, and V1.R Part 2
+retention build are all folded into this single pass). The order within it:
+
+1. **Revisit the privacy policy against everything actually built** — not the
+   old draft in the abstract. Reconcile it with the now-live reality: child
+   accounts + caregiver links, device-access codes, the streamlined invite
+   flow, Progress Notes / Gant (User-ID-only to the AI, no audio transmitted,
+   the short-lived `gant_pending_entries` surface, `gant_outcomes`,
+   `gant_player_summaries`), game feedback, messaging, etc. Every data surface
+   V1 introduced needs to be represented.
+2. **Reconcile with V1.R Part 2 retention scoping** — `docs/data-retention-
+   scoping.md` already holds the scoping notes (competition cleanup clocks, the
+   12-month no-role user-deletion job, de-identified performance data,
+   pre-deletion notice/export). Use it as the starting point.
+3. **DEFINE the retention/deletion policy** — decide the actual rules (what is
+   kept, for how long, what gets de-identified vs hard-deleted, notice/export
+   before deletion). This is the decision step that everything else waits on.
+4. **BUILD the retention/deletion management** — the jobs/tooling to enforce
+   the policy (this is the V1.R Part 2 build, its own spec).
+5. **Fold Gant's Task 11 privacy section in as part of the same pass** — it is
+   no longer a standalone task; it's one input to step 1.
+
+Rationale: the privacy policy can only be honest and complete once the feature
+set is frozen, and the retention *build* can't start until the retention
+*policy* is defined — so doing this last, as one connected piece, avoids
+rewriting the policy repeatedly as features land. Hard gate before any store
+submission.
+
+**Gant V1 build status as of 2026-09-04 (context for the above):** Tasks 1–9 of
+the `gant-ai-feedback-assistant` spec are built (1–7 live-verified; 8 & 9 built
+and locally verified, held uncommitted per the repo owner's batch-commit
+preference to limit Netlify rebuilds). Task 10 is the deliberately-deferred
+V2/phase-2 backlog (nothing to build for V1). Task 11 = the privacy section,
+now merged into the workstream above. Task 0 (coach guardrails refinement) is
+the ongoing non-code loop, now enabled by the desktop admin screen (Task 8).
+
+**Gant (AI coaching feedback assistant) — PULLED FORWARD AND BUILT INTO V1
+(2026-09-04).** No longer "being considered" — it was accelerated ahead of its
+V2 slot and the `gant-ai-feedback-assistant` spec Tasks 1–9 are built (see the
+"Gant V1 build status" note just above, and the spec's `tasks.md`). Design docs
+`docs/project/GANT-AI-REQUIREMENTS.md` and `GANT-COACH-GUARDRAILS-CONVERSATION-
+GUIDE.md` remain the reference. The coach guardrails work (Task 0) is now an
+ongoing refinement loop against the live admin screen rather than a pre-build
+gate. Remaining Gant scope is V2/phase-2 only — see the refreshed V2.7 section
+further down.
 
 ### PLAN FOR NEXT SESSION (updated 2026-08-30)
 
@@ -3393,9 +3425,15 @@ reading before doing any further design work on this item.
 - See `docs/lessons/ACADEMY-MIGRATION-PROGRESS.md` for full status
 
 ### V2.7 Gant — AI Coaching Feedback Assistant (docs only, added 2026-08-25)
-**Status**: Requirements + guardrails-conversation guide written, no build started.
-**Being considered for acceleration ahead of its V2 slot (2026-09-03)** — see the
-"Being considered — pull V2.7 Gant forward" note up in the V1 build-order section.
+**Status (updated 2026-09-04)**: PULLED FORWARD AND BUILT INTO V1. The
+`gant-ai-feedback-assistant` Kiro spec Tasks 1–9 are built — the capture →
+refine → review → approve loop, pending queue, person-detail notes, team
+notes, auto-summary, the `gant-refine` Edge Function (deployed), and the
+admin guardrails + usage-CSV desktop screen (`/desktop/progress-notes`).
+Tasks 1–7 are live-verified; 8 & 9 built and locally verified (uncommitted at
+2026-09-04 per the batch-commit preference). User-facing name is "Progress
+Notes"; "Gant" stays internal. What remains below is the genuinely-deferred
+V2/phase-2 scope only.
 
 Gant is a planned AI-assisted layer (Claude Sonnet 5 via a Supabase Edge
 Function) that helps coaches refine dictated feedback into structured,
@@ -3420,9 +3458,29 @@ the wording. Two docs capture the design so far, added to `docs/`:
   examples). Not a technical task — the next step here is a coach working
   session, not code.
 
-**Not blocking V1.** No build task exists for this yet — the immediate next
-step (whenever this gets picked up) is running the coach guardrails
-conversation, not writing any Edge Function code.
+**Gant phase-2 / V2 — deferred from the V1 build (spec Task 10).** These were
+explicitly parked when Gant was pulled into V1; captured here so they live in
+the V2 backlog, not just the spec file:
+- **Continuous multi-player dictation** — a coach dictates about several
+  players in one flow; the system segments it and fuzzy-matches names against
+  the roster, feeding each segment into the same review loop unchanged.
+- **Progression review** — Gant flags recurring issues while a coach is
+  *writing* a new note (distinct from the read-side auto-summary already built).
+- **Session suggestions** — Gant proposes training exercises/drills based on
+  the patterns in a player's or team's accumulated notes.
+- **Team-page / roster layout redesign** — scope once Gant's additions
+  (person-detail link, team-notes link) are in and real crowding is visible.
+- **Editable personal fields + the "player can't see their own phone number"
+  gap** — a separate future conversation, not a Gant task; the phone-number
+  visibility gap is tracked in this file's Team-page notes.
+- **In-app "ask Claude to refine the guardrails" button** — considered and
+  deliberately deferred (2026-09-04): the V1 admin screen uses an external
+  copy-to-Claude workflow; an in-app one-click refine could come later if the
+  external loop proves too fiddly.
+
+The naming decision ("Progress Notes", spec Task 10.4) is already resolved and
+shipped. Task 0 (coach guardrails refinement) is an ongoing non-code loop, now
+enabled by the live admin screen — not a V2 build item.
 
 ### V2 Backlog (Future)
 - Notification preferences UI

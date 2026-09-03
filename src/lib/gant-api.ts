@@ -1,5 +1,11 @@
 import { ApiClient, ApiError } from './api-client';
-import type { GantPendingEntry, GantRawRound, GantResponse } from '../types/database';
+import type {
+  GantPendingEntry,
+  GantRawRound,
+  GantResponse,
+  GantGuardrails,
+  GantOutcome,
+} from '../types/database';
 
 /**
  * Client wrapper for Progress Notes (internal name "Gant") — capture,
@@ -165,7 +171,7 @@ class GantApi extends ApiClient {
     let eventId = params.eventId;
     if (!eventId) {
       const now = new Date().toISOString();
-      const adHocEvent = await this.insert<{ id: string }>('events', {
+      const adHocEvent = await this.insert<{ id: string } & Record<string, unknown>>('events', {
         title: 'Progress Notes entry',
         event_type: 'general',
         event_date: now,
@@ -317,6 +323,70 @@ class GantApi extends ApiClient {
     if (error) throw new ApiError(error.message);
     return data?.summary_text ?? null;
   }
+
+  // -- Guardrails admin (Task 8.1) -------------------------------------------
+
+  /**
+   * Read the single guardrails row (Task 8.1). `maybeSingle()` returns null
+   * (not an error) if the row is somehow absent — migration 071 seeds it, so
+   * in practice it always exists. Readable by any coach/admin per the table's
+   * RLS; only admins can write (enforced by `updateGuardrails` hitting the
+   * admin-only write policy, and by the desktop route being admin-gated).
+   */
+  async getGuardrails(): Promise<GantGuardrails | null> {
+    const { data, error } = await this.supabase
+      .from('gant_guardrails')
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new ApiError(error.message);
+    return (data as GantGuardrails) ?? null;
+  }
+
+  /**
+   * Update the single guardrails row (Task 8.1). Matches on the fixed
+   * `id = true` single-row key. Bumps `updated_at`. Takes effect on Gant's
+   * very next request — the Edge Function reads this row fresh every call
+   * (no cache), so there's no redeploy or rebuild (Requirement 9.2).
+   */
+  async updateGuardrails(updates: {
+    phases_of_play?: GantGuardrails['phases_of_play'];
+    feedback_model?: string;
+    tone_guide?: string;
+    continuity_language?: string;
+  }): Promise<GantGuardrails> {
+    const { data, error } = await this.supabase
+      .from('gant_guardrails')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', true)
+      .select()
+      .single();
+
+    if (error) throw new ApiError(error.message);
+    return data as GantGuardrails;
+  }
+
+  // -- Usage-signal export (Task 8.2) ----------------------------------------
+
+  /**
+   * All `gant_outcomes` rows for CSV export (Task 8.2), newest first, with
+   * team and player names resolved so the exported file is human-readable
+   * rather than a wall of UUIDs. Admin-only: the table's RLS returns zero
+   * rows to a non-admin, and the desktop route is admin-gated anyway.
+   */
+  async getOutcomesForExport(): Promise<GantOutcomeExportRow[]> {
+    const { data, error } = await this.supabase
+      .from('gant_outcomes')
+      .select(
+        'id, outcome, round_count, resolved_at, ' +
+          'team:teams!team_id(name, age_group), ' +
+          'player:users!player_id(first_name, last_name)'
+      )
+      .order('resolved_at', { ascending: false });
+
+    if (error) throw new ApiError(error.message);
+    return (data ?? []).map(mapOutcomeRow);
+  }
 }
 
 export interface GantFeedbackNote {
@@ -335,6 +405,32 @@ function mapFeedbackRow(row: any): GantFeedbackNote {
     phaseTags: row.phase_tags ?? [],
     authorName: author ? `${author.first_name} ${author.last_name}` : 'Coach',
     date: row.created_at,
+  };
+}
+
+/** A single flattened, human-readable `gant_outcomes` row for CSV export (Task 8.2). */
+export interface GantOutcomeExportRow {
+  date: string;
+  team: string;
+  player: string;
+  scope: 'team' | 'player';
+  outcome: 'ticked' | 'crossed';
+  rounds: number;
+}
+
+function mapOutcomeRow(row: any): GantOutcomeExportRow {
+  const team = row.team;
+  const player = row.player;
+  const teamName = team ? `${team.age_group ?? ''} ${team.name ?? ''}`.trim() : '(unknown team)';
+  // Sortable, unambiguous, spreadsheet-friendly: "2026-09-03 14:22" (UTC).
+  const date = row.resolved_at ? new Date(row.resolved_at).toISOString().slice(0, 16).replace('T', ' ') : '';
+  return {
+    date,
+    team: teamName,
+    player: player ? `${player.first_name} ${player.last_name}` : '',
+    scope: player ? 'player' : 'team',
+    outcome: row.outcome,
+    rounds: row.round_count,
   };
 }
 

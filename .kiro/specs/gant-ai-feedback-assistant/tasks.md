@@ -357,25 +357,83 @@ genuinely live — Task 2 can now build and test against it.
   under pressure) into one coherent overview — not just echoing the latest
   note.
 
-## Task 8 — Guardrails admin screen + usage-signal panel (D8)
+## Task 8 — Guardrails admin screen + usage-signal panel (D8) — 8.1 & 8.2 ✅ DONE + LIVE-VERIFIED 2026-09-04
 
-- [ ] 8.1 `src/pages/desktop/DesktopGantSettings.tsx` (admin-only): phases-of-
-  play editor, feedback-model text area, tone-guide text area.
-- [ ] 8.2 **CSV export button for `gant_outcomes`** (round count, outcome,
-  team/player, date) — decided 2026-09-03: no in-app analytics/insights UI for
-  v1, just clean exportable data for external review (e.g. feeding it to
-  Claude separately for guardrails-improvement suggestions).
+- [x] 8.1 `src/pages/desktop/ProgressNotesSettings.tsx` (admin-only, route
+  `/desktop/progress-notes`, sidebar link in DesktopLayout's Admin section,
+  amber `#d97706` accent). Editors for feedback model, tone guide, and
+  continuity language (textareas), plus a structured phases-of-play editor
+  (age bands → each phase's name + definition, add/remove) so nobody hand-
+  edits JSON. **Save** writes the single `gant_guardrails` row via
+  `gantApi.updateGuardrails()` (matches `id = true`, bumps `updated_at`);
+  takes effect on Gant's next call, no redeploy. Admin gating is inherited
+  from the `/desktop` route guard (`allowedRoles={[ADMIN]}`) plus the table's
+  admin-write RLS — the page adds no guard of its own. Live-verified: opened
+  as admin, all sections render with the live seeded content.
+  - **Copy workflow (external-Claude, decided 2026-09-04):** per-section
+    **Copy** buttons + a **Copy all** button emit labelled text
+    (`=== FEEDBACK MODEL ===` etc.); paste-back is per-section into the same
+    labelled boxes, so the app never parses/guesses and refined text can't
+    land in the wrong field. Phases stay in the structured editor (rare
+    changes) but are included in the copy for Claude's context.
+- [x] 8.2 **CSV export for `gant_outcomes`** — `gantApi.getOutcomesForExport()`
+  resolves team + player names (not UUIDs) and a sortable UTC date, fed to the
+  existing `ExportButton` (`src/lib/export-utils.ts`). Columns: date, team,
+  player, scope, outcome, rounds. Admin-only (table RLS + route guard). No
+  in-app analytics UI — clean exportable data for external review, as decided.
+  - A **"Copy guardrails + prompt for Claude"** button (Task 8's third
+    sub-piece, the improvement loop) copies the full guardrails wrapped in a
+    ready-made instruction telling Claude to keep the section structure and to
+    ask for the usage CSV if useful.
 - [ ] 8.3 Wire Task 0's coach-session output in as the real seed content once
-  available (replacing any placeholder from Task 1.3).
+  available (replacing any placeholder from Task 1.3) — this is now done
+  through the admin screen above (edit + Save), so 8.3 is just the act of
+  folding real coach input in, part of the ongoing Task 0 loop.
 
-## Task 9 — Games page quick link (Req 1.3)
+**Not committed yet** — built 2026-09-04, held uncommitted at the repo owner's
+request (batching changes so Netlify rebuilds once). No migration needed
+(tables from 071/072 already live). Also fixed a pre-existing build-invisible
+type error in `gant-api.ts`'s `approve()` ad-hoc-event insert (typed
+`insert<{ id: string }>` rejected the extra event columns → widened to
+`{ id: string } & Record<string, unknown>`; type-only, no runtime change).
 
-- [ ] 9.1 Confirm `Games.tsx`'s existing `selectedPlayerId` state can be carried
-  through a link/navigation to the person-detail screen (or capture sheet
-  directly).
-- [ ] 9.2 Replace/augment the existing "Ask AI Coach" entry point on the Games
-  page with this quick link — team (and player, if selected) pre-filled, no
-  re-selection needed.
+## Task 9 — Games page quick link (Req 1.3) — ✅ DONE (built 2026-09-04, uncommitted)
+
+Reality differed from the original wording: the Games page never had an "Ask
+AI Coach" entry point — it had an **inline game-feedback form** (team/player
+toggle → textarea → Save straight to `game_feedback`, plus a "Previous
+Feedback" list). That was the *prototype* of what became the Progress Notes
+capture→refine→review loop, so it was pure duplication (and it bypassed Gant
+entirely). Task 9 therefore became: remove the superseded inline feedback UI,
+and add a Progress Notes button that carries the selected team into the queue.
+
+- [x] 9.1 Pre-select carried via router state, not `selectedPlayerId`.
+  `GantPendingQueue` now reads `useLocation().state?.teamId` and, once its
+  coaching-teams list has loaded, pre-selects that team in the filter — but
+  ONLY if it's genuinely one of the coach's write-authority teams (a
+  caregiver-only team isn't in the list, so it's silently ignored and the
+  queue defaults to "All teams"). Player is not carried through (the Games
+  team context is team-level; the coach picks the player in the queue/capture).
+- [x] 9.2 **Removed** the inline feedback form + "Previous Feedback" list from
+  `Games.tsx` (and the now-dead state/handlers: `teamPlayers`, `gameFeedback`,
+  `feedbackType`, `selectedPlayerId`, `feedbackText`, `feedbackSaving`,
+  `currentFeedbackId`, `handleSaveFeedback`, `handlePlayerChange`,
+  `handleFeedbackTypeChange`; `loadGameDetails` now only pre-fills the score).
+  **Added** an amber "Progress Notes" button (shown whenever a team is
+  selected) that does `navigate('/ai-coach', { state: { teamId } })`. Score
+  recording, game navigation, and the Subs link are untouched. Also removed a
+  latent broken `setSelectedGame(null)` call in the team-select onChange (no
+  such state existed — would have thrown at runtime on team change).
+  - **Note:** `gamesApi.createGameFeedback` / `updateGameFeedback` /
+    `getGameFeedback` are now unused by `Games.tsx` but left in place (may be
+    referenced elsewhere / by tests; removing them is out of scope).
+  - **Pre-existing, build-invisible type errors noted while scoped-checking
+    (not introduced here, not fixed here):** `Games.tsx`'s `loadGames` uses
+    `gamesApi.supabase` (protected member) and `teams-api.ts` still has the
+    `is_coach`-missing error (tracked). Both invisible to `npm run build`.
+
+Verified: `npm run build` clean; `npx vitest --run` = 254 passing (2 known
+unrelated `invites-api` live-network failures).
 
 ## Task 10 — Deferred / phase 2 (not built in this pass, tracked here)
 
