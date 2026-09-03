@@ -36,6 +36,7 @@ export function GantPendingQueue() {
 
   const [entries, setEntries] = useState<GantPendingEntry[]>([]);
   const [teamNamesById, setTeamNamesById] = useState<Record<string, string>>({});
+  const [teamAgeGroupsById, setTeamAgeGroupsById] = useState<Record<string, string>>({});
   const [playerNamesById, setPlayerNamesById] = useState<Record<string, string>>({});
 
   const [loading, setLoading] = useState(true);
@@ -69,6 +70,7 @@ export function GantPendingQueue() {
       setTeamNamesById(
         Object.fromEntries(userTeams.map((t) => [t.id, `${t.age_group} ${t.name}`]))
       );
+      setTeamAgeGroupsById(Object.fromEntries(userTeams.map((t) => [t.id, t.age_group])));
     } catch (err) {
       console.error('Failed to load teams for the pending queue:', err);
     }
@@ -132,6 +134,11 @@ export function GantPendingQueue() {
   function handleResolved(_outcome: 'ticked' | 'crossed', entryId: string) {
     setEntries((prev) => prev.filter((e) => e.id !== entryId));
     setReviewingEntry(null);
+    // Found live 2026-09-03: this page-level banner was never cleared, so a
+    // failed action's message could linger invisibly behind a later modal
+    // (this banner sits BEHIND any z-[60] overlay) and then reappear once
+    // that modal closed, looking like a fresh, unrelated error.
+    setError(null);
   }
 
   if (loading && entries.length === 0) {
@@ -186,7 +193,10 @@ export function GantPendingQueue() {
           specific prompted a visit here but the coach wants to add a note. */}
       {teamFilter && (
         <button
-          onClick={() => setCaptureContext({ teamId: teamFilter, playerId: playerFilter || null })}
+          onClick={() => {
+            setError(null);
+            setCaptureContext({ teamId: teamFilter, playerId: playerFilter || null });
+          }}
           className="w-full mb-4 px-4 py-2 rounded-lg border font-medium text-sm"
           style={{ borderColor: GANT_ACCENT, color: GANT_ACCENT }}
         >
@@ -208,7 +218,10 @@ export function GantPendingQueue() {
             return (
               <button
                 key={entry.id}
-                onClick={() => setReviewingEntry(entry)}
+                onClick={() => {
+                  setError(null);
+                  setReviewingEntry(entry);
+                }}
                 className="w-full text-left bg-white rounded-lg shadow-sm border border-gray-100 p-3 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-center justify-between gap-2">
@@ -240,6 +253,7 @@ export function GantPendingQueue() {
           entry={reviewingEntry}
           playerName={reviewingEntry.player_id ? playerNamesById[reviewingEntry.player_id] ?? 'Player' : null}
           teamName={teamNamesById[reviewingEntry.team_id] ?? 'Team'}
+          ageGroup={teamAgeGroupsById[reviewingEntry.team_id]}
           onClose={() => setReviewingEntry(null)}
           onResolved={handleResolved}
           onError={setError}

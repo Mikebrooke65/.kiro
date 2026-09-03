@@ -89,7 +89,18 @@ interface ReviewRequest {
   scope: 'team' | 'player';
   subjectUserId?: string; // required when scope === 'player'; never a name (Req 8.1)
   eventType?: 'game' | 'training' | 'video_review';
+  // The TEAM's age group (e.g. "U9", "Open") — already-known data, not
+  // something a coach should ever be asked for. Found live 2026-09-03: with
+  // no age band supplied, Gant had no way to know which of the guardrails'
+  // two age-banded phase lists applied and would ask, which is exactly the
+  // kind of question a coach shouldn't have to answer mid-flow.
+  ageGroup?: string;
   rounds: string[]; // accumulated raw input, oldest first — never empty
+  // Gant's own most recent response (before this call), so a "Work on"
+  // round is understood as building on/answering THAT, not a second
+  // disconnected fragment. Undefined on the very first call for an entry
+  // (round 1, nothing to have a prior response to yet).
+  priorResponse?: { kind: 'refined' | 'question'; text: string };
   recentHistory?: RecentHistoryItem[]; // Req 4.9, player scope only
 }
 
@@ -192,6 +203,12 @@ function buildSystemPrompt(guardrails: Guardrails): string {
     '{"kind": "question", "text": "<one short clarifying question for the coach>"}',
     '',
     'Rules:',
+    '- The team\'s age group is supplied to you as already-known data (see the',
+    '  "Team age group" line below, when present). NEVER ask the coach what age',
+    '  group or band the team is in — use the supplied age group yourself to',
+    '  pick which phases-of-play list above applies (a younger band vs an older',
+    '  band). If no age group is supplied, default to whichever phase list is',
+    '  more general rather than asking.',
     '- Prefer "refined" whenever you can produce a reasonable, specific piece of',
     '  feedback. Only ask a question when you genuinely cannot.',
     '- All-positive feedback is allowed and expected when that is the honest',
@@ -209,11 +226,41 @@ function buildSystemPrompt(guardrails: Guardrails): string {
 function buildReviewUserMessage(req: ReviewRequest): string {
   const lines: string[] = [];
   lines.push(`Scope: ${req.scope}${req.eventType ? ` (${req.eventType})` : ''}`);
+  if (req.ageGroup) {
+    lines.push(`Team age group: ${req.ageGroup} — already known, do not ask for this.`);
+  }
   lines.push('');
-  lines.push('Coach\'s input so far (in order, earliest first):');
-  req.rounds.forEach((round, i) => {
-    lines.push(`${i + 1}. ${round}`);
-  });
+
+  // Found live 2026-09-03: previously this only listed the coach's raw
+  // rounds, with NO memory of what Gant itself had already drafted. On a
+  // "Work on" call, that meant the coach's follow-up addition landed as a
+  // second, disconnected fragment rather than a refinement of Gant's own
+  // prior answer — Gant lost the thread and regressed to asking basic
+  // clarifying questions even after a genuinely good first refinement.
+  //
+  // Fix: `priorResponse` (supplied by the caller — always Gant's MOST
+  // RECENT response, updated after every single call, so this stays
+  // correct across a 2nd, 3rd, or any further "Work on" round, not just the
+  // first one) already reflects everything up to and including all but the
+  // LATEST round. So only the newest round is framed as new coach input;
+  // everything earlier is represented once, implicitly, via priorResponse —
+  // never listed a second time, which would double up and confuse the model
+  // about what's actually new.
+  if (req.rounds.length === 1 || !req.priorResponse) {
+    lines.push("Coach's observation:");
+    lines.push(req.rounds.join('\n'));
+  } else {
+    const newestRound = req.rounds[req.rounds.length - 1];
+    lines.push('Conversation so far:');
+    lines.push(
+      `You (Gant) most recently responded with a ${req.priorResponse.kind === 'question' ? 'clarifying question' : 'refined draft'}: "${req.priorResponse.text}"`
+    );
+    lines.push(`Coach, in response to that: ${newestRound}`);
+    lines.push('');
+    lines.push(
+      "Treat the coach's latest message above as building on, correcting, or answering your own prior response — never as a disconnected new observation. Produce an improved refinement (or, only if still genuinely unclear, one further short question) that reflects the whole conversation, not just this latest fragment."
+    );
+  }
 
   if (req.scope === 'player' && req.recentHistory && req.recentHistory.length > 0) {
     lines.push('');

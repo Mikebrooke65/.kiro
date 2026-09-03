@@ -415,3 +415,98 @@ fields (removed from Gant's scope entirely, see requirements Section 12.5).
   Work on → refine → tick) → confirm visible on the person-detail screen to the
   right viewers only → confirm the auto-summary reads sensibly → confirm a
   crossed entry saves nothing and logs the outcome.
+
+## Live bugs found and fixed during the repo owner's first real test (2026-09-03)
+
+The repo owner's first genuine end-to-end test (capture → refine → Save,
+then Work on) surfaced four real issues in one session — three mechanical,
+one a genuine functional gap in the refinement flow. All four fixed and
+live-verified same session; recorded here (and cross-linked from
+`NEXT-SESSION-NOTES.md`'s V1 status table) since they're real defects found
+after this spec's earlier tasks had already been marked done and
+live-verified — a reminder that "live-verified" via a scripted probe still
+doesn't replace an actual human clicking through the real screens.
+
+**1. Tick/Save silently failed ("colour changes but nothing happens").**
+Root cause: `game_feedback.game_id` is a required FK to `events` (migrations
+022/025), but nothing in the capture flow (the pending queue's "+ Add a
+note" button) creates or references an event — so the insert behind Tick
+was rejected every time. Fix: `gant-api.ts`'s `approve()` now creates a
+minimal ad-hoc `event_type='general'` placeholder event on the fly when no
+`eventId` was supplied, then uses that as `game_id`. `eventId` is now
+optional on `approve()`'s params. Live-verified:
+`scripts/verify-gant-approve-no-event.ts`.
+
+**2. The failure in (1) was invisible.** `GantReviewModal` and
+`GantCaptureSheet` are full-screen `z-[60]` overlays; their callers
+(`GantPendingQueue.tsx`) reported errors only to a page-level banner state
+that sits BEHIND that overlay — so a real failure produced no visible
+feedback at all, just the button's disabled state resetting. Fixed: both
+components now maintain their own `inlineError` state and always render it
+inside themselves; the `onError` callback prop is now optional (kept for a
+caller that also wants to log/track it, but no longer the only place the
+message appears). Also fixed a related staleness bug: `GantPendingQueue`
+never cleared its own banner state, so an old failed attempt's message
+could resurface later, invisibly, looking like a fresh unrelated error once
+a later modal closed — now cleared on every modal open and on `onResolved`.
+
+**3. A second RLS gap, surfaced only once (1) was fixed.** Fixing the event
+FK issue revealed `gant_outcomes` insert failing with "new row violates
+row-level security policy" (42501) even though the insert's own `WITH
+CHECK` was satisfied. Root cause: this codebase's `ApiClient.insert()`
+always does `.insert(record).select().single()` to return the created row,
+and Postgres requires an `INSERT ... RETURNING` to also satisfy the table's
+SELECT policy for the new row — migration 072 only granted SELECT to
+admins. Fix: migration `074_gant_outcomes_resolver_can_read_own.sql`, an
+additive SELECT policy letting a resolver read back only the outcome rows
+THEY logged (`resolved_by = auth.uid()`) — harmless (their own audit trail
+only) and consistent with the insert-then-return pattern used throughout
+this codebase. Run and confirmed live.
+
+**4. The real functional bug: "Work on" had no memory of Gant's own prior
+response.** The repo owner's first refined draft was, in their words,
+"100% perfect." Hitting "Work on" and adding one more sentence caused Gant
+to regress into asking basic clarifying questions (including the team's
+age group — already-known data) instead of simply improving on its own
+excellent first answer. Root cause: the follow-up call sent the coach's
+new addition alongside the original raw rounds, but never told Gant what
+IT had already drafted — so from Gant's perspective these were two
+disconnected fragments, not a continued conversation. Separately, nothing
+was ever passing the team's age group through, even though it's known data
+(the team's own `age_group` column) — Gant had a genuine reason to ask,
+even though a coach should never have to answer that mid-flow.
+
+Fix, across `gant-refine`'s request shape, `gant-api.ts`, and
+`GantReviewModal.tsx`:
+- Added `ageGroup` (already-known team data) and `priorResponse` (Gant's
+  own most recent output) to the review request. The system prompt now
+  explicitly instructs Gant never to ask for the age group and to use it to
+  pick which of the guardrails' two age-banded phase lists applies.
+- The Edge Function's user-message builder now reconstructs an actual
+  conversation on any round beyond the first: `priorResponse` represents
+  everything up to and including all-but-the-newest round (never listed a
+  second time, to avoid double-counting), and only the LATEST round is
+  framed as new coach input building on/answering that prior response.
+- `GantReviewModal` always passes its own current `response` state as
+  `priorResponse` on every call (both the initial refine-on-open call and
+  every subsequent "Work on" round) — since `response` is updated to the
+  latest result after every single call, this stays correct across a 2nd,
+  3rd, or any further round, not just the first "Work on."
+
+Live-verified with `scripts/verify-gant-workon-context.ts` (7/7 checks
+passed) via a real 3-round conversation: round 1 (a genuine observation,
+`ageGroup: 'Open'` supplied) → confirmed Gant did NOT ask about age group;
+round 2 ("Work on" with `priorResponse` supplied) → confirmed it did NOT
+regress into a question, and the refined text genuinely incorporated BOTH
+the original observation and the new addition into one coherent paragraph;
+round 3 (a further "Work on," with round 2's output as the new
+`priorResponse`) → confirmed it kept building coherently rather than
+resetting, and produced an appropriate feed-forward "work-on" following the
+club's guardrails structure, unprompted. A contrast run (deliberately
+omitting `priorResponse`, simulating the pre-fix behaviour) was also
+captured for the record, though the model's non-determinism means it
+doesn't reproduce the exact original regression every time — which is
+itself a reason the fix shouldn't rely on the model getting lucky.
+
+**Edge Function redeployed** (`supabase functions deploy gant-refine`) —
+this change does not ship with `git push`.

@@ -30,7 +30,8 @@ export interface GantCaptureSheetProps {
   eventId?: string;
   onClose: () => void;
   onCaptured: () => void;
-  onError: (message: string) => void;
+  /** Optional — this component always shows its own inline error too, same fix as GantReviewModal (found live 2026-09-03). */
+  onError?: (message: string) => void;
 }
 
 export function GantCaptureSheet({
@@ -47,12 +48,14 @@ export function GantCaptureSheet({
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [justCaptured, setJustCaptured] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   async function handleCapture() {
     const trimmed = text.trim();
     if (!trimmed) return;
 
     setSubmitting(true);
+    setInlineError(null);
     try {
       await gantApi.createPendingEntry({
         teamId,
@@ -68,7 +71,9 @@ export function GantCaptureSheet({
       // 3.1.3): the coach can keep capturing without navigating away.
       setTimeout(() => setJustCaptured(false), 1500);
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Could not capture this note.');
+      const message = err instanceof Error ? err.message : 'Could not capture this note.';
+      setInlineError(message);
+      onError?.(message);
     } finally {
       setSubmitting(false);
     }
@@ -105,6 +110,11 @@ export function GantCaptureSheet({
             <p className="text-sm font-medium" style={{ color: GANT_ACCENT }}>
               ✓ Captured — you can add another, or close this and review later.
             </p>
+          )}
+          {inlineError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-800">{inlineError}</p>
+            </div>
           )}
         </div>
 

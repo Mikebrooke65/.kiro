@@ -18,7 +18,11 @@ export interface ReviewRequestParams {
   scope: 'team' | 'player';
   subjectUserId?: string; // required when scope === 'player'
   eventType?: 'game' | 'training' | 'video_review';
+  /** The team's age group (e.g. "U9", "Open") — already-known data, never asked for. Found live 2026-09-03. */
+  ageGroup?: string;
   rounds: string[]; // the FULL accumulated round history, oldest first (Req 4.5)
+  /** Gant's own most recent response, so a "Work on" round is understood as building on it, not a disconnected new fragment. Found live 2026-09-03. */
+  priorResponse?: GantResponse;
   recentHistory?: { text: string; phaseTags: string[]; date: string }[]; // Req 4.9
 }
 
@@ -140,7 +144,7 @@ class GantApi extends ApiClient {
     playerId: string | null;
     feedbackType: 'team' | 'player';
     feedbackText: string;
-    eventId: string;
+    eventId?: string | null;
     eventType?: 'game' | 'training' | 'video_review' | null;
     phaseTags?: string[];
     roundCount: number;
@@ -148,8 +152,32 @@ class GantApi extends ApiClient {
     const { data: authData } = await this.supabase.auth.getUser();
     const resolvedBy = authData.user?.id;
 
+    // `game_feedback.game_id` is a required FK to a real `events` row
+    // (migrations 022/025). Capture (Task 5) doesn't currently ask the
+    // coach to pick or create an event — most entries have no eventId at
+    // all — so approve() creates a minimal ad-hoc placeholder event on the
+    // fly rather than failing the whole Tick. Always `event_type='general'`
+    // regardless of this note's own event_type label (stored separately on
+    // game_feedback via migration 069): 'general' has no extra required
+    // columns (unlike 'game', which needs opponent/home_away), so it's a
+    // safe, universal FK target. Found and fixed 2026-09-03 during live
+    // testing — see NEXT-SESSION-NOTES.md.
+    let eventId = params.eventId;
+    if (!eventId) {
+      const now = new Date().toISOString();
+      const adHocEvent = await this.insert<{ id: string }>('events', {
+        title: 'Progress Notes entry',
+        event_type: 'general',
+        event_date: now,
+        location: 'N/A',
+        target_teams: [params.teamId],
+        created_by: resolvedBy,
+      });
+      eventId = adHocEvent.id;
+    }
+
     await this.insert('game_feedback', {
-      game_id: params.eventId,
+      game_id: eventId,
       team_id: params.teamId,
       feedback_type: params.feedbackType,
       player_id: params.playerId ?? undefined,

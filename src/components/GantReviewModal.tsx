@@ -30,10 +30,20 @@ export interface GantReviewModalProps {
   entry: GantPendingEntry;
   playerName: string | null; // null for a team-scoped entry
   teamName: string;
+  /** The team's age group (e.g. "U9", "Open") — passed through to Gant so it never has to ask. Found live 2026-09-03. */
+  ageGroup?: string;
   onClose: () => void;
   /** Called after a successful Tick (approve) or Cross (discard) — the caller removes the entry from any local list. */
   onResolved: (outcome: 'ticked' | 'crossed', entryId: string) => void;
-  onError: (message: string) => void;
+  /**
+   * Optional — still called so a caller can also log/track the failure
+   * elsewhere, but no longer the only place the error is shown. Found live
+   * 2026-09-03: a caller that only surfaces this on the page BEHIND this
+   * modal (e.g. a banner state) leaves the failure completely invisible —
+   * the modal is a full-screen z-[60] overlay, so nothing under it is
+   * visible. This component now ALWAYS renders its own inline error too.
+   */
+  onError?: (message: string) => void;
 }
 
 type Phase = 'loading' | 'ready' | 'submitting-workon' | 'submitting-resolve' | 'error';
@@ -42,6 +52,7 @@ export function GantReviewModal({
   entry,
   playerName,
   teamName,
+  ageGroup,
   onClose,
   onResolved,
   onError,
@@ -53,8 +64,14 @@ export function GantReviewModal({
   );
   const [phase, setPhase] = useState<Phase>('loading');
   const [workOnText, setWorkOnText] = useState('');
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   const actions = resolveReviewActions(response);
+
+  function reportError(message: string) {
+    setInlineError(message);
+    onError?.(message);
+  }
 
   useEffect(() => {
     // Refine-on-open (Requirement 3.1.2, design.md Section 4.1): only call
@@ -72,13 +89,20 @@ export function GantReviewModal({
 
   async function callGant() {
     setPhase('loading');
+    setInlineError(null);
     try {
       const scope = playerName ? 'player' : 'team';
       const result = await gantApi.review({
         scope,
         subjectUserId: scope === 'player' ? entry.player_id ?? undefined : undefined,
         eventType: entry.event_type ?? undefined,
+        ageGroup,
         rounds: roundsAsPlainText(rounds),
+        // The entry's OWN cached response (if this is a re-open, not a
+        // brand-new entry) — always the latest one, since it's whatever was
+        // cached the last time Gant responded. Undefined on a genuinely
+        // first-ever call.
+        priorResponse: response ?? undefined,
       });
       setResponse(result);
       setRoundCountAtLastResponse(rounds.length);
@@ -86,7 +110,7 @@ export function GantReviewModal({
       setPhase('ready');
     } catch (err) {
       setPhase('error');
-      onError(err instanceof Error ? err.message : 'Gant could not refine this entry.');
+      reportError(err instanceof Error ? err.message : 'Gant could not refine this entry.');
     }
   }
 
@@ -94,7 +118,17 @@ export function GantReviewModal({
     const text = workOnText.trim();
     if (!text) return;
 
+    // Capture Gant's response as it stands RIGHT NOW, before this round's
+    // new call overwrites `response` state — this is always the most recent
+    // output regardless of how many "Work on" rounds have already
+    // happened, since `response` is updated to the latest result after
+    // every single call (both here and in callGant). Fixes the bug found
+    // live 2026-09-03 where a further "Work on" round had no memory of
+    // Gant's own prior answer and regressed to asking basic questions.
+    const priorResponse = response ?? undefined;
+
     setPhase('submitting-workon');
+    setInlineError(null);
     try {
       const newRounds = appendWorkOnRound(rounds, text, new Date().toISOString());
       await gantApi.addWorkOnRound(entry.id, newRounds, newRounds.length);
@@ -106,7 +140,9 @@ export function GantReviewModal({
         scope,
         subjectUserId: scope === 'player' ? entry.player_id ?? undefined : undefined,
         eventType: entry.event_type ?? undefined,
+        ageGroup,
         rounds: roundsAsPlainText(newRounds),
+        priorResponse,
       });
       setResponse(result);
       setRoundCountAtLastResponse(newRounds.length);
@@ -114,13 +150,14 @@ export function GantReviewModal({
       setPhase('ready');
     } catch (err) {
       setPhase('ready');
-      onError(err instanceof Error ? err.message : 'Gant could not refine this entry.');
+      reportError(err instanceof Error ? err.message : 'Gant could not refine this entry.');
     }
   }
 
   async function handleTick() {
     if (!response || response.kind !== 'refined') return;
     setPhase('submitting-resolve');
+    setInlineError(null);
     try {
       await gantApi.approve({
         entryId: entry.id,
@@ -136,12 +173,13 @@ export function GantReviewModal({
       onResolved('ticked', entry.id);
     } catch (err) {
       setPhase('ready');
-      onError(err instanceof Error ? err.message : 'Could not save this note.');
+      reportError(err instanceof Error ? err.message : 'Could not save this note.');
     }
   }
 
   async function handleCross() {
     setPhase('submitting-resolve');
+    setInlineError(null);
     try {
       await gantApi.discard({
         entryId: entry.id,
@@ -152,7 +190,7 @@ export function GantReviewModal({
       onResolved('crossed', entry.id);
     } catch (err) {
       setPhase('ready');
-      onError(err instanceof Error ? err.message : 'Could not discard this note.');
+      reportError(err instanceof Error ? err.message : 'Could not discard this note.');
     }
   }
 
@@ -181,6 +219,16 @@ export function GantReviewModal({
 
         {/* Scrollable content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-4">
+          {/* Found live 2026-09-03: an error reported only to the page BEHIND
+              this modal is invisible (this overlay is z-[60], full-screen) —
+              the button visually resets with no explanation. Always show it
+              here instead. */}
+          {inlineError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-800">{inlineError}</p>
+            </div>
+          )}
+
           {/* Original input — cumulative round history, always visible (Requirement 4.1) */}
           <div>
             <p className="text-xs font-medium text-gray-500 uppercase mb-1">Your notes</p>
