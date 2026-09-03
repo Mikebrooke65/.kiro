@@ -134,27 +134,62 @@ genuinely live — Task 2 can now build and test against it.
   - Fixture users (one coach, one player, throwaway `wcr-gant-probe-*`
     emails) created and fully cleaned up (auth + profile) on every exit path.
 
-## Task 3 — Review loop (D4) — buildable/testable before capture UI exists
+## Task 3 — Review loop (D4) — ✅ DONE + LIVE-VERIFIED 2026-09-03
 
-- [ ] 3.1 `src/lib/gant-api.ts`: `review(entryId)`, `approve(entryId)` (atomic:
-  insert `game_feedback` row + log `gant_outcomes('ticked')` + delete pending
-  row), `discard(entryId)` (log `gant_outcomes('crossed')` + delete pending row).
-- [ ] 3.2 Pure logic (`src/lib/gant-review-logic.ts`): round accumulation,
-  Tick/Cross/Work-on state transitions, response-kind → available-actions
-  mapping, **and the refine-on-open cache check** (call Gant only on an
-  entry's first open or after a new "Work on" round; otherwise render the
-  cached `last_gant_response` with no call — Req 3.1.2, decided 2026-09-03).
-  Unit-tested, including the "no repeat call on re-open" case.
-- [ ] 3.3 Review screen component: header (team/player/event/date), original-
-  input block (full round history), Gant response block (two visual states per
-  D4.1), action buttons conditional on response kind.
-- [ ] 3.4 "Work on" input reuses the same dictate-or-type control as capture
-  (Task 5) — factor out a shared input component.
-- [ ] 3.5 No round cap — verify the loop truly has no artificial limit.
-- [ ] 3.6 **Live verification (before building capture UI):** manually insert a
-  `gant_pending_entries` row via SQL, confirm the full review loop works
-  end-to-end (refine → question → Work on → refine → tick), confirms Task 2's
-  Edge Function and Task 3's screen independently of capture.
+- [x] 3.1 `src/lib/gant-api.ts`: `review()`, `cacheGantResponse()`,
+  `addWorkOnRound()`, `approve()` (in sequence: insert `game_feedback` with
+  `gant_assisted=true` + log `gant_outcomes('ticked')` + delete pending row),
+  `discard()` (log `gant_outcomes('crossed')` + delete pending row). Also
+  includes `createPendingEntry()`/`getMyPendingEntries()`/`getPendingEntry()`
+  (Task 5's capture methods, built alongside since they share the same file)
+  and `summarize()`/`upsertPlayerSummary()` (Task 7's methods, same reason).
+  **Note:** `approve()`/`discard()` are a sequence of client calls, not one
+  atomic server call — documented in the method's own comment as an accepted
+  tradeoff (a partial failure leaves the pending entry in place for retry
+  rather than losing data, since it's deleted last).
+- [x] 3.2 Pure logic (`src/lib/gant-review-logic.ts`): `appendWorkOnRound`,
+  `needsFreshGantCall` (the refine-on-open cache check — Req 3.1.2, decided
+  2026-09-03), `resolveReviewActions` (response-kind → available-actions
+  mapping), `roundsAsPlainText`. **15 unit/property tests, all passing**
+  (`src/lib/gant-review-logic.test.ts`), including the "no repeat call on
+  re-open" case and a property test confirming no artificial round cap exists
+  (Req 4.6).
+- [x] 3.3 Review screen component (`src/components/GantReviewModal.tsx`):
+  header (team/player/event/date, Progress Notes branding per Req 13), full
+  round-history block, Gant response block with the two visual states (solid
+  card for a refined comment, dashed amber outline for a clarifying question —
+  D4.1), action buttons conditional on response kind, plus a "close and leave
+  pending" affordance (Req 5.1 — the entry isn't force-resolved).
+- [x] 3.4 "Work on" input: a single `<textarea>` shared identically across the
+  first capture and every Work-on round — both typed and dictated text land in
+  the same field (dictation itself is Task 9, not yet wired, but the input
+  control makes no distinction between the two).
+- [x] 3.5 No round cap — confirmed by property test in 3.2 (arbitrary-length
+  round arrays, 0–50, always accepted) and structurally: nothing in
+  `gant-review-logic.ts` or the Edge Function enforces a limit.
+- [x] 3.6 **Live verification, done — `scripts/verify-gant-review-loop.ts`,
+  13/13 checks passed** against real Supabase data and real Anthropic calls
+  (confirms Task 2's Edge Function and Task 3's logic/API independently of
+  capture UI, which doesn't exist yet):
+  - Manually inserted a `gant_pending_entries` row (standing in for capture).
+  - First `review()` call → a refined comment.
+  - Cached the response on the pending entry.
+  - Added a genuine second "Work on" round (a different observation about the
+    same player) and called `review()` again with the FULL accumulated
+    history — **confirmed the refined output incorporated BOTH rounds**
+    (first touch AND the final-pass comment), following the Hattie feed-up/
+    back/forward structure from the placeholder guardrails almost verbatim
+    ("great to see it landing so well today... One area to keep building
+    on... The next step is...").
+  - `approve()` sequence: `game_feedback` row inserted with
+    `gant_assisted=true` and the correct `round_count`; `gant_outcomes` row
+    logged with `outcome='ticked'`; pending entry deleted; the saved feedback
+    read back and confirmed to match exactly.
+  - A second entry run through `discard()`: `gant_outcomes` logged with
+    `outcome='crossed'`, pending entry deleted, and confirmed **zero**
+    `game_feedback` rows were created for it.
+  - All fixtures (2 users, 1 team, 1 event, plus every created row) cleaned
+    up on exit — confirmed zero leftover data.
 
 ## Task 4 — Pending queue (D5) — filterable by team/player (decided 2026-09-03)
 
