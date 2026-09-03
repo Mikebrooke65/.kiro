@@ -148,13 +148,10 @@ before the pending row is deleted. This is the data the admin guardrails screen
 
 ### 3.1 V1 — single player/team capture
 
-Client-side only, no Edge Function call at capture time (Req 3.1.2's open
-question — **recommend: no refine-on-capture**, refinement is triggered when
-the coach opens the entry in Review, not eagerly at capture. This keeps
-quick-fire capture fast — dictate, submit, move to the next player — without
-waiting on an API round-trip each time. If live-tested experience shows coaches
-expect immediate feedback, this can change to "refine eagerly, but let the
-coach ignore it and keep capturing" without altering the data model).
+Client-side only, no Edge Function call at capture time — **DECIDED
+2026-09-03: refine-on-review-open**, not refine-on-capture (Req 3.1.2). This
+keeps quick-fire capture fast — dictate, submit, move to the next player —
+with zero API round-trips at capture time.
 
 - New component, likely `CaptureSheet` — opened from:
   - **Person-detail screen** (Section 4.4 below) — team/player already fixed.
@@ -194,12 +191,26 @@ Documented for later, so v1 doesn't foreclose it:
 ### 4.1 Screen
 
 One entry at a time, opened from the pending queue (Section 5) or immediately
-after capture if the coach chooses. Layout:
+after capture if the coach chooses.
+
+**Refine-on-open mechanic (Req 3.1.2, decided 2026-09-03):** opening an entry
+whose `last_gant_response` is null triggers the first `gantApi.review(entryId)`
+call (brief loading state, then the response renders). Opening an entry that
+already has a cached `last_gant_response` (from a previous visit, nothing
+added since) renders it **immediately from the cache — no repeat API call**.
+A fresh call only fires on: (a) an entry's very first open, or (b) after a
+"Work on" round submits new input (4.5). This avoids paying for/waiting on a
+Gant call every time a coach merely revisits an entry without adding anything.
+
+Layout:
 - **Header:** team · player name (or "Team") · event type · date.
 - **Original input block:** the coach's raw text as captured (read-only,
   cumulative across "Work on" rounds — show the full history, not just the
   latest round, so the coach can see what's already been said).
-- **Gant response block**, one of two visual states:
+- **Gant's response block** (Req 6.4b: coaches/admins know Gant by name as a
+  coherent presence — a literal "Gant" label on this box is a small UI-copy
+  choice for build time, not required by principle; the player/caregiver side
+  stays fully undisclosed regardless), one of two visual states:
   - **Refined comment** — normal card styling.
   - **Clarifying question** — distinct styling (e.g. amber/outline vs the
     refined comment's solid card) so the coach instantly knows which mode
@@ -238,6 +249,13 @@ interface GantRefineRequest {
   subjectUserId?: string;        // player_id only — never a name (Req 8.1)
   eventType?: 'game' | 'training' | 'video_review';
   rounds: string[];              // accumulated raw input, oldest first
+  recentHistory?: { text: string; phaseTags: string[]; date: string }[];
+    // Req 4.9 (in scope for v1) — the player's last 4 APPROVED notes, only
+    // when scope === 'player'. Gant uses this as context and may reference
+    // it in the refined text using guardrails-defined continuity language
+    // ("one of your known work-ons", etc.) — this is why the guardrails
+    // document (Section 9) needs explicit example phrasing for this, not
+    // just phases/model/tone.
 }
 
 interface GantRefineResponse {
@@ -271,10 +289,17 @@ there, in context") for both capturing *and* resolving.
   and/or a badge, similar in spirit to the existing Approvals-badge pattern on
   the Team tab — `resolveApprovalsTab` in `main-layout-logic.ts` is a good
   precedent to reuse/extend) — shows every unresolved `gant_pending_entries`
-  row for the current coach, grouped or flat (Req 5.2 — **default to flat
-  chronological, revisit if it doesn't scale**).
+  row for the current coach.
+- **Filterable by team, then by player (Req 5.2, decided 2026-09-03):** a team
+  selector (reuse the standard team-selector pattern) narrows the list to that
+  team's pending entries; an optional player selector within that further
+  narrows to one player. Underlying order is always `captured_at ASC` (or DESC
+  — confirm at build, oldest-first probably makes more sense for "work through
+  what's been waiting"), regardless of filter state. No filter applied = the
+  full flat chronological list across every team/player.
 - Tapping an entry opens Review (Section 4) directly.
-- Also reachable per-person, inline, per 4.4.
+- Also reachable per-person, inline, per 4.4 (already implicitly filtered to
+  that one player).
 
 ---
 
@@ -352,16 +377,13 @@ solve this by cramming visual changes into this spec's tasks.
 
 ## 7. Auto-summary
 
-- Triggered either **on screen open** (simple, one extra Gant call per view) or
-  **cached and refreshed on new-note-approval** (Req 7.2, still open — design
-  leans toward caching, implemented as: `gant-refine` gets a third `mode:
-  'summarize'`, called once at Tick-time for the affected player and the result
-  stored — e.g. a `latest_summary` column on... there's no natural per-player
-  settings row today, so this likely needs a small `gant_player_summaries`
-  table (`player_id` PK, `summary_text`, `generated_at`) — **decide at build
-  time whether this complexity is worth it over simply calling summarize live
-  on every screen-open**, which is far simpler and may be perfectly fine given
-  this screen isn't opened at high frequency).
+**DECIDED 2026-09-03: cached-on-approval, not live-on-open** (Req 7.2).
+`gant-refine` gets a third `mode: 'summarize'`, called once at Tick-time
+(Section 4.2's `approve()` flow) for the affected player, storing the result in
+a small `gant_player_summaries` table (`player_id` PK, `summary_text`,
+`generated_at`). The person-detail screen simply reads this table on open —
+no Gant call at view time, ever. Refreshes only when a new note is actually
+approved for that player.
 - `mode: 'summarize'` request carries the player's `subjectUserId` plus their
   last 10 notes' text/tags/dates — never their name (Req 7.3).
 
@@ -373,12 +395,12 @@ New desktop-only page (admin role), e.g. `src/pages/desktop/DesktopGantSettings.
 - Form fields mapping to `gant_guardrails`: phases-of-play editor (structured
   list — name + definition, matching the `jsonb` shape), feedback-model text
   area, tone-guide text area (with room for before/after examples).
-- A read-only **usage signal panel** (Section 4 below, from the requirements'
-  Section 10): a sortable table of recent `gant_outcomes` — round count,
-  outcome, team/player, date — so an admin can spot "these keep taking 5+
-  rounds" or "these get crossed a lot" and go edit the guardrails fields above.
-  Start simple: a plain sortable list is enough for v1 (Req 10.4); pattern-
-  detection/aggregation can come later.
+- **A CSV export of `gant_outcomes`** (round count, outcome, team/player, date)
+  — **decided 2026-09-03: no in-app analytics/insights panel for v1.** The
+  intent is to get clean data out for external review (e.g. feeding it to a
+  separate Claude conversation for guardrails-improvement suggestions), not to
+  build in-app pattern detection. A plain "Export usage data" button is
+  sufficient; no sorting/aggregation UI needed.
 - RLS: `gant_guardrails` write + `gant_outcomes` read are both admin-only
   (mirrors `club_settings`, migration 046).
 

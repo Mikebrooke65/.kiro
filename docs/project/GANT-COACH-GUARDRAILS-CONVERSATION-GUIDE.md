@@ -16,6 +16,7 @@ By the end of this process, we need three things, in plain written language (not
 1. **A list of phases of play** — the shared vocabulary the whole club uses to talk about what happens in a game
 2. **A feedback model** — what "good feedback" looks like at our club, structurally
 3. **A tone/style guide** — how we phrase things, especially "areas to work on," so it lands well with a player (and, for younger players, their caregiver reading it)
+4. **Continuity language** — how we reference a player's past notes naturally when writing a new one (see Part 3b) — this is a real, in-scope part of Gant's first build, not a future add-on
 
 ---
 
@@ -116,6 +117,41 @@ reproduction — not direct quotes.)*
 - Should feedback always be framed around effort/development rather than fixed ability?
 
 **Level of detail needed:** A handful of real before/after examples (a blunt version and a reworded, club-standard version side by side) will do more work here than a long written policy. If coaches can bring 3-5 examples of comments they've actually written or received, that's ideal raw material.
+
+---
+
+## Part 3b: Referencing history — the language for continuity
+
+**Added 2026-09-03 — this is a real, in-scope piece of Gant's first build, not
+a future idea.** When a coach writes a new note about a player, Gant is given
+that player's last 4 approved notes as context, and its refined output should
+draw on that naturally where relevant — not treat every note as if it's the
+first thing ever said about that player.
+
+**What we need:** club-standard phrasing for **referencing continuity** —
+noting that something has come up before, without it reading as robotic,
+repetitive, or like Gant is quoting a database back at the coach. Some starting
+shapes to react to and improve on:
+
+- "This is something we've discussed previously..."
+- "One of your known work-ons..."
+- "This builds on the comments around your first touch..."
+- "Since [last note's date/session], ..."
+
+**Key questions for coaches:**
+- Should this phrasing change depending on whether the player has **improved,
+  stayed the same, or regressed** on a recurring point? (E.g. "still an area to
+  keep building on" vs. "great to see this has clicked since last time.")
+- How often is too often? If every single note references history, does it
+  start to feel surveillance-like rather than supportive? Is there a sense of
+  "only reference it when it's genuinely useful, not as a habit"?
+- Does this need to differ for a younger player's parent reading it, vs. an
+  older player reading it themselves?
+
+**Level of detail needed:** a handful of example phrases (improved / same /
+regressed variants) is enough — this slots into the same tone guide as Part 3,
+it's just a specific recurring situation worth having agreed language for
+rather than leaving Gant to invent its own each time.
 
 ---
 

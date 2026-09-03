@@ -157,11 +157,18 @@ show Gant's response, and does not resolve anything.
   everywhere this screen appears (person-detail screen, Games-page quick link).
 - **3.1.2** — Submitting creates one pending entry: `{ team_id, player_id?
   (null = team feedback), raw_text, event_type?, event_id?, captured_at,
-  captured_by }`. No Gant call happens at capture time (refinement is a review-
-  time step, Section 4) — **OPEN: confirm whether refinement should actually
-  fire immediately on capture (as the original Gant docs assumed) or only when
-  the coach opens the entry for review.** This matters for the "quick-fire,
-  review later" behaviour in 3.1.3 — see the note there.
+  captured_by }`. **DECIDED 2026-09-03: no Gant call happens at capture time.**
+  Refinement is triggered only when the coach **opens that specific entry in
+  Review** (Section 4) — not eagerly at capture, and not for every entry in the
+  queue in the background. This keeps quick-fire capture (3.1.3) fast: dictate,
+  submit, move to the next player, with zero API round-trips slowing that down.
+  The tradeoff (a short wait the first time an entry is opened for review) is
+  accepted as the better cost/speed balance. **Mechanically:** opening a
+  pending entry that has never been processed triggers the first Gant call;
+  opening one that already has a cached response (from a prior visit, nothing
+  new added since) shows that cached response immediately with **no** repeat
+  call — a fresh call only happens on the entry's first open, or after a
+  "Work on" round adds new input (Section 4.5).
 - **3.1.3** — **Quick-fire capture:** a coach can capture several entries in a
   row (moving from player to player) with **no obligation to review each one
   immediately**. Every capture lands in the same pending queue regardless —
@@ -245,6 +252,23 @@ pending queue (Section 5).
 - **4.8** — On **✓ Tick**, the approved feedback is saved (Section 6) and the
   raw/unrefined input for that entry is discarded — it is not retained
   separately once approved.
+- **4.9** — **Progression awareness (in scope for v1, decided 2026-09-03).**
+  When refining an **individual** entry (not team-scoped), Gant is given that
+  player's **last 4 approved notes** (text/phase-tags/dates, User-ID-keyed —
+  same privacy rule as Section 8) as context for every refine call in the
+  review loop (4.2), not just at capture. Gant **uses** this context to shape
+  the refined wording, and — where genuinely relevant — **references it
+  naturally in club-standard language** (e.g. "this is something we've
+  discussed previously," "one of your known work-ons," "this builds on the
+  comments around your first touch...") rather than treating every note as
+  isolated. There is **no separate visible "progression flag" UI element** —
+  this shows up as part of the refined text itself, nothing new to build on
+  the review screen (Section 4.1). **The actual phrasing patterns are a
+  guardrails-document responsibility** (Section 9/10, and the coach working
+  session, Task 0) — the club needs to agree what this continuity language
+  should sound like, same as the tone guide for everything else Gant writes.
+  Team-scoped entries have no single "player" to pull history for, so this
+  does not apply to team feedback.
 
 ---
 
@@ -253,10 +277,20 @@ pending queue (Section 5).
 - **5.1** — Every captured entry (Section 3) lands in a **pending queue**,
   scoped to its capturing coach (and visible to admins). There is no forced
   immediate review.
-- **5.2** — A coach can see their outstanding pending entries and open any one
-  of them, in any order, to run it through the review loop (Section 4).
-  **OPEN:** exact list UX (flat/grouped/sorted) — not walked through yet; a
-  simple chronological list is a safe default to build first.
+- **5.2** — **DECIDED 2026-09-03.** A coach's pending queue is **filterable by
+  team and by player**, with the underlying order always **chronological**
+  within whatever filter is applied:
+  - **Filter to a team** → chronological list of that team's pending entries
+    (individual + team-scoped mixed together).
+  - **Filter to a specific player** (within a team) → chronological list of
+    just that player's pending entries.
+  - **No filter ("all")** → a single flat chronological list across every
+    team/player, which is realistically what a coach sees if they haven't
+    narrowed anything down.
+  Rationale: a coach realistically always works within a team context first
+  (they coach specific teams), sometimes narrows further to one player, and
+  falling back to "everything, in order" is a sensible default rather than a
+  separate case to design.
 - **5.3** — An entry leaves the queue only when it is **ticked** (saved) or
   **crossed** (discarded). There is no third "leave forever unresolved" outcome
   — an entry can sit in the queue indefinitely, but it always eventually
@@ -285,10 +319,24 @@ policy exists yet.
 - **6.4** — Gant's involvement is **never disclosed to players/caregivers**.
   Every note and the auto-summary read as being from the coach. No
   "AI-assisted" flag is ever shown to them (internal `gant_assisted` marker
-  stays admin/reporting-only). **OPEN:** whether the **coach** sees the name
-  "Gant" anywhere in their own capture/review screens, or whether that name is
-  purely internal (admin/build conversation only) even to coaches — ties into
-  the naming decision, Section 12.6.
+  stays admin/reporting-only). **The boundary is strictly players/caregivers.**
+- **6.4b** — **DECIDED 2026-09-03: coaches and admins know "Gant" by name and
+  experience it as a coherent, named presence — not necessarily an "AI
+  disclosure" label on every element.** For a coach/admin, Gant is part of
+  their working kit alongside the notepad, bibs, and balls — a real, named
+  coaching helper, not an anonymous or unattributed process. This doesn't
+  require "Gant" printed on every screen; it means the coach's experience of
+  the capture/review flow should feel like working *with* something
+  consistent and grounded in the club's own guardrails (Section 9) — the same
+  reason a product like Claude has a name and a stable voice rather than
+  reading as a faceless algorithm. Practical implication: naming/introducing
+  Gant in onboarding, help copy, and settings is expected and good; whether
+  the response box itself carries a literal "Gant" label vs. just presenting
+  as the natural next step in the flow is a small UI-copy decision for build
+  time, not a principle to resolve now. What stays fixed regardless: Gant
+  never posts unilaterally, the coach approves every word via tick/cross/
+  Work-on, and the **player/caregiver-facing side never mentions Gant or AI
+  involvement at all.**
 - **6.5** — **Team-scoped notes location (confirmed 2026-09-03):** team notes are
   **not** a separate screen. They live on the **Team roster page itself**, via
   a "Notes" link/section below the team name — same list-plus-summary pattern
@@ -303,12 +351,13 @@ policy exists yet.
 - **7.1** — The summary at the top of a person's notes feed (2.1.2) synthesizes
   roughly their **last 10** approved notes into a short overview. Exact N could
   become admin-configurable later; 10 is the agreed default.
-- **7.2** — **OPEN — generation timing:** computed fresh every time the screen
-  is opened (simplest, one extra API call per view), or generated/cached
-  whenever a new note is ticked and just re-displayed on open (cheaper, needs
-  an invalidation trigger on new-note-approval). Decide at build time; caching
-  on approval is the likely better default given this is read often and
-  written rarely.
+- **7.2** — **DECIDED 2026-09-03: cached-on-approval.** The summary is
+  generated once, when a new note is ticked (Section 4.8), and stored; the
+  screen simply displays the cached version on open, with **no** regeneration
+  just because the screen was opened. It only refreshes when a new note
+  actually lands. Chosen deliberately over live-on-open: the screen will be
+  opened far more often than new notes are approved, and there's no reason to
+  force an update to something that hasn't changed.
 - **7.3** — Same privacy rule as everywhere else (Section 8.1): the summary call
   only ever receives the player's User ID plus their note texts/dates/phase
   tags — never their name or other identifying fields.
@@ -379,16 +428,23 @@ Confirmed as a genuine v1 design element, not deferred.
 
 - **10.1** — The system tracks, per resolved entry: **how many "Work on" rounds
   it took**, and **whether it ended in tick or cross**.
-- **10.2** — These signals are aggregated and surfaced to **admins** (likely on
-  the same desktop guardrails screen, Section 9) — e.g. "entries needing 4+
-  rounds this month," "entries that were crossed" — so an admin can spot a
-  pattern (a phase that's consistently hard to tag, a tone rule coaches keep
-  fighting) and **manually update the guardrails document** in response.
-- **10.3** — This is explicitly **human-mediated**, not automatic. The model
-  does not retrain; a person reads the signal and edits text (ties to 8.2).
-- **10.4** — **OPEN:** the exact reporting view (raw list vs aggregated
-  pattern-detection) is not designed yet — reasonable to build simple first
-  (a sortable list of high-round-count / crossed entries) and refine later.
+- **10.2** — **DECIDED 2026-09-03: no in-app aggregated reporting/insights UI
+  for v1.** The goal isn't an in-app dashboard that tries to detect patterns
+  itself — it's **collecting the right data cleanly and making it easy to get
+  out**, so an admin can hand it externally to Claude (or similar) for
+  recommendations on updating the guardrails, on their own schedule. The
+  in-app build need is small: `gant_outcomes` (already designed) captures
+  round count, tick/cross outcome, team/player, and date per resolved entry;
+  the only addition needed is a simple **export** (a CSV download from the
+  admin guardrails screen, or documented direct database query access) — not
+  an analysis feature.
+- **10.3** — This is explicitly **human-mediated** (arguably human-**and**-
+  Claude-mediated, external to the app) — not automatic. The model that
+  refines feedback does not retrain itself; a person (optionally aided by a
+  separate Claude conversation working from the exported data) reads the
+  signal and edits the guardrails text directly (ties to 8.2).
+- **10.4** — **RESOLVED — no reporting-view design needed.** Superseded by
+  10.2: this is a data-export requirement, not a UI-design one.
 
 ---
 
@@ -424,13 +480,8 @@ Confirmed as a genuine v1 design element, not deferred.
 
 **Still genuinely open:**
 
-- **12.4** — **Progression review** (Gant noting "same issue as last time" while
-  a coach is writing a *new* note) was in the original Gant docs (§5) but not
-  walked through this session. It's related to, but distinct from, the
-  auto-summary (Section 7) — the summary is read-side (shown to the
-  player/caregiver); progression review would be write-side (shown to the
-  coach while capturing). Worth a dedicated short conversation — not designed
-  yet.
+- **12.4** — **Progression awareness — DECIDED 2026-09-03: in scope for v1, not
+  deferred.** See new Section 4.9 below (moved out of "deferred").
 - **12.5** — **Editable personal fields — removed from this spec's scope**
   (confirmed 2026-09-03; see Section 2.2). This belongs to a separate future
   conversation about `TeamPage.tsx`/registration-integrity: which fields are

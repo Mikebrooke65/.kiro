@@ -15,7 +15,9 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
 
 - [ ] 0.1 Run the coach session (3–5 coaches) per
   `docs/project/GANT-COACH-GUARDRAILS-CONVERSATION-GUIDE.md`; produce first-draft
-  phases-of-play list, feedback model, tone guide with before/after examples.
+  phases-of-play list, feedback model, tone guide with before/after examples,
+  **and continuity-language examples** (Part 3b — improved/same/regressed
+  variants for referencing a player's past notes naturally).
 - [ ] 0.2 Decide whether phase tags map into the existing Technical/Tactical/
   Physical/Mental report-card categories (affects how phases are defined now).
 - [ ] 0.3 Capture the output as seed content for `gant_guardrails` (Task 1.3).
@@ -47,8 +49,11 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
 - [ ] 2.2 Read `ANTHROPIC_API_KEY` + `gant_guardrails` at request time; assemble
   cached system prompt.
 - [ ] 2.3 Implement `mode: 'review'` — accepts `{ scope, subjectUserId?,
-  eventType?, rounds: string[] }`, calls Claude Sonnet, returns
-  `{ kind: 'refined'|'question', text, phaseTags? }`.
+  eventType?, rounds: string[], recentHistory? }`, calls Claude Sonnet, returns
+  `{ kind: 'refined'|'question', text, phaseTags? }`. When `scope === 'player'`,
+  fetch and include that player's last 4 approved notes as `recentHistory`
+  (Req 4.9) — Gant uses this as context and may reference it using the
+  guardrails' continuity language.
 - [ ] 2.4 Implement `mode: 'summarize'` — accepts a player's last-10 notes
   (text/tags/dates, User-ID keyed), returns a short synthesis. (D7)
 - [ ] 2.5 **Privacy boundary test:** assert no name/email/DOB can leave in
@@ -67,7 +72,10 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
   row), `discard(entryId)` (log `gant_outcomes('crossed')` + delete pending row).
 - [ ] 3.2 Pure logic (`src/lib/gant-review-logic.ts`): round accumulation,
   Tick/Cross/Work-on state transitions, response-kind → available-actions
-  mapping. Unit-tested.
+  mapping, **and the refine-on-open cache check** (call Gant only on an
+  entry's first open or after a new "Work on" round; otherwise render the
+  cached `last_gant_response` with no call — Req 3.1.2, decided 2026-09-03).
+  Unit-tested, including the "no repeat call on re-open" case.
 - [ ] 3.3 Review screen component: header (team/player/event/date), original-
   input block (full round history), Gant response block (two visual states per
   D4.1), action buttons conditional on response kind.
@@ -79,12 +87,16 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
   end-to-end (refine → question → Work on → refine → tick), confirms Task 2's
   Edge Function and Task 3's screen independently of capture.
 
-## Task 4 — Pending queue (D5)
+## Task 4 — Pending queue (D5) — filterable by team/player (decided 2026-09-03)
 
-- [ ] 4.1 "My pending notes" list — flat chronological (default per open
-  decision), reachable from the Coaching tab; reuse the `resolveApprovalsTab`
-  badge pattern (`main-layout-logic.ts`) for a pending-count badge.
-- [ ] 4.2 Tapping an entry opens Review (Task 3).
+- [ ] 4.1 "My pending notes" list, reachable from the Coaching tab; reuse the
+  `resolveApprovalsTab` badge pattern (`main-layout-logic.ts`) for a
+  pending-count badge.
+- [ ] 4.2 Team filter (reuse standard team-selector pattern) + optional player
+  filter within the selected team. Underlying order is always chronological
+  regardless of filter state; no filter = full flat list across all
+  teams/players (Req 5.2).
+- [ ] 4.3 Tapping an entry opens Review (Task 3).
 
 ## Task 5 — Capture v1 (D3.1)
 
@@ -118,6 +130,12 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
 - [ ] 6.5 Live RLS verification: player sees only their own notes + team notes;
   a device-logged-in child sees their own directly; caregiver sees linked
   child's; a player cannot read another's; coach/admin unaffected.
+- [ ] 6.6 **Disclosure boundary check (Req 6.4/6.4b):** confirm the coach/
+  admin-facing side (Tasks 3, 5 — onboarding/help copy, and optionally the
+  response box) can name "Gant" as a coherent presence, while the
+  player/caregiver-facing notes feed (this task) never mentions Gant or AI
+  involvement anywhere, under any circumstance. Verify both sides
+  deliberately, not just the disclosed one.
 
 ## Task 6b — Team-notes on the Team roster page (Req 6.5, D6.3) — small, independent
 
@@ -140,20 +158,26 @@ guardrails, but Gant isn't launchable with real content until Task 0 lands.
   everywhere the feature appears — a single sweep/checklist across those
   tasks rather than a separate component to build.
 
-## Task 7 — Auto-summary (D7)
+## Task 7 — Auto-summary (D7) — cached-on-approval (decided 2026-09-03)
 
-- [ ] 7.1 Decide caching approach (live-on-open vs cached-on-approval + a
-  `gant_player_summaries` table) — default to live-on-open for simplicity
-  unless load testing says otherwise.
-- [ ] 7.2 Wire `mode: 'summarize'` into the person-detail screen, pinned above
-  the notes feed.
+- [ ] 7.1 Migration: `gant_player_summaries` (`player_id` PK → users.id,
+  `summary_text`, `generated_at`). RLS mirrors the person-detail read rule
+  (Task 6.1) — same viewers as the notes feed.
+- [ ] 7.2 Implement `mode: 'summarize'` in `gant-refine` (see Task 2.4);
+  trigger it from `approve()` (Task 3.1) whenever a note is ticked, upserting
+  the affected player's `gant_player_summaries` row. Team-scoped ticks don't
+  trigger this (no single player to summarise for).
+- [ ] 7.3 Person-detail screen (Task 6) simply reads the cached row on open —
+  no Gant call at view time. Pin above the notes feed (Req 2.1.2).
 
 ## Task 8 — Guardrails admin screen + usage-signal panel (D8)
 
 - [ ] 8.1 `src/pages/desktop/DesktopGantSettings.tsx` (admin-only): phases-of-
   play editor, feedback-model text area, tone-guide text area.
-- [ ] 8.2 Usage-signal panel: sortable list from `gant_outcomes` (round count,
-  outcome, team/player, date) — simple list first, aggregation later (Req 10.4).
+- [ ] 8.2 **CSV export button for `gant_outcomes`** (round count, outcome,
+  team/player, date) — decided 2026-09-03: no in-app analytics/insights UI for
+  v1, just clean exportable data for external review (e.g. feeding it to
+  Claude separately for guardrails-improvement suggestions).
 - [ ] 8.3 Wire Task 0's coach-session output in as the real seed content once
   available (replacing any placeholder from Task 1.3).
 
