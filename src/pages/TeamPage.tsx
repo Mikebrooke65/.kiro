@@ -46,6 +46,8 @@ import { AddPlayerModal, type AddPlayerOutcome } from '../components/team/AddPla
 import { AddCaregiverModal } from '../components/team/AddCaregiverModal';
 import { RemoveMyCaregiverModal } from '../components/team/RemoveMyCaregiverModal';
 import { RemoveTeamMemberModal } from '../components/team/RemoveTeamMemberModal';
+import { GantPersonDetailModal } from '../components/GantPersonDetailModal';
+import { GantNotesPanel } from '../components/GantNotesPanel';
 import { caregiversApi } from '../lib/caregivers-api';
 import { ApiError } from '../lib/api-client';
 import {
@@ -248,6 +250,15 @@ export function TeamPage() {
     roleLabel: string;
     isOwnRow: boolean;
   } | null>(null);
+
+  // gant-ai-feedback-assistant, Task 6/6b — the person-detail modal (Progress
+  // Notes for whichever roster row was tapped) and the team-level notes
+  // section's expand/collapse state (Requirement 6.5).
+  const [gantDetailFor, setGantDetailFor] = useState<{
+    playerId: string;
+    playerName: string;
+  } | null>(null);
+  const [showTeamNotes, setShowTeamNotes] = useState(false);
 
   // streamlined-invites-and-child-access, Decision 1 — the caregiver's
   // confirm-or-correct copy of a pending child's name/DOB, and this row's
@@ -764,6 +775,29 @@ export function TeamPage() {
             </div>
           </div>
 
+          {/* gant-ai-feedback-assistant, Requirement 6.5 (decided 2026-09-03):
+              team-scoped Progress Notes live HERE, on the roster page
+              itself, not a separate screen — a "Notes" link below the team
+              name/selector, same summary-card+feed pattern as the
+              person-detail screen, just scoped to the team. */}
+          {selection.selectedTeamId && (
+            <div className="px-4 mb-4">
+              <button
+                onClick={() => setShowTeamNotes((s) => !s)}
+                className="text-sm font-medium flex items-center gap-1"
+                style={{ color: '#d97706' }}
+              >
+                {showTeamNotes ? 'Hide' : 'Show'} Team Progress Notes
+                <ChevronDown className={`w-4 h-4 transition-transform ${showTeamNotes ? 'rotate-180' : ''}`} />
+              </button>
+              {showTeamNotes && (
+                <div className="mt-2">
+                  <GantNotesPanel scope="team" subjectId={selection.selectedTeamId} />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Prompt to select a team when 2+ teams and none chosen (Req 3.13) */}
           {selection.prompt && !selection.selectedTeamId && (
             <div className="px-4">
@@ -932,10 +966,28 @@ export function TeamPage() {
                       membership.is_coach &&
                       canRemoveCoachFlag({ isOwnRow, hasEditAuthority, teamType: roster.teamType });
 
+                    // gant-ai-feedback-assistant, Requirement 1.1/1.2: any
+                    // player row (not coach/manager rows — Progress Notes
+                    // are about players) can be opened for its Progress
+                    // Notes, once it's a real, active membership (not a
+                    // pending consent row). Write access inside that screen
+                    // (Req 6.2) is narrower than general team-edit
+                    // authority — coach/admin only, NOT a plain Manager —
+                    // `currentUserRoles` already folds `is_coach` in as a
+                    // synthetic 'coach' entry (see `fetchRoster`'s comment),
+                    // so this correctly includes a coach-authority Manager
+                    // without including an ordinary one.
+                    const canOpenGantDetail = !entry.pending && entry.roles.includes('player');
+                    const canAddGantNote = isClubAdmin || roster.currentUserRoles.includes('coach');
+
                     return (
                       <RosterRow
                         key={entry.userId}
                         entry={entry}
+                        canOpenGantDetail={canOpenGantDetail}
+                        onOpenGantDetail={() =>
+                          setGantDetailFor({ playerId: entry.userId, playerName: entry.displayName })
+                        }
                         capabilities={capabilities}
                         canRespondToRequest={canRespondToRequest}
                         canRemoveOwnCaregiver={isOwnRow && roster.canSelfRemoveCaregiver}
@@ -1081,6 +1133,20 @@ export function TeamPage() {
           }
         />
       )}
+
+      {/* gant-ai-feedback-assistant, Task 6 — the person-detail Progress
+          Notes screen, reachable via any real player row's tap target
+          (`canOpenGantDetail`, resolved per-row in the roster map above). */}
+      {gantDetailFor && selectedOption && (
+        <GantPersonDetailModal
+          playerId={gantDetailFor.playerId}
+          playerName={gantDetailFor.playerName}
+          teamId={selection.selectedTeamId!}
+          teamName={selectedOption.label}
+          canAddNote={isClubAdmin || (roster?.currentUserRoles.includes('coach') ?? false)}
+          onClose={() => setGantDetailFor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1142,6 +1208,10 @@ interface RosterRowProps {
    *  one caregiver linked. See `roster-logic.ts`'s `canSelfRemoveCaregiver`. */
   canRemoveOwnCaregiver: boolean;
   onRemoveOwnCaregiver: () => void;
+  /** gant-ai-feedback-assistant, Requirement 1.1: true for any real (not
+   *  pending) player row — opens that player's Progress Notes. */
+  canOpenGantDetail: boolean;
+  onOpenGantDetail: () => void;
   /** streamlined-invites-and-child-access, Decision 1 — see the call site's
    *  own comment for exactly who this is true for. */
   canRespondToRequest: boolean;
@@ -1182,6 +1252,8 @@ function RosterRow({
   onRemoveCaregiver,
   canRemoveOwnCaregiver,
   onRemoveOwnCaregiver,
+  canOpenGantDetail,
+  onOpenGantDetail,
   canRespondToRequest,
   detailsAlreadyConfirmed,
   respondEdit,
@@ -1198,7 +1270,18 @@ function RosterRow({
   return (
     <div className={`px-4 py-3 ${greyed ? 'opacity-50' : ''}`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        {/* gant-ai-feedback-assistant, Requirement 1.1: tapping a player row
+            opens their Progress Notes — the single entry point, no separate
+            dedicated page with its own pickers. Not a <button> wrapping the
+            whole row, since the row's own action buttons (Make Manager,
+            Remove, etc.) need independent click targets — the name/contact
+            block itself is the tap target instead. */}
+        <div
+          className={`min-w-0 ${canOpenGantDetail ? 'cursor-pointer' : ''}`}
+          onClick={canOpenGantDetail ? onOpenGantDetail : undefined}
+          role={canOpenGantDetail ? 'button' : undefined}
+          tabIndex={canOpenGantDetail ? 0 : undefined}
+        >
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-gray-900 truncate">{entry.displayName}</p>
             {entry.roles.map((role) => (

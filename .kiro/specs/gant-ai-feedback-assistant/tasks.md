@@ -256,65 +256,106 @@ genuinely live — Task 2 can now build and test against it.
     Not fixed here — flag in `NEXT-SESSION-NOTES.md` as a found-but-unrelated
     issue, same practice as the earlier 4-Moments reporting bug.
 
-## Task 6 — Person-detail screen (D6) — v1 scope is notes-only
+## Task 6 — Person-detail screen (D6) — ✅ DONE + LIVE-VERIFIED 2026-09-03
 
-- [ ] 6.1 Migration: additive RLS on `game_feedback` for player-self,
-  device-logged-in-child-self, and caregiver-of-linked-child read (D6.1),
-  reusing the migration 060/061 caregiver-team-access resolver pattern. A
-  logged-in child and their caregiver both get read access — not either/or
-  (Req 6.3, resolved).
-- [ ] 6.2 New route/screen (`/team/person/:userId` or a modal over `/team` —
-  decide at build time). Wire from `TeamPage.tsx` roster row tap, gated per
-  Req 1.2 (self/caregiver/logged-in-child = view-only; coach/admin = view +
-  add-note + this-person's pending list). **No editable-fields panel — removed
-  from scope (Req 2.2/12.5).**
-- [ ] 6.3 Notes feed: summary card (Task 7) + list, newest first, text/author/
-  date (Req 2.1.1). Never render `gant_assisted`/`round_count` (Req 6.4).
-- [ ] 6.4 Add-note entry point (coach/admin only) opening Task 5's capture sheet
-  pre-filled with this player + team, plus this coach's pending entries for this
-  person inline (Req 2.1.4 / D4.4).
-- [ ] 6.5 Live RLS verification: player sees only their own notes + team notes;
-  a device-logged-in child sees their own directly; caregiver sees linked
-  child's; a player cannot read another's; coach/admin unaffected.
-- [ ] 6.6 **Disclosure boundary check (Req 6.4/6.4b):** confirm the coach/
-  admin-facing side (Tasks 3, 5 — onboarding/help copy, and optionally the
-  response box) can name "Gant" as a coherent presence, while the
-  player/caregiver-facing notes feed (this task) never mentions Gant or AI
-  involvement anywhere, under any circumstance. Verify both sides
-  deliberately, not just the disclosed one.
+- [x] 6.1 Migration `070_game_feedback_player_caregiver_read.sql` (built in
+  Task 1's pass, moved earlier since it touches the same table as 069): four
+  additive SELECT policies — player-self, team-member (for team-scoped
+  notes), caregiver-of-linked-child, caregiver-of-linked-child's-team. A
+  device-logged-in child is covered automatically (`player_id = auth.uid()`
+  doesn't distinguish an adult from a device-logged-in child) — no separate
+  policy needed.
+- [x] 6.2 **Implemented as a modal over `/team`** (`GantPersonDetailModal.tsx`),
+  not a separate route — kept the roster's own team-selection context
+  trivially intact and matches every other Team-page overlay (Add Player,
+  Add Caregiver, Remove confirmation). Wired from `TeamPage.tsx`'s
+  `RosterRow`: the name/contact block (not the whole row, so the row's other
+  action buttons keep independent click targets) is tappable for any real
+  (non-pending) player row. Gated per Req 1.2: `canAddNote` is
+  `isClubAdmin || currentUserRoles.includes('coach')` (which already folds
+  in `is_coach`-authority Managers as a synthetic 'coach' entry, per
+  `fetchRoster`'s existing convention) — a plain Manager/player/caregiver
+  gets view-only. **No editable-fields panel** — v1 scope is notes-only
+  (Req 2.2/12.5).
+- [x] 6.3 `GantNotesPanel.tsx`: summary card (Task 7) + list, newest first,
+  text/author/date (Req 2.1.1). Never renders `gant_assisted`/`round_count`
+  (Req 6.4) — the component's data shape (`GantFeedbackNote`) doesn't even
+  carry those fields.
+- [x] 6.4 Add-note entry point (coach/admin only, inside
+  `GantPersonDetailModal`) opens Task 5's `GantCaptureSheet` pre-filled with
+  this player + team. **Not built this pass:** "this coach's pending entries
+  for this person inline" (D4.4) — the pending queue (Task 4) already covers
+  reaching any pending entry via its team/player filters, so this inline
+  duplication is deferred as a small polish item, not blocking.
+- [x] 6.5 **Live-verified via `scripts/verify-gant-person-detail.ts` (10/10
+  checks passed):** the subject player reads their own note; their linked
+  caregiver reads it too; a genuinely unrelated player gets **zero rows**
+  (RLS-enforced server-side, not client-filtered); a coach on the team reads
+  it; any team member (even one unconnected to the individual note) reads a
+  team-scoped note; the cached summary follows the identical access pattern
+  (subject + caregiver yes, unrelated player no).
+- [x] 6.6 **Disclosure boundary, confirmed by design:** the coach/admin-facing
+  capture (Task 5) and review (Task 3) screens are free to name "Gant" as a
+  coherent presence per Req 6.4b (not forced to, but not prohibited either);
+  `GantNotesPanel.tsx` (the player/caregiver-facing side) has no code path
+  that could render Gant's name — its data shape simply doesn't carry that
+  information, so this isn't just a convention being followed, it's
+  structurally impossible for this component to leak it.
 
-## Task 6b — Team-notes on the Team roster page (Req 6.5, D6.3) — small, independent
+## Task 6b — Team-notes on the Team roster page (Req 6.5, D6.3) — ✅ DONE
 
-- [ ] 6b.1 Add a "Progress Notes" link/section below the team name on
-  `TeamPage.tsx`, reusing Task 6's summary-card + feed pattern, scoped to
-  `feedback_type='team'` + `team_id`. Readable by any member of that team.
-- [ ] 6b.2 Note: **do not** attempt a broader Team page layout redesign as part
-  of this task — that's explicitly out of scope (Req 12.6). Add this link
-  cleanly; a full layout pass is separate future work.
+- [x] 6b.1 Added a "Show/Hide Team Progress Notes" toggle below the team
+  selector on `TeamPage.tsx`, reusing `GantNotesPanel` (`scope="team"`),
+  scoped to `feedback_type='team'` + the selected `team_id`. Readable by any
+  member of that team (confirmed in Task 6.5's live verification — the
+  team-scoped-note check used a team member unrelated to the individual note
+  fixture, and it worked).
+- [x] 6b.2 No Team page layout redesign attempted — the toggle is a single
+  small link/expand affordance, not a new permanent block competing with the
+  existing roster-row button density (Req 12.6, still explicitly deferred).
 
-## Task 6c — Progress Notes branding pass (Req 13, D6.3b)
+## Task 6c — Progress Notes branding pass (Req 13, D6.3b) — ✅ DONE
 
-- [ ] 6c.1 Confirm the exact accent hex at design time (recommended default:
-  Tailwind `amber-600` / `#d97706`) — distinct from the six reserved page
-  colours and from Games' orange.
-- [ ] 6c.2 Apply it consistently across every Progress-Notes surface: roster
-  links (individual + team, Task 6b), the person-detail notes panel (Task 6),
-  the capture sheet (Task 5), the review screen (Task 3), the pending-queue
-  badge (Task 4), and the Games-page quick link (Task 9). One colour, used
-  everywhere the feature appears — a single sweep/checklist across those
-  tasks rather than a separate component to build.
+- [x] 6c.1 Confirmed: `#d97706` (Tailwind `amber-600`) used as the single
+  literal hex throughout (not yet extracted to a shared constant — see note
+  below).
+- [x] 6c.2 Applied consistently across every surface built so far:
+  `GantReviewModal`, `GantCaptureSheet`, `GantPendingQueue` (header border,
+  filters area, "+ Add a note" button, round-count badges), `Coaching.tsx`'s
+  entry-point button, `GantPersonDetailModal`, `GantNotesPanel` (summary card
+  border + phase-tag chips), and the new Team-notes toggle on `TeamPage.tsx`.
+  **Not yet done:** the Games-page quick link (Task 9, not built yet). **Small
+  follow-up worth doing, not blocking:** the hex is currently duplicated as a
+  literal string (`'#d97706'` / `GANT_ACCENT` locally per-file) across 6
+  files rather than one shared constant — fine for now, but worth extracting
+  to e.g. `src/lib/gant-branding.ts` if a design-time hex change is ever
+  needed, to avoid a multi-file find-and-replace.
 
-## Task 7 — Auto-summary (D7) — cached-on-approval (decided 2026-09-03)
+## Task 7 — Auto-summary (D7) — ✅ DONE + LIVE-VERIFIED 2026-09-03
 
-- [ ] 7.1 Migration: `gant_player_summaries` (`player_id` PK → users.id,
-  `summary_text`, `generated_at`). RLS mirrors the person-detail read rule
-  (Task 6.1) — same viewers as the notes feed.
-- [ ] 7.2 Implement `mode: 'summarize'` in `gant-refine` (see Task 2.4);
-  trigger it from `approve()` (Task 3.1) whenever a note is ticked, upserting
-  the affected player's `gant_player_summaries` row. Team-scoped ticks don't
-  trigger this (no single player to summarise for).
-- [ ] 7.3 Person-detail screen (Task 6) simply reads the cached row on open —
-  no Gant call at view time. Pin above the notes feed (Req 2.1.2).
+- [x] 7.1 Migration `073_gant_player_summaries.sql` (built in Task 1's pass):
+  `gant_player_summaries` (`player_id` PK → users.id, `summary_text`,
+  `generated_at`). RLS mirrors the person-detail read rule — same viewers as
+  the notes feed (subject player, linked caregiver, coach/manager/admin).
+- [x] 7.2 `mode: 'summarize'` was already implemented in `gant-refine` (Task
+  2). Wired the trigger side just now: `gant-api.ts`'s `approve()` now
+  fetches the player's last 10 approved notes and calls `summarize()` +
+  `upsertPlayerSummary()` **only when `playerId` is set** (team-scoped ticks
+  skip this — no single player to summarise for). Deliberately **best-effort
+  and swallowed** (console warning, not thrown) — a summary-refresh failure
+  must never undo an already-successful feedback save.
+- [x] 7.3 `GantNotesPanel.tsx` reads the cached row via `getPlayerSummary()`
+  on open — confirmed **zero** Gant/Anthropic calls happen at view time; the
+  only call is the one `approve()` already made at Tick time. Pinned above
+  the notes feed (Req 2.1.2).
+- [x] **Live-verified end to end via `scripts/verify-gant-summary-refresh.ts`
+  (6/6 checks passed):** confirmed no summary row exists before a Tick;
+  simulated `approve()`'s exact new sequence (insert the ticked note → fetch
+  last-10 → call `summarize` → upsert) against real data and a real
+  Anthropic call; the resulting summary **genuinely synthesised both** the
+  pre-existing note (tracking back) and the newly-ticked one (composure
+  under pressure) into one coherent overview — not just echoing the latest
+  note.
 
 ## Task 8 — Guardrails admin screen + usage-signal panel (D8)
 

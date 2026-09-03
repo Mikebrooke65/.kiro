@@ -170,6 +170,29 @@ class GantApi extends ApiClient {
     });
 
     await this.delete('gant_pending_entries', params.entryId);
+
+    // Cached-on-approval auto-summary (Req 7.2, decided 2026-09-03): refresh
+    // ONLY on an individual tick, not a team-scoped one (no single player to
+    // summarise for). Best-effort — a summary failure must never undo an
+    // already-successful save, so it's swallowed with a console warning
+    // rather than thrown; the person-detail screen simply shows the
+    // previous (or no) summary until the next successful tick.
+    if (params.playerId) {
+      try {
+        const recentNotes = await this.getPlayerNotes(params.playerId);
+        const last10 = recentNotes.slice(0, 10).map((n) => ({
+          text: n.text,
+          phaseTags: n.phaseTags,
+          date: n.date,
+        }));
+        if (last10.length > 0) {
+          const { summaryText } = await this.summarize({ subjectUserId: params.playerId, notes: last10 });
+          await this.upsertPlayerSummary(params.playerId, summaryText);
+        }
+      } catch (err) {
+        console.warn('Progress Notes: could not refresh the auto-summary after Tick', err);
+      }
+    }
   }
 
   /**
@@ -221,6 +244,70 @@ class GantApi extends ApiClient {
 
     if (error) throw new ApiError(error.message);
   }
+
+  // -- Reads for the person-detail / team-notes screens (Task 6/6b) -----------
+
+  /**
+   * A player's approved individual Progress Notes, newest first (Req 2.1.1).
+   * Relies on migration 070's RLS: the player themselves, a linked
+   * caregiver, or a coach/manager/admin. A plain other player/caregiver's
+   * query simply returns zero rows — RLS enforced, not filtered client-side.
+   */
+  async getPlayerNotes(playerId: string): Promise<GantFeedbackNote[]> {
+    const { data, error } = await this.supabase
+      .from('game_feedback')
+      .select('id, feedback_text, phase_tags, created_at, created_by:users!created_by(first_name, last_name)')
+      .eq('feedback_type', 'player')
+      .eq('player_id', playerId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new ApiError(error.message);
+    return (data ?? []).map(mapFeedbackRow);
+  }
+
+  /** A team's approved team-scoped Progress Notes, newest first (Req 6.5). */
+  async getTeamNotes(teamId: string): Promise<GantFeedbackNote[]> {
+    const { data, error } = await this.supabase
+      .from('game_feedback')
+      .select('id, feedback_text, phase_tags, created_at, created_by:users!created_by(first_name, last_name)')
+      .eq('feedback_type', 'team')
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new ApiError(error.message);
+    return (data ?? []).map(mapFeedbackRow);
+  }
+
+  /** The cached auto-summary for a player, or null if none exists yet (Req 7.2). */
+  async getPlayerSummary(playerId: string): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from('gant_player_summaries')
+      .select('summary_text')
+      .eq('player_id', playerId)
+      .maybeSingle();
+
+    if (error) throw new ApiError(error.message);
+    return data?.summary_text ?? null;
+  }
+}
+
+export interface GantFeedbackNote {
+  id: string;
+  text: string;
+  phaseTags: string[];
+  authorName: string;
+  date: string;
+}
+
+function mapFeedbackRow(row: any): GantFeedbackNote {
+  const author = row.created_by;
+  return {
+    id: row.id,
+    text: row.feedback_text,
+    phaseTags: row.phase_tags ?? [],
+    authorName: author ? `${author.first_name} ${author.last_name}` : 'Coach',
+    date: row.created_at,
+  };
 }
 
 /**
