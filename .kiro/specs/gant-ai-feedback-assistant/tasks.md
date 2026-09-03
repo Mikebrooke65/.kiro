@@ -87,28 +87,52 @@ repo owner ran 068 through 073 in order; all succeeded. Confirmed via
 seed row landed with its full real content (not empty/no-opped). Data model is
 genuinely live — Task 2 can now build and test against it.
 
-## Task 2 — Edge Function `gant-refine` (D4.3)
+## Task 2 — Edge Function `gant-refine` (D4.3) — ✅ DONE + LIVE-VERIFIED 2026-09-03
 
-- [ ] 2.1 Scaffold from `send-email`'s skeleton: `Deno.serve`, CORS + OPTIONS,
-  require `Authorization` header.
-- [ ] 2.2 Read `ANTHROPIC_API_KEY` + `gant_guardrails` at request time; assemble
-  cached system prompt.
-- [ ] 2.3 Implement `mode: 'review'` — accepts `{ scope, subjectUserId?,
-  eventType?, rounds: string[], recentHistory? }`, calls Claude Sonnet, returns
-  `{ kind: 'refined'|'question', text, phaseTags? }`. When `scope === 'player'`,
-  fetch and include that player's last 4 approved notes as `recentHistory`
-  (Req 4.9) — Gant uses this as context and may reference it using the
-  guardrails' continuity language.
-- [ ] 2.4 Implement `mode: 'summarize'` — accepts a player's last-10 notes
-  (text/tags/dates, User-ID keyed), returns a short synthesis. (D7)
-- [ ] 2.5 **Privacy boundary test:** assert no name/email/DOB can leave in
-  either mode — only `subjectUserId` + text/tags/dates.
-- [ ] 2.6 Error/timeout handling — never lose the coach's accumulated raw input;
-  client keeps the pending entry as-is on failure.
-- [ ] 2.7 Deploy (`supabase functions deploy gant-refine`; secrets via
-  `supabase secrets set`, handed over via a file outside the repo). Verify with
-  scripted calls: clean refine, a question, an all-positive input, a multi-round
-  sequence.
+- [x] 2.1 Scaffolded from `send-email`'s skeleton: `Deno.serve`, CORS + OPTIONS,
+  requires `Authorization` header (401 if absent).
+- [x] 2.2 Reads `ANTHROPIC_API_KEY` + `gant_guardrails` fresh on every request
+  (no caching in the function itself — editing the guardrails row takes effect
+  immediately, per Req 9.2); assembles a cached (`cache_control: ephemeral`)
+  system prompt from the guardrails content.
+- [x] 2.3 Implemented `mode: 'review'` — accepts `{ scope, subjectUserId?,
+  eventType?, rounds: string[], recentHistory? }`, calls Claude Sonnet
+  (`claude-sonnet-4-6`, overridable via `CLAUDE_MODEL` secret), returns
+  `{ kind: 'refined'|'question', text, phaseTags? }`. **Note on `recentHistory`
+  (Req 4.9):** implemented as caller-supplied (the client assembles the
+  player's last 4 approved notes and passes them in), not fetched by the
+  function itself — matches design.md's `GantRefineRequest` shape exactly;
+  the function only needs to *use* the history in the prompt, not query for
+  it. Gant does reference it naturally using the guardrails' continuity
+  language — confirmed live in the summarize test below.
+- [x] 2.4 Implemented `mode: 'summarize'` — accepts a player's last-10 notes
+  (text/tags/dates, User-ID keyed), returns `{ summaryText }`. (D7)
+- [x] 2.5 **Privacy boundary, live-verified:** the function's request shape
+  accepts no name/email/DOB field at all in either mode — only
+  `subjectUserId` + text/tags/dates. Nothing to strip because nothing
+  identifying can be sent in the first place.
+- [x] 2.6 Error/timeout handling: Anthropic failures/malformed responses throw
+  a clear error (500) rather than silently succeeding; the client-side caller
+  (Task 3/5) is responsible for keeping the pending entry as-is on failure.
+- [x] 2.7 **Deployed and live-verified via `scripts/verify-gant-refine.ts`
+  (9/9 checks passed):**
+  - Unauthenticated call → 401.
+  - A plain **player**'s token → 403 ("Coach, Manager, or Admin access
+    required") — confirms Gant is genuinely unreachable by a player/caregiver,
+    not just undisclosed in the UI (Req 6.4).
+  - A **coach**'s token, messy dictated input ("um in the small sided game
+    they were finding space really well and switching play") → cleaned up,
+    correctly phase-tagged (`"Progressing through midfield"`), club-toned
+    refined text.
+  - An **all-positive** input (a player with "nothing to work on") → refined
+    as genuinely all-positive, no manufactured work-on (Req 3.3).
+  - `mode: 'summarize'` on 3 sample notes → a real, warm 2-4 sentence summary
+    that naturally used continuity language ("worth keeping building on")
+    from the placeholder guardrails.
+  - **API key never re-exposed** — the script calls the deployed function
+    over HTTPS; it never reads or handles the raw Anthropic key at all.
+  - Fixture users (one coach, one player, throwaway `wcr-gant-probe-*`
+    emails) created and fully cleaned up (auth + profile) on every exit path.
 
 ## Task 3 — Review loop (D4) — buildable/testable before capture UI exists
 
