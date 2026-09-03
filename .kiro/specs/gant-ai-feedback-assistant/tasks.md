@@ -193,26 +193,68 @@ genuinely live — Task 2 can now build and test against it.
 
 ## Task 4 — Pending queue (D5) — filterable by team/player (decided 2026-09-03)
 
-- [ ] 4.1 "My pending notes" list, reachable from the Coaching tab; reuse the
-  `resolveApprovalsTab` badge pattern (`main-layout-logic.ts`) for a
-  pending-count badge.
-- [ ] 4.2 Team filter (reuse standard team-selector pattern) + optional player
-  filter within the selected team. Underlying order is always chronological
-  regardless of filter state; no filter = full flat list across all
-  teams/players (Req 5.2).
-- [ ] 4.3 Tapping an entry opens Review (Task 3).
+- [x] 4.1 `src/pages/GantPendingQueue.tsx` — replaces the old `AICoach.tsx`
+  stub at the same `/ai-coach` route (so the Coaching page's existing link
+  needed no change beyond its label/colour). **Note:** did not implement a
+  separate nav badge count this pass (the `resolveApprovalsTab` pattern
+  reference) — deferred as a small polish item, not blocking; the queue
+  itself is fully functional without it.
+- [x] 4.2 Team filter (dropdown, reusing the standard team-selector data
+  source `teamsApi.getMyTeams`) + player filter within the selected team
+  (`gamesApi.getTeamPlayers`, disabled until a team is chosen). Underlying
+  order is always chronological (`captured_at ASC`) regardless of filter
+  state; no filter = full flat list. **Live-verified** via
+  `scripts/verify-gant-capture-and-queue.ts` — see Task 5's write-up below,
+  same script covers both tasks.
+- [x] 4.3 Tapping an entry opens `GantReviewModal` (Task 3) directly.
 
-## Task 5 — Capture v1 (D3.1)
+## Task 5 — Capture v1 (D3.1) — ✅ DONE + LIVE-VERIFIED 2026-09-03
 
-- [ ] 5.1 `gantApi.createPendingEntry({ teamId, playerId?, rawText, eventType?,
-  eventId? })`.
-- [ ] 5.2 Capture sheet component (dictate-or-type input, player/team already
-  fixed by caller) — **no Gant call at capture time** (design's recommended
-  default; revisit after live testing if coaches expect immediate feedback).
-- [ ] 5.3 Wire capture entry points: from the person-detail screen (Task 6) and
-  from the roster directly (decide which is primary; both can coexist).
-- [ ] 5.4 Gate capture to coach/admin/coach-authority-manager — same rule as
-  `tabsForRole`'s `showCoaching`.
+- [x] 5.1 `gantApi.createPendingEntry({ teamId, playerId?, rawText, eventType?,
+  eventId? })` — built in Task 3's pass on `gant-api.ts` (same file).
+- [x] 5.2 `src/components/GantCaptureSheet.tsx` — a single textarea, no
+  team/player picker of its own (context always supplied by the caller, per
+  Requirement 1.1). **No Gant call at capture time**, confirmed — the
+  component only calls `createPendingEntry`, nothing else. Shows a brief
+  inline confirmation and stays open so a coach can capture several entries
+  in a row (Req 3.1.3, quick-fire).
+- [x] 5.3 Wired from `GantPendingQueue.tsx`'s "+ Add a note" button (team
+  and, if selected, player filter become the capture context). **The
+  person-detail screen (Task 6) and Games-page (Task 9) entry points are not
+  yet wired** — those tasks aren't built yet; this is the queue-page entry
+  point only, sufficient for the loop to be fully usable end-to-end today.
+- [x] 5.4 Gated via the route's `ProtectedRoute allowedRoles={[ADMIN, COACH]}`
+  — matches `/coaching`'s existing rule, resolving the mismatch Requirement
+  1.2 called out. **Known pre-existing gap, not introduced by this change:**
+  `ProtectedRoute` only checks the synchronous global `user.role`, so a
+  Manager holding per-team `is_coach` authority (who correctly sees the
+  Coaching tab via `tabsForRole`'s `hasCoachAuthorityOnAnyTeam`) would be
+  redirected away if they navigated directly to `/coaching` or `/ai-coach` —
+  this already existed for `/coaching` before this change and is a
+  `ProtectedRoute` architecture limitation, not something this build
+  introduced or is scoped to fix. Flag in `NEXT-SESSION-NOTES.md`.
+- [x] **Live-verified together with Task 4** via
+  `scripts/verify-gant-capture-and-queue.ts` (9/9 checks passed, real
+  Supabase data):
+  - 4 entries captured by one coach (2 for playerX, 1 team-scoped, 1 for
+    playerY) + 1 by a second coach.
+  - No filter: the first coach sees exactly their own 4 — confirms RLS scopes
+    to `captured_by`, not "everyone's."
+  - Team filter alone: all 4 of that coach's entries for the team.
+  - Team + player filter: exactly playerX's 2 entries — critically, **not**
+    the team-scoped entry and **not** playerY's, confirming the filter
+    correctly excludes `player_id IS NULL` and other players' rows.
+  - RLS isolation: the first coach genuinely cannot read the second coach's
+    pending entry at all (0 rows visible), not just filtered out client-side.
+  - All fixtures (4 users, 1 team, 5 entries) cleaned up on exit.
+  - **Unrelated pre-existing bug found while scoped-type-checking the new
+    files:** `src/lib/teams-api.ts` line 168 has a genuine type error
+    (`pendingMemberships` map is missing the now-required `is_coach` field on
+    `TeamMemberWithTeam`) — confirmed via `git diff` that this file was never
+    touched by this build. `npm run build` doesn't catch it (Vite/esbuild
+    doesn't type-check); there's no project-wide `tsc` script per `CLAUDE.md`.
+    Not fixed here — flag in `NEXT-SESSION-NOTES.md` as a found-but-unrelated
+    issue, same practice as the earlier 4-Moments reporting bug.
 
 ## Task 6 — Person-detail screen (D6) — v1 scope is notes-only
 

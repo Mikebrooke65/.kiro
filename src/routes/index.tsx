@@ -20,7 +20,7 @@ import { Games } from '../pages/Games';
 import { Resources } from '../pages/Resources';
 import { Schedule } from '../pages/Schedule';
 import { Messaging } from '../pages/Messaging';
-import { AICoach } from '../pages/AICoach';
+import { GantPendingQueue } from '../pages/GantPendingQueue';
 import { SubsPage } from '../pages/SubsPage';
 import { TournamentPage } from '../pages/TournamentPage';
 
@@ -171,12 +171,16 @@ export const router = createBrowserRouter([
         element: <Navigate to="/team" replace />,
       },
       {
+        // Progress Notes pending queue (internal name "Gant") — replaces the
+        // old AICoach stub. Same route so the existing "Ask AI Coach" link
+        // (Coaching.tsx) keeps working without a change there.
+        // gant-ai-feedback-assistant, Requirement 1.2/6.2: gated on the same
+        // coach-authority rule as the Coaching tab and game_feedback's write
+        // access — a plain Manager without coach authority is NOT included.
         path: 'ai-coach',
         element: (
-          <ProtectedRoute
-            allowedRoles={[UserRole.ADMIN, UserRole.MANAGER, UserRole.COACH]}
-          >
-            <AICoach />
+          <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COACH]}>
+            <GantPendingQueue />
           </ProtectedRoute>
         ),
       },
