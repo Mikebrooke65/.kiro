@@ -708,7 +708,7 @@ export type MessageTargetingType = 'individual' | 'whole_team' | 'management_tea
 export interface Message {
   id: string;
   sender_id: string;
-  team_id: string;
+  team_id: string | null; // null = a team-less "club admin" message (migration 075)
   parent_message_id: string | null;
   title: string;
   body: string;
@@ -779,7 +779,7 @@ export interface ReactionGroup {
 }
 
 export interface CreateMessagePayload {
-  team_id: string;
+  team_id: string | null; // null when targeting_type === 'club_admin' (migration 075)
   targeting_type: MessageTargetingType;
   title: string;
   body: string;

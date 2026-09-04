@@ -2,6 +2,32 @@
 
 All notable changes to the football coaching app prototype will be documented in this file.
 
+## [2026-09-04] - Messaging: reach the club admins; admin console tidy
+
+### Fixed
+- **You can now message the club admins.** Choosing "Club Admin" when composing
+  a message used to silently do nothing — a message to the admins has no team,
+  but the system required one. Now it sends, lands in a shared admin inbox, and
+  the person who sent it will see the admin's reply.
+
+### Changed
+- **Admin desktop console tidied.** The Reporting suite is hidden for the launch
+  trial (it's built and will return post-launch). Removed a large block of dead,
+  duplicated scaffolding code and a couple of debug leftovers — no change to any
+  feature you use, just less clutter behind the scenes.
+
+### Technical Notes
+- Messaging fix: migration `075_messages_admin_inbox.sql` makes `messages.team_id`
+  nullable, allows team-less messages from any authenticated user, and adds a
+  `SECURITY DEFINER` `message_thread_root_sender()` helper so the thread's
+  original sender can read replies without reintroducing the migration-035 RLS
+  recursion. Client: `ComposeForm` sends a null team for Club Admin; `getThreads`
+  includes team-less threads; `team_id` is nullable on the messaging types.
+- Reporting hidden via a new `src/config/desktopFeatures.ts` flag (one-line
+  re-enable). Deleted the orphaned `src/app/` tree (~12k lines) and the unused
+  `pages/desktop/Reporting.tsx`. Full detail in NEXT-SESSION-NOTES (V1.8 / V1.M /
+  V2.8).
+
 ## [2026-09-03] - Gant / Progress Notes: live-test polish batch
 
 ### Fixed

@@ -181,7 +181,9 @@ export function ComposeForm({
     setIsSending(true);
     try {
       const payload: CreateMessagePayload = {
-        team_id: selectedTeamId,
+        // A "Club Admin" message is team-less (migration 075) — the team
+        // selector is hidden for it, so never send a stale/empty team id.
+        team_id: targetingType === 'club_admin' ? null : selectedTeamId,
         targeting_type: targetingType!,
         title: title.trim(),
         body: body.trim(),

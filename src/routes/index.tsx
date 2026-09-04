@@ -40,6 +40,7 @@ import { SessionBuilder } from '../pages/desktop/SessionBuilder';
 import { CompetitionsPage } from '../pages/desktop/CompetitionsPage';
 import { DesktopTournamentPage } from '../pages/desktop/DesktopTournamentPage';
 import { ProgressNotesSettings } from '../pages/desktop/ProgressNotesSettings';
+import { desktopFeatures } from '../config/desktopFeatures';
 
 // Reporting pages
 import { DesktopReporting } from '../pages/desktop/DesktopReporting';
@@ -236,34 +237,20 @@ export const router = createBrowserRouter([
         path: 'admin-action-items',
         element: <AdminActionItems />,
       },
-      {
-        path: 'reporting',
-        element: <DesktopReporting />,
-      },
-      {
-        path: 'reporting/lesson-deliveries',
-        element: <LessonDeliveryReport />,
-      },
-      {
-        path: 'reporting/coach-activity',
-        element: <CoachActivityReport />,
-      },
-      {
-        path: 'reporting/team-training',
-        element: <TeamTrainingReport />,
-      },
-      {
-        path: 'reporting/lesson-effectiveness',
-        element: <LessonEffectivenessReport />,
-      },
-      {
-        path: 'reporting/session-ratings',
-        element: <SessionRatingsReport />,
-      },
-      {
-        path: 'reporting/game-feedback',
-        element: <GameFeedbackReport />,
-      },
+      // Reporting hidden for the V1 launch trial (V1.8 / deferred to V2.8) —
+      // routes are only registered when the flag is on, so the pages can't be
+      // reached by URL either. Components stay imported for a one-line re-enable.
+      ...(desktopFeatures.reporting
+        ? [
+            { path: 'reporting', element: <DesktopReporting /> },
+            { path: 'reporting/lesson-deliveries', element: <LessonDeliveryReport /> },
+            { path: 'reporting/coach-activity', element: <CoachActivityReport /> },
+            { path: 'reporting/team-training', element: <TeamTrainingReport /> },
+            { path: 'reporting/lesson-effectiveness', element: <LessonEffectivenessReport /> },
+            { path: 'reporting/session-ratings', element: <SessionRatingsReport /> },
+            { path: 'reporting/game-feedback', element: <GameFeedbackReport /> },
+          ]
+        : []),
       {
         path: 'announcements',
         element: <Announcements />,

@@ -1210,8 +1210,8 @@ One-line status per item. Detail is in the sections further down.
 | V1.5 Role-aware nav | ✅ DONE | — |
 | V1.6 Invite page branding | ⬜ Not started | Independent |
 | V1.7 RSVP / availability | 🟠 Mostly built | RSVP reminder pushes; caregiver multi-child RSVP build (design already agreed) |
-| V1.8 Feature flags | ⬜ Not started | Near launch, once the trial group's needs are known |
-| V1.M Messaging — send to Admins | 🔴 Bug, root cause confirmed | A message addressed to "Admins" can't even be stored today (`messages.team_id` is mandatory, every messaging RLS rule is team-scoped) — needs a nullable `team_id` + new RLS for teams-less messages. Conceptually linked to V1.R's migration-036 fix below (same "how is scope modeled" question), but its own separate build |
+| V1.8 Admin console correctness pass | 🟠 Scoped 2026-09-04, not built | Redefined (was "feature flags"). Reporting is moving to V2 (hidden at launch, see V2.8). V1.8 is now working through the remaining admin tabs to make them correct — see the detailed "V1.8 — Admin console correctness pass" section below |
+| V1.M Messaging — send to Admins | ✅ **Fixed 2026-09-04 (migration 075 run), send confirmed live** | Root cause was two coupled things: (1) "Club Admin" messages are team-less but `messages.team_id` was NOT NULL and the compose form only auto-fills a team when you're on exactly one — so a multi-team admin sent an empty `team_id` and the insert was rejected (the "nothing happens" repro); (2) the inbox query keyed on team membership, so a team-less admin message wouldn't appear anyway. Fix (migration `075_messages_admin_inbox.sql` + client): `team_id` nullable, INSERT policy allows a team-less message from any authenticated user (contact-the-club path), a `SECURITY DEFINER` `message_thread_root_sender()` helper drives a SELECT clause so the thread's original sender sees admin replies (no recursion — the mig-035 trap), compose sends `team_id: null` for Club Admin, and `getThreads` now includes team-less threads. Confirmed live on localhost against the migrated DB: sending to Club Admin resolved to all 6 admins and appeared in the shared inbox. **Still to verify with a second account:** a non-admin sender seeing an admin's reply (the root-sender SELECT clause) — mechanism built, not yet live-tested end to end |
 | **V1.R Part 1 — Role model & RLS fix** | ✅ **Fully done, live-verified, 2026-09-02** | Make Coach, Stop being Coach, Demote (incl. first-Manager protection both directions), the role-sync trigger + its Coaching-tab follow-up fix, and the caregiver-floor invariant all confirmed live. Nothing outstanding. Surfaced one new, separate, not-yet-fixed bug: "Manage Caregivers" visibility uses the team's age band instead of the person's own — see V1.R's write-up |
 | V1.R Part 2 — Automated data retention & deletion | ⬜ Deferred, own future spec | Competition cleanup clocks, the 12-month "no role" user-deletion job, de-identified performance data, pre-deletion notice/export. Nothing blocks on it today — scoping notes live in `docs/data-retention-scoping.md`, untouched |
 | V1.9 Store + privacy policy | 🟠 Rewrite now confirmed required | Gate before store submission — the child-account model is live now, not hypothetical. Depends on V1.R's retention decisions locking first. `club_settings.app_url` still needs the real store listing at go-live |
@@ -1308,6 +1308,58 @@ preference to limit Netlify rebuilds). Task 10 is the deliberately-deferred
 V2/phase-2 backlog (nothing to build for V1). Task 11 = the privacy section,
 now merged into the workstream above. Task 0 (coach guardrails refinement) is
 the ongoing non-code loop, now enabled by the desktop admin screen (Task 8).
+
+### V1.8 — Admin console correctness pass (scoped 2026-09-04)
+
+**Redefined.** V1.8 was "feature flags"; it's now a correctness pass over the
+desktop admin tabs. The only thing being flagged/hidden is **Reporting**, which
+moves to **V2 (see V2.8)** — it's the biggest immature surface and not needed
+for the trial. Everything else stays in V1, but several admin tabs need
+functional work before launch. Desktop is confirmed **Admin-only for V1**, so
+the sidebar's "Main/Admin" split is now purely visual grouping (kept as a
+scanning aid, no permission meaning).
+
+Scope (all found by the repo owner working through the live admin console
+2026-09-04; **documented here, not yet built**):
+
+1. **Reporting → hidden for V1, deferred to V2.8.** The 6-page suite stays in
+   the codebase, just removed from the admin nav + routes at launch via a
+   small `src/config/desktopFeatures.ts` flag (`reporting: false`) so it's a
+   one-line re-enable in V2. (Done 2026-09-04 alongside this note.)
+
+2. **Competitions vs Tournaments — needs clarification.** Two adjacent,
+   identically-styled admin nav items with nothing telling you which does
+   what. They're genuinely different (Competitions = create/edit a
+   league/club-tournament entity and invite teams in — the *setup* side;
+   Tournaments = view fixtures/standings for club-run tournaments — the *run*
+   side). Decide clearer labels and/or short descriptions (not a merge). Open.
+
+3. **Caregiver Reviews probably belongs under Users**, not as its own
+   top-level admin tab. Consolidate the `admin-action-items` (Caregiver
+   Reviews) surface into the Users area. Open.
+
+4. **Teams page (admin) — several fixes.** This is the page that lists all
+   teams and lets you select one to edit.
+   - **Pending teams must be shown as pending.** Repo owner created a team
+     yesterday and sent the invite to the manager — the manager hasn't
+     accessed it yet, so it's effectively a *pending* team. The Competitions
+     page already shows such a team with a "pending" state (under e.g. the
+     Summer competition's team list), but the admin Teams page shows it
+     identically to a live team. Fix: on the admin Teams page, a pending team
+     should be **greyed out with a "Pending" stamp and the date the invite was
+     sent** next to it. (Signal of pending = the invited manager hasn't
+     accessed/accepted yet — reuse whatever the Competitions page already keys
+     off.)
+   - **Show the Manager, not just the Coach.** The teams list currently shows
+     the coach but not the manager. Show both. If there are multiple coaches
+     and/or managers, just show the first of each.
+   - **Assign Manager belongs here.** The team-edit view (selecting a team on
+     this page) is where an "Assign Manager" action should live/be captured.
+
+**Next step for V1.8:** build items 2–4 (item 1 is done). To be picked up after
+the repo owner's current priority, V1.M. Worth a dedicated Kiro spec given the
+Teams-page work has real data-model/RLS surface (pending state, manager
+display, assign-manager).
 
 **Gant (AI coaching feedback assistant) — PULLED FORWARD AND BUILT INTO V1
 (2026-09-04).** No longer "being considered" — it was accelerated ahead of its
@@ -3482,7 +3534,20 @@ The naming decision ("Progress Notes", spec Task 10.4) is already resolved and
 shipped. Task 0 (coach guardrails refinement) is an ongoing non-code loop, now
 enabled by the live admin screen — not a V2 build item.
 
+### V2.8 Admin Reporting suite — deferred from V1 launch (2026-09-04)
+
+**Status**: Built, working, hidden at V1 launch. The 6-page desktop reporting
+suite (Lesson Deliveries, Coach Activity, Team Training, Lesson Effectiveness,
+Session Ratings, Game Feedback) plus its `DesktopReporting` hub. Removed from
+the admin nav + routes for V1 via `src/config/desktopFeatures.ts`
+(`reporting: false`) — the code is untouched, so re-enabling is flipping that
+one flag back to `true` in V2. Deferred because it's the biggest immature
+surface and isn't needed by the launch trial group.
+
 ### V2 Backlog (Future)
+
+*(Numbered V2 items live above as V2.1–V2.8; the list below is the unNumbered
+future backlog — number these into the V2.x sequence as they get picked up.)*
 - Notification preferences UI
 - Audit trail for role changes
 - RLS policy audit (remove any remaining `user_teams` references)

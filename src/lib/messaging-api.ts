@@ -36,8 +36,12 @@ export class MessagingApi extends ApiClient {
         reactions:message_reactions(emoji, user_id),
         archives:message_archives(id, user_id)
       `)
+      // Include the user's team threads AND team-less "club admin" threads
+      // (migration 075). RLS still gates which team-less rows are visible
+      // (admins see the shared inbox; a non-admin sees only threads they
+      // started), and the recipient/sender filter below narrows further.
       .is('parent_message_id', null)
-      .in('team_id', teamIds)
+      .or(teamIds.length > 0 ? `team_id.in.(${teamIds.join(',')}),team_id.is.null` : 'team_id.is.null')
       .order('created_at', { ascending: false });
 
     if (error) throw new ApiError(error.message);
@@ -336,7 +340,7 @@ export class MessagingApi extends ApiClient {
    */
   async resolveRecipients(
     targetType: MessageTargetingType,
-    teamId: string,
+    teamId: string | null,
     individualUserId?: string
   ): Promise<string[]> {
     switch (targetType) {

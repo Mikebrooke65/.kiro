@@ -2,6 +2,7 @@ import { Outlet, NavLink, useLocation } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../stores/appStore';
 import { LogoutButton } from '../components/LogoutButton';
+import { desktopFeatures } from '../config/desktopFeatures';
 import gannetLogo from '../assets/cdb7544de20d133944374bb8948c71879fef34b4.png';
 
 export function DesktopLayout() {
@@ -427,33 +428,37 @@ export function DesktopLayout() {
             )}
           </NavLink>
 
-          <NavLink
-            to="/desktop/reporting"
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative ${
-                isActive
-                  ? 'bg-gray-50 text-[#4f46e5]'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {isActive && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#4f46e5] rounded-l-lg"></div>
-                )}
-                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                  />
-                </svg>
-                {isSidebarOpen && <span>Reporting</span>}
-              </>
-            )}
-          </NavLink>
+          {/* Reporting hidden for the V1 launch trial (V1.8 / deferred to V2.8) —
+              gated on the desktopFeatures flag, kept in the codebase. */}
+          {desktopFeatures.reporting && (
+            <NavLink
+              to="/desktop/reporting"
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative ${
+                  isActive
+                    ? 'bg-gray-50 text-[#4f46e5]'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#4f46e5] rounded-l-lg"></div>
+                  )}
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    />
+                  </svg>
+                  {isSidebarOpen && <span>Reporting</span>}
+                </>
+              )}
+            </NavLink>
+          )}
 
           <NavLink
             to="/desktop/announcements"
