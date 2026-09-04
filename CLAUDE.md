@@ -3,8 +3,14 @@
 This file exists so a fresh AI session (Cowork, Claude Code, or otherwise)
 can pick up the operational conventions this project uses, without needing
 to rediscover them from scratch or from prior chat history. It's about
-*how* work happens here, not the status of any specific feature — for that,
-see `.kiro/specs/<feature-name>/tasks.md`.
+*how* work happens here, not the status of any specific feature — for
+overall V1/V2 status (what's done, in progress, and next) see
+`NEXT-SESSION-NOTES.md` at the repo root; for one feature's detailed
+checklist see `.kiro/specs/<feature-name>/tasks.md`. Read
+`NEXT-SESSION-NOTES.md` before proposing what to work on next — it's kept
+current as the single source of truth for that question (this is also
+Kiro's own steering-doc rule, `.kiro/steering/project-standards.md`, so
+both tools should already agree on this).
 
 ## The basics
 
@@ -20,6 +26,17 @@ see `.kiro/specs/<feature-name>/tasks.md`.
 - **Stack**: Vite 6 + React 19 + TypeScript (no project-wide `tsconfig.json`
   or `typecheck` script — see Verification below), Supabase (Postgres +
   Edge Functions), Capacitor for the mobile app shell.
+- **The owner also runs Kiro on this repo, from a second, separate clone**
+  (`C:\Users\miker\Kiro projects\WCR Football App`, remote named `kiro`,
+  confirmed by Kiro directly). That clone and the one Claude's patches land
+  in (`C:\Users\miker\WCR-Football-App`) are two different working
+  directories on the same machine — GitHub's `prototype` branch is the only
+  shared source of truth between them, and they can drift locally. Always
+  verify against a fresh clone of `prototype` (per Verification below)
+  rather than assuming either local working tree is current — Kiro may have
+  pushed since the last time this file's context was read. See
+  `docs/project/kiro-notes-for-claude.md` for Kiro's own cross-tool notes
+  when that file exists and looks current.
 
 ## How changes actually get shipped (Cowork sessions can't push directly)
 
@@ -47,6 +64,18 @@ remote or their local machine's shell. The established flow is:
 never skip hooks. Match this project's existing commit-message style
 (explains *why*, not just *what*; multi-paragraph body is normal here).
 
+**On the plain `git push` in step 4**: this has worked without issue every
+time it's been used against the owner's `C:\Users\miker\WCR-Football-App`
+clone (that clone has an upstream configured, so a bare `git push` resolves
+correctly there) — don't change it on the strength of a report from a
+different clone. Kiro's own, separate clone (`Kiro projects\WCR Football
+App`) has its remote named `kiro` with no upstream, so a bare `git push`
+fails *there* and Kiro correctly uses `git push kiro prototype` instead.
+That's a property of Kiro's clone, not evidence that this repo's canonical
+remote name changed — if the owner's `WCR-Football-App` clone ever does
+start rejecting a bare `git push`, check `git remote -v` in that specific
+clone before assuming Kiro's remote name applies to it too.
+
 ## Verifying before delivering (non-negotiable — do this every time)
 
 Before handing over any patch:
@@ -71,6 +100,53 @@ namespace 'JSX'` under this project's React 19 type defs — that's a
 pre-existing tooling limitation (confirmed by running the same check
 against the unmodified file), not a real defect; review such files by eye
 instead.
+
+**Current `npx vitest run` baseline: 254 passed, 2 skipped** (confirmed
+2026-09-04) — the 2 are `describe.skipIf(!LIVE_READY)` blocks in
+`src/lib/invites-api.preservation.test.ts`, deliberately gated behind a
+live-network/credentials flag, not failures. Don't read "254 passed | 2
+skipped" as something to chase; a genuine regression shows up as an
+additional failure or a drop below 254 passed, not as a change to that
+skip count.
+
+**Known build-invisible TypeScript gaps** (Vite/esbuild doesn't
+type-check, so `npm run build` stays clean despite these — pre-existing,
+not introduced by whatever you're currently changing, don't feel obliged
+to fix them as a drive-by unless the task is already touching that file):
+- `src/lib/teams-api.ts`'s `getMyTeams()` builds a synthetic
+  `TeamMemberWithTeam` for a pending child's team (~line 207) that omits
+  the required `is_coach` field added for V1.R Part 1.
+- `src/pages/Games.tsx`'s `loadGames()` reaches into `gamesApi.supabase`,
+  a `protected` member of `ApiClient` — works at runtime, not something
+  `tsc` would allow if it ran project-wide.
+
+## Shared coding conventions (also enforced by Kiro)
+
+The canonical, detailed version of these lives in
+`.kiro/steering/project-standards.md` — check there if something below seems
+incomplete rather than assuming this summary is exhaustive. Keeping one
+canonical source and a short pointer here (rather than copying the whole
+document) is deliberate, since the two docs have drifted before.
+
+- **Club-agnostic rule (new code only)**: no hardcoded club name, colour,
+  logo, domain, or URL. Branding comes from `club_settings` via
+  `useClubBranding()` on the client, and env vars with generic fallbacks
+  (`CLUB_NAME`, `CLUB_COLOR`, `APP_URL`, `EMAIL_FROM`, `EMAIL_REPLY_TO`) in
+  Edge Functions. Existing hardcoded WCR-specific code is left alone —
+  retrofitting it is a V3 concern, not something to fix opportunistically.
+- **Team membership**: query `team_members`, not `user_teams` (the latter
+  is only used by `AuthContext` for profile loading).
+- **Games**: games are rows in `events` with `event_type = 'game'` — query
+  `events`, not the unused `games` table. `game_feedback.game_id`
+  references `events.id`.
+- **Team name display**: always `"{age_group} {name}"` (e.g. "U9
+  Lithium") — never the name alone, never `"{name} ({age_group})"`. Applies
+  everywhere a team name renders.
+- **Secrets handover**: never paste a secret into chat. Save it to a file
+  *outside* the repo (e.g. `C:\Users\miker\<name>.txt`), it gets piped into
+  `supabase secrets set`, then the file is deleted. A key pasted into a
+  transcript must be treated as compromised and rotated. Mirror any `.env`
+  change to `C:\Users\miker\OneDrive\Project Secrets\`.
 
 ## Database migrations
 
@@ -180,6 +256,13 @@ all three in git is what avoids this class of conflict entirely. If you're
 touching an existing spec whose docs aren't yet tracked, check
 `device_list_dir`'s mtime (or just diff) against your sandbox's copy before
 overwriting anything — the on-disk version may already be ahead of git.
+
+Status check (2026-09-04, confirmed by Kiro): `streamlined-invites-and-
+child-access` still only has `requirements.md` tracked — `design.md` and
+`tasks.md` remain untracked, so the caution above still applies to it
+specifically. The newer `gant-ai-feedback-assistant` spec has all three
+files tracked from the start, so the recommendation is being followed for
+new specs going forward.
 
 ## Reasonable AI-driven audits worth doing proactively
 
