@@ -34,7 +34,6 @@ import { DesktopMessaging } from '../pages/desktop/DesktopMessaging';
 import { TeamsManagement } from '../pages/desktop/TeamsManagement';
 import { UserManagement } from '../pages/desktop/UserManagement';
 import { AdminActionItems } from '../pages/desktop/AdminActionItems';
-import { Reporting } from '../pages/desktop/Reporting';
 import { Announcements } from '../pages/desktop/Announcements';
 import { LessonBuilder } from '../pages/desktop/LessonBuilder';
 import { SessionBuilder } from '../pages/desktop/SessionBuilder';
@@ -201,11 +200,6 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      // Debug route to test if desktop routes work at all
-      {
-        path: 'test',
-        element: <div style={{ padding: '20px', fontSize: '24px', fontWeight: 'bold' }}>DESKTOP TEST ROUTE WORKS!</div>,
-      },
       {
         index: true,
         element: <DesktopLanding />,

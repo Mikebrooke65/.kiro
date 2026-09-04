@@ -9,9 +9,6 @@ export function DesktopLayout() {
   const { isSidebarOpen, setSidebarOpen } = useAppStore();
   const location = useLocation();
 
-  // Debug: Log when component renders
-  console.log('DesktopLayout rendering, location:', location.pathname);
-
   return (
     <div className="min-h-screen flex bg-gray-50">
       {/* Sidebar */}
