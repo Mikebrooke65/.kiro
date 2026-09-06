@@ -163,13 +163,21 @@ Kiro verifies in the owner's working tree directly (no sandbox/patch step):
 `moduleResolution: Bundler`, `types: ["vite/client"]`) is exactly what Kiro uses
 too — good alignment.
 
-**Current test baseline (as of `bbe6e95`): 254 passing, 2 failing.** The 2
-failures are pre-existing and unrelated to any current work — they're the
-live-network "redeem-invite" integration tests in
-`src/lib/invites-api.preservation.test.ts` (they hit a real network and fail
-independently of local changes). **Don't treat 2 failures as a regression** —
-254/2 is "green" for this repo. If the passing count drops below 254 or a
-*different* file fails, that's a real problem.
+**Current test baseline (as of `bbe6e95`): 254 passing + 2 that are
+environment-gated** (`256` total). Those 2 are the live-network "redeem-invite"
+integration tests in `src/lib/invites-api.preservation.test.ts`, wrapped in
+`describe.skipIf(!LIVE_READY)` where `LIVE_READY` requires `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY` **and `SUPABASE_SERVICE_ROLE_KEY`** in
+`.env.development`. So the reading depends on the environment:
+- **No service-role key present (e.g. Claude's sandbox):** the block **skips** →
+  "254 passed, 2 skipped", exit 0.
+- **Service-role key present (e.g. the repo owner's laptop):** the block **runs
+  live** and currently **fails** → "254 passed, 2 failed", exit 1.
+Neither is a regression from local code changes. **Don't treat the 2 as a code
+regression** — but note they genuinely *fail* when run live on the owner's
+machine, which is worth understanding before go-live (it's the `redeem-invite`
+live path, separate from feature work). If the **passing count drops below 254**,
+or a *different* file fails, that's a real problem.
 
 **Known build-invisible TypeScript errors** (Vite/esbuild doesn't type-check, so
 `npm run build` stays green despite these — don't chase them as if you caused
